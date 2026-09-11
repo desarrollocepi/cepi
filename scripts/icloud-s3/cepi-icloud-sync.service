@@ -1,0 +1,20 @@
+[Unit]
+Description=cepi — espejo one-way iCloud Drive -> S3
+Documentation=file:///opt/cepi/scripts/icloud-s3/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/opt/cepi/scripts/icloud-s3/sync.sh
+# El sync no debe poder tumbar los backends de la t3.micro.
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=300M
+TimeoutStartSec=3600
+StateDirectory=cepi
+
+[Install]
+WantedBy=multi-user.target

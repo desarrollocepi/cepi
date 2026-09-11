@@ -1,0 +1,12 @@
+[Unit]
+Description=cepi — dispara el espejo iCloud -> S3 cada 10 min
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+RandomizedDelaySec=60
+Persistent=true
+Unit=cepi-icloud-sync.service
+
+[Install]
+WantedBy=timers.target

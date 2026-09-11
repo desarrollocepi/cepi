@@ -1467,6 +1467,157 @@ El portal v1 **no lleva chat**. Cuando llegue, es un **analista sobre el corpus*
 llenador: agrupa, compara y responde sobre casos ya registrados. El flujo de slot-filling
 (`flowV1`) es de telemedicina y no se invoca acá.
 
+
+## 23. Informes de patología desde Google Drive
+
+El laboratorio de patología entrega los informes de histopatología como **Google Docs**
+en un Drive propio (`cepi.patologia2022@gmail.com`), compartido con CEPI. Cada informe
+es una biopsia de un paciente que ya pasó por consulta. Hoy nadie los cruza con la
+historia clínica: viven en un Drive y se consultan a mano.
+
+Esta sección define cómo se importan y cómo se cuelgan del episodio correcto.
+
+### 23.1 Superficie de origen
+
+Estructura: `CP POR AÑO / CP <año> / CP <MES> <año> / <documentos>`, años 2019 y 2022→.
+Los archivos son Google Docs nativos (no escaneos), nombrados
+`CP##### APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2`. `CP#####` es el **correlativo interno de
+patología**, no cruza con ningún id de DrPro. `CP COPIA` es la plantilla y se ignora.
+
+El cuerpo del documento trae campos etiquetados, así que **el parseo es determinista —
+sin OCR y sin LLM**:
+
+| Etiqueta en el Doc | Destino |
+|---|---|
+| `Fecha de toma de muestra:` | fecha del episodio (formato `01 DE SEPTIEMBRE DE 2026`) |
+| `CP- #####` | `numero_cp`, clave de idempotencia |
+| `Paciente:` | control cruzado del nombre |
+| `CI:` | **cédula — la clave del match** |
+| `Edad:` / `Sexo:` | control cruzado |
+| `Diagnóstico Presuntivo:` + `CIE 10:` | diagnóstico de envío (puede traer varios códigos separados por `/`) |
+| `Información clínica:` / `Examen físico:` | narrativa clínica |
+| `Procedimiento:` / `Muestra:` | qué se tomó y de dónde |
+| `Médico que solicita:` | solicitante |
+| `Fecha de informe:` | cuándo firmó patología (≠ fecha de toma) |
+| `Descripción macroscópica:` / `Descripción microscópica:` | hallazgos |
+| `DIAGNÓSTICO:` | **resultado definitivo** |
+
+### 23.2 Acceso: federación, no llaves
+
+La organización `cepi.ec` aplica `iam.managed.disableServiceAccountKeyCreation`, así que
+**no hay llave JSON**. El EC2 se autentica con **Workload Identity Federation**: presenta
+su rol de instancia de AWS, Google lo cambia por un token de la cuenta de servicio
+`cepi-drive-lector@cepi-drive-sync.iam.gserviceaccount.com`, y con ese token lee Drive.
+
+No hay credencial en disco: `/opt/cepi/.secrets.d/gcp-wif.json` solo describe el
+intercambio. Una credencial que no existe no se filtra ni se rota.
+
+La Drive API **no acepta identidades federadas directas** — el binding es de suplantación
+de cuenta de servicio, restringido al atributo
+`aws_role = arn:aws:sts::648395693289:assumed-role/cepi-icloud-sync`.
+
+### 23.3 El match
+
+1. **Paciente por cédula** (`CI:` → `entity_patient.cedula`). Exacto, sin heurística de
+   nombres. El nombre del informe se compara solo para detectar incoherencias.
+2. **Episodio por fecha de toma de muestra.** Si el paciente tiene un episodio ese día,
+   el informe se cuelga de ahí. **Si no hay, se crea el episodio con esa fecha** — la
+   biopsia prueba que hubo un encuentro clínico, aunque DrPro no lo haya registrado.
+3. **Cédula desconocida → bandeja de revisión.** No se crea el paciente: el universo de
+   pacientes lo define el espejo DrPro (§21). Una cédula ausente significa que el espejo
+   aún no la trajo o que el informe tiene un error de digitación, y ninguna de las dos se
+   arregla creando una ficha nueva.
+
+Se usa la **fecha de toma de muestra**, no la del informe: la toma es el acto clínico; el
+informe lo firma patología días después.
+
+Idempotencia por `numero_cp` único. Reimportar no duplica ni pisa lo editado en CEPI.
+
+### 23.3.1 Quién atendió: el informe lo dice y DrPro no
+
+DrPro usa **una sola cuenta para todos los médicos**. Es una de las limitaciones
+que motivan esta migración, y tiene una consecuencia directa: en la ficha espejada
+no se sabe quién atendió.
+
+El informe de patología trae `Médico que solicita:`. Es de las pocas fuentes que
+**nombra al médico**, así que el importador lo resuelve contra los usuarios de
+CEPI y atribuye el episodio a esa persona. Exige coincidencia única: con dos
+"Ramírez" en la clínica no elige.
+
+Cuando no se resuelve, **el episodio queda sin médico**. No hay respaldo
+configurable a propósito: el único candidato a mano sería la cuenta compartida de
+DrPro, y atribuirle episodios reproduciría dentro de CEPI justo el problema del que
+se está saliendo.
+
+Un episodio sin médico significa que **nadie atendió**, así que tampoco puede
+declararse `cerrado`: queda `agendado` —la misma convención que el espejo usa para
+las citas sin ficha— y el caso se anota en la bandeja como `medico_no_resuelto`.
+Ese motivo no bloquea la importación: el informe entra igual y queda colgado del
+episodio; lo que falta es la atribución.
+
+Esto obligó a que `medico_id` dejara de ser obligatorio en el episodio (seed 015).
+**Pendiente de modelo**: un episodio puede tener VARIOS médicos, cosa que un campo
+escalar no expresa. Eso es un cambio de §11 y no se resuelve acá.
+
+### 23.4 Las imágenes van a S3
+
+Los informes con fotos de histopatología pesan hasta 11 MB. Las imágenes embebidas se
+extraen del Doc y se guardan **en S3**, no en el disco del EC2 — una t3.micro con 8.9 GB
+libres no es sitio para un archivo de imágenes clínicas que solo crece.
+
+Esto obliga a una capa que hoy no existe. Los adjuntos de TodoERP son
+**content-addressed**: `attachmentsRouter` guarda cada archivo como `<sha256>.<ext>` en
+`UPLOAD_DIR` y lo sirve estático en `/uploads`. Ese esquema mapea a S3 sin fricción —
+la clave del objeto **es** el hash — así que se introduce un adaptador de almacenamiento
+con dos implementaciones, `disk` y `s3`, detrás de la misma interfaz
+(`put`/`exists`/`stream`/`url`). `STORAGE_BACKEND` elige cuál.
+
+Consecuencias:
+
+- Nada se sirve estático desde S3: el bucket es privado y las descargas van por **URL
+  firmada** de vida corta. Son imágenes clínicas (§13.3.1).
+- La deduplicación por hash sigue funcionando igual en los dos backends.
+- La migración es gradual: lo viejo sigue en disco, lo nuevo entra por S3. El adaptador
+  resuelve por existencia, primero el backend activo y después el otro.
+
+### 23.4.1 Las fuentes externas no se tocan: se espejan
+
+Regla general, que §21 ya aplicaba a DrPro y ahora cubre también al Drive de
+patología: **CEPI nunca escribe en la fuente**. Ni un campo, ni un renombre, ni un
+borrado. Lo que CEPI necesita, lo copia.
+
+Eso duplica el dato clínico —el crudo del informe queda en la base y las imágenes
+en S3, además de seguir en el Drive del laboratorio— y la duplicación es
+deliberada, no un descuido: es el precio de no depender de un sistema de terceros
+para leer una historia clínica, y de poder reprocesar sin volver a bajar nada.
+
+La contrapartida es que el perímetro de datos de pacientes se agranda. Por eso el
+bucket es privado con URL firmada, y por eso el crudo va marcado `pii: true`: al
+duplicar, las protecciones se duplican con él.
+
+### 23.5 Periodicidad
+
+Un scheduler dentro del backend, con la misma forma que `drproScheduler` (§21): corre
+cada `PATOLOGIA_SYNC_CADA_MIN`, lista por `modifiedTime` descendente y procesa lo que
+cambió desde la última corrida. Va dentro del proceso y no en un cron del sistema por la
+misma razón que el espejo DrPro: el importador firma su JWT desde el id del usuario de
+servicio, y un cron externo necesitaría credenciales en disco.
+
+Los informes se corrigen: un Doc puede cambiar después de importado. Por eso la clave de
+control es `(numero_cp, modifiedTime)` y no solo el id del archivo.
+
+### 23.6 Qué es escritura inferida y qué no
+
+El match por cédula es **exacto**, no inferido: escribe directo, con
+`X-Change-Source: patologia` para que quede en `chatter` de dónde salió (§21).
+
+Lo que sí queda en bandeja, sin tocar la ficha:
+
+- cédula que no existe en CEPI;
+- cédula que existe pero el **nombre no coincide** con el del informe;
+- documento que no parsea (falta `CI:` o falta `Fecha de toma de muestra:`).
+
+
 ---
 
 **Fin del documento.**
