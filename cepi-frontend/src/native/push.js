@@ -20,6 +20,23 @@ async function sendToken(token) {
   } catch { /* reintenta en el próximo arranque */ }
 }
 
+/**
+ * Vibra por la API web, no por un plugin nativo: `navigator.vibrate` funciona en
+ * el WebView de Android y en la PWA, así que no obliga a agregar dependencia ni a
+ * recompilar y reinstalar la APK.
+ *
+ * Vibrar y no sonar: la app se usa en consulta, con el paciente delante.
+ *
+ * El patrón es corto-pausa-corto para que no se confunda con una llamada.
+ */
+function vibrar() {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate([120, 60, 120]);
+    }
+  } catch { /* el navegador puede negarlo sin avisar; no es motivo de error */ }
+}
+
 let started = false;
 export async function initNativePush() {
   if (!isNative() || started) return;
@@ -36,6 +53,22 @@ export async function initNativePush() {
     await FirebaseMessaging.addListener('notificationActionPerformed', (e) => {
       const entityId = e?.notification?.data?.entity_id;
       if (entityId) window.dispatchEvent(new CustomEvent('cepi:open-entity', { detail: { entityId } }));
+    });
+
+    // Con la app ABIERTA, Android no dibuja la notificación: se la entrega a la
+    // app y espera que ella avise. Sin este listener el mensaje llegaba y no
+    // pasaba absolutamente nada, que es justo cuando el usuario está mirando la
+    // pantalla y más fácil es perdérselo.
+    await FirebaseMessaging.addListener('notificationReceived', (e) => {
+      const n = e?.notification || {};
+      vibrar();
+      window.dispatchEvent(new CustomEvent('cepi:push-en-primer-plano', {
+        detail: {
+          title: n.title || 'CEPI',
+          body: n.body || '',
+          entityId: n.data?.entity_id || null,
+        },
+      }));
     });
   } catch (err) {
     console.warn('[native-push] init falló:', err?.message || err);

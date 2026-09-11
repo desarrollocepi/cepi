@@ -71,7 +71,7 @@ import PendingApproval from './components/PendingApproval.vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import { inicioSegunHost } from './router.js';
 import Notifications from './components/Notifications.vue';
-import { whoami, logout, switchOrg } from './api.js';
+import { whoami, logout, switchOrg, obtenerEntidad } from './api.js';
 import { enableWebPush } from './pwa.js';
 import { bindBackState } from './useBackStack.js';
 
@@ -127,6 +127,47 @@ const isStandalone = typeof window !== 'undefined'
 // Mostrar "Activar" mientras no esté concedido (y no sea iOS sin instalar, donde primero hay que instalar).
 const showNotifOptin = computed(() => !!user.value && notifPerm.value !== 'granted');
 function flashNotif(m) { notifMsg.value = m; if (notifTimer) clearTimeout(notifTimer); notifTimer = setTimeout(() => { notifMsg.value = ''; }, 7000); }
+
+// Push que llega con la app ABIERTA. Android no la dibuja en ese caso —se la
+// entrega a la app— así que el aviso lo damos acá: vibración (en push.js) más
+// este toast. Solo vibrar dejaría al usuario mirando la pantalla sin saber por
+// qué vibró.
+if (typeof window !== 'undefined') {
+  window.addEventListener('cepi:push-en-primer-plano', (e) => {
+    const { title, body } = e.detail || {};
+    flashNotif([title, body].filter(Boolean).join(' — '));
+  });
+}
+
+/**
+ * Tap en la notificación → abrir lo que la originó.
+ *
+ * La push trae el `entity_id` del recordatorio, que es GENÉRICO: puede ser un
+ * episodio, un paciente o cualquier otra entidad. Por eso hay que preguntar de
+ * qué tipo es antes de decidir a dónde ir, en vez de asumir. Si no se puede
+ * resolver, se abre la app y ya — mejor eso que navegar a una pantalla vacía.
+ */
+const DEF_EPISODIO = '12000000-0000-0000-0000-000000000000';
+const DEF_PACIENTE = '11000000-0000-0000-0000-000000000000';
+
+async function abrirEntidadDePush(entityId) {
+  if (!entityId) return;
+  try {
+    const rec = await obtenerEntidad(entityId);
+    const defId = rec?.entity_id;
+    if (defId === DEF_EPISODIO) {
+      router.push({ name: 'caso', params: { episodeId: entityId } });
+    } else if (defId === DEF_PACIENTE) {
+      // Misma ruta que usa la campana de notificaciones, para no tener dos formas
+      // distintas de "abrir un paciente desde una notificación".
+      onNotifOpen({ id: entityId });
+    }
+  } catch { /* sin red o sin permiso: la app ya quedó abierta, que es lo mínimo */ }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('cepi:open-entity', (e) => abrirEntidadDePush(e.detail?.entityId));
+}
 async function enableNotifs() {
   if (isIosDevice && !isStandalone) {
     flashNotif('En iPhone/iPad: toca Compartir → "Añadir a pantalla de inicio", abre la app desde el ícono y vuelve a tocar "Activar".');

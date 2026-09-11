@@ -58,6 +58,9 @@ self.addEventListener('push', (event) => {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     tag: data.reminder_id || data.entity_id || undefined,
+    // Mismo patrón que el push nativo con la app abierta, para que el aviso se
+    // sienta igual venga por donde venga. Android lo respeta; iOS lo ignora.
+    vibrate: [120, 60, 120],
     data: { url: '/', entity_id: data.entity_id || null },
   }));
 });
