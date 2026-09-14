@@ -92,7 +92,23 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
+        #if DEBUG
+        .task { await entrarConCredencialesDeDesarrollo() }
+        #endif
     }
+
+    #if DEBUG
+    /// Solo Debug: con `CEPI_DEV_EMAIL` y `CEPI_DEV_PASSWORD` en el entorno entra solo, por el
+    /// mismo camino que el botón. Permite probar en el simulador sin teclear, como los
+    /// browser-bots de la web. Para probar el cierre de sesión, lanzar sin esas variables.
+    private func entrarConCredencialesDeDesarrollo() async {
+        let entorno = ProcessInfo.processInfo.environment
+        guard let correo = entorno["CEPI_DEV_EMAIL"], let clave = entorno["CEPI_DEV_PASSWORD"] else { return }
+        email = correo
+        password = clave
+        await entrar()
+    }
+    #endif
 
     private func entrar() async {
         guard completo, !enviando else { return }

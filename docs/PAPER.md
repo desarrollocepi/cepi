@@ -1685,8 +1685,15 @@ cepi-ios/
 - **iOS 17** mínimo (`@Observable`). Swift 6 con concurrencia estricta: la red y el
   decodificado JSON corren fuera del hilo principal; la UI no espera al parser.
 - El JWT vive en **Keychain**, no en `UserDefaults`.
-- Backend: `https://telemedicina.cepi.ec`. En Debug se cambia sin recompilar con la
-  variable de entorno `CEPI_API_BASE` (ngrok, stack local).
+- Backend: `https://telemedicina.cepi.ec`. En Debug se cambia sin recompilar con
+  variables de entorno: `CEPI_API_BASE` (TodoERP) y `CEPI_BOT_BASE` (cepi-bot, que en
+  local corre aparte; en producción comparte host bajo `/api/bot`).
+  `CEPI_DEV_EMAIL`/`CEPI_DEV_PASSWORD`/`CEPI_DEV_PACIENTE` entran y abren un hilo sin
+  tocar la pantalla. Solo existen en Debug.
+- **Pruebas en dos niveles**: `CEPITelemedicinaTests` (contrato JSON con respuestas reales
+  capturadas del backend, y la lógica pura) y `CEPITelemedicinaUITests`, que recorre la
+  app contra el stack local con datos ficticios y se salta sin él. Nunca contra producción:
+  hay PII real.
 - **"Nunca ocultes un botón"** vale igual acá: `.disabled` más una explicación visible,
   no un `if`. Ejemplo: con una sola organización, el selector aparece gris y dice "única
   organización de tu cuenta".

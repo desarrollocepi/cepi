@@ -54,6 +54,45 @@ struct CEPIAPI: Sendable {
         let respuesta: Asignaciones = try await cliente.get("/api/patient-assignments")
         return respuesta.porPaciente
     }
+
+    // MARK: Hilo y chat
+
+    /// El hilo del paciente: los mensajes de todos los profesionales y del bot, en orden.
+    func hilo(paciente: String) async throws -> [MensajeHilo] {
+        let respuesta: HiloRespuesta = try await cliente.get("/api/patient-thread", query: [
+            URLQueryItem(name: "patient_id", value: paciente),
+        ])
+        return respuesta.mensajes
+    }
+
+    func sesionesBot(paciente: String) async throws -> [SesionBot] {
+        let respuesta: SesionesBot = try await cliente.get("/api/bot/sessions", query: [
+            URLQueryItem(name: "patient_id", value: paciente),
+        ])
+        return respuesta.sesiones
+    }
+
+    func chat(_ mensaje: String, sesion: String?) async throws -> RespuestaChat {
+        try await cliente.post("/api/bot/chat", json: TurnoChat(message: mensaje, sessionId: sesion))
+    }
+
+    func subirImagen(_ jpeg: Data, nombre: String) async throws -> Adjunto {
+        try await cliente.subir("/api/attachments", archivo: jpeg, nombre: nombre, mime: "image/jpeg")
+    }
+
+    func archivo(adjunto id: String) async throws -> Data {
+        try await cliente.datos("/api/attachments/\(id)/file")
+    }
+}
+
+private struct TurnoChat: Encodable, Sendable {
+    let message: String
+    let sessionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case sessionId = "session_id"
+    }
 }
 
 private struct AltaRegistro: Encodable, Sendable {

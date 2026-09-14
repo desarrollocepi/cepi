@@ -178,3 +178,143 @@ struct Asignacion: Decodable, Sendable, Hashable {
         case origen = "source"
     }
 }
+
+// MARK: - Hilo y chat
+
+/// Un mensaje del hilo del paciente (`GET /api/patient-thread`): los turnos de todos los
+/// profesionales y del asistente, en orden y con su autor.
+struct MensajeHilo: Decodable, Sendable, Hashable {
+    let rol: String
+    let contenido: String
+    let autorId: String?
+    let autorNombre: String?
+    /// Lo escribió quien está usando la app.
+    let propio: Bool
+    let esBot: Bool
+    let ts: String?
+    /// La consulta (episodio) del turno; la sella el bot.
+    let episodio: String?
+
+    enum CodingKeys: String, CodingKey {
+        case rol = "role"
+        case contenido = "content"
+        case autorId = "author_id"
+        case autorNombre = "author_name"
+        case propio = "self"
+        case esBot = "is_bot"
+        case ts
+        case episodio = "episode_id"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let contenedor = try decoder.container(keyedBy: CodingKeys.self)
+        rol = try contenedor.decodeIfPresent(String.self, forKey: .rol) ?? "assistant"
+        contenido = try contenedor.decodeIfPresent(String.self, forKey: .contenido) ?? ""
+        autorId = try contenedor.decodeIfPresent(String.self, forKey: .autorId)
+        autorNombre = try contenedor.decodeIfPresent(String.self, forKey: .autorNombre)
+        propio = try contenedor.decodeIfPresent(Bool.self, forKey: .propio) ?? false
+        esBot = try contenedor.decodeIfPresent(Bool.self, forKey: .esBot) ?? false
+        ts = try contenedor.decodeIfPresent(String.self, forKey: .ts)
+        episodio = try contenedor.decodeIfPresent(String.self, forKey: .episodio)
+    }
+
+    /// Eco de lo que se acaba de enviar, visible mientras el bot responde; la relectura del
+    /// hilo lo reemplaza por el turno real. Va en la consulta activa para no desaparecer de la
+    /// página que se está mirando.
+    init(eco contenido: String, episodio: String?) {
+        rol = "user"
+        self.contenido = contenido
+        autorId = nil
+        autorNombre = nil
+        propio = true
+        esBot = false
+        ts = nil
+        self.episodio = episodio
+    }
+
+    var fecha: Date? { Fechas.iso(ts) }
+}
+
+struct HiloRespuesta: Decodable, Sendable {
+    let mensajes: [MensajeHilo]
+
+    enum CodingKeys: String, CodingKey {
+        case mensajes = "messages"
+    }
+}
+
+/// Botón que propone el bot: al tocarlo se envía `send` como mensaje.
+struct RespuestaRapida: Decodable, Sendable, Hashable {
+    let label: String
+    let send: String
+}
+
+/// Escritura inferida que espera el sí/no del usuario (PAPER §13.3.1).
+struct AccionPendiente: Decodable, Sendable, Hashable {
+    let summary: String
+}
+
+/// `POST /api/bot/chat`. Que una clave no venga no es lo mismo que venga en `null`:
+/// `IntakeChat.vue` solo cambia el pendiente o la consulta activa cuando la clave está.
+struct RespuestaChat: Decodable, Sendable {
+    let sessionId: String?
+    let texto: String?
+    let respuestasRapidas: [RespuestaRapida]
+    let traePendiente: Bool
+    let pendiente: AccionPendiente?
+    let traeEpisodioActivo: Bool
+    let episodioActivo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case texto = "text"
+        case respuestasRapidas = "quick_replies"
+        case pendiente = "pending_action"
+        case episodioActivo = "active_episode_id"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let contenedor = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try contenedor.decodeIfPresent(String.self, forKey: .sessionId)
+        texto = try contenedor.decodeIfPresent(String.self, forKey: .texto)
+        respuestasRapidas = try contenedor.decodeIfPresent([RespuestaRapida].self, forKey: .respuestasRapidas) ?? []
+        traePendiente = contenedor.contains(.pendiente)
+        pendiente = try contenedor.decodeIfPresent(AccionPendiente.self, forKey: .pendiente)
+        traeEpisodioActivo = contenedor.contains(.episodioActivo)
+        episodioActivo = try contenedor.decodeIfPresent(String.self, forKey: .episodioActivo)
+    }
+}
+
+/// `GET /api/bot/sessions`: las sesiones propias con el bot.
+struct SesionesBot: Decodable, Sendable {
+    let sesiones: [SesionBot]
+
+    enum CodingKeys: String, CodingKey {
+        case sesiones = "sessions"
+    }
+}
+
+struct SesionBot: Decodable, Sendable, Hashable {
+    let id: String
+    let pacienteActivo: String?
+    let estado: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, estado
+        case pacienteActivo = "active_patient_id"
+    }
+}
+
+/// La fila de `attachments` que devuelve `POST /api/attachments` al subir un archivo.
+struct Adjunto: Decodable, Sendable, Hashable {
+    let id: String
+    let nombreOriginal: String?
+    let filename: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, filename
+        case nombreOriginal = "original_name"
+    }
+
+    var nombre: String { nombreOriginal ?? filename ?? "imagen" }
+}

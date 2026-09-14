@@ -39,6 +39,17 @@
                ReferencedContainer = "container:CEPITelemedicina.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C0E1A0000000000000000032"
+               BuildableName = "CEPITelemedicinaUITests.xctest"
+               BlueprintName = "CEPITelemedicinaUITests"
+               ReferencedContainer = "container:CEPITelemedicina.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

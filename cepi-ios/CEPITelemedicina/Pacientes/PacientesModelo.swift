@@ -93,7 +93,7 @@ final class PacientesModelo {
     nonisolated static func ordenar(
         _ filas: [FilaPaciente], revision: [String: PendienteRevision]
     ) -> [FilaPaciente] {
-        let vence = revision.mapValues { fecha($0.vence) ?? .distantFuture }
+        let vence = revision.mapValues { Fechas.iso($0.vence) ?? .distantFuture }
         return filas.enumerated().sorted { a, b in
             switch (vence[a.element.id], vence[b.element.id]) {
             case (.some, .none):
@@ -106,11 +106,5 @@ final class PacientesModelo {
                 return a.offset < b.offset
             }
         }.map(\.element)
-    }
-
-    nonisolated static func fecha(_ iso: String?) -> Date? {
-        guard let iso else { return nil }
-        return (try? Date(iso, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-            ?? (try? Date(iso, strategy: Date.ISO8601FormatStyle()))
     }
 }

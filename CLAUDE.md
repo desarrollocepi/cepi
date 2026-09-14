@@ -91,7 +91,18 @@ bash scripts/backup-db.sh
 # App iOS: compilar + tests en simulador (en Debug, CEPI_API_BASE cambia el backend)
 xcodebuild test -project cepi-ios/CEPITelemedicina.xcodeproj -scheme CEPITelemedicina \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
+
+# App iOS contra el stack local con datos ficticios (TodoERP :3001 + cepi-bot :3002).
+# Entra sola y abre un hilo; el UI test de CEPITelemedicinaUITests usa el mismo stack.
+SIMCTL_CHILD_CEPI_API_BASE=http://127.0.0.1:3001 SIMCTL_CHILD_CEPI_BOT_BASE=http://127.0.0.1:3002 \
+SIMCTL_CHILD_CEPI_DEV_EMAIL=primario@cepi.local SIMCTL_CHILD_CEPI_DEV_PASSWORD='Admin123!' \
+SIMCTL_CHILD_CEPI_DEV_PACIENTE=<uuid> xcrun simctl launch booted ec.cepi.telemedicina
 ```
+
+⚠️ **cepi-bot local nunca con su `.env` tal cual.** Si `TELEGRAM_PUBLIC_URL` tiene valor,
+al arrancar llama a `setWebhook` con el token del bot real y le roba el webhook a
+producción (`telegram.ts`). Arrancarlo con `TELEGRAM_BOT_TOKEN= TELEGRAM_PUBLIC_URL=
+CEPI_LLM_PROVIDER=stub DEEPSEEK_API_KEY=` para que nada salga de la máquina.
 
 ## Bots de testing (browser-bot multi-perfil)
 

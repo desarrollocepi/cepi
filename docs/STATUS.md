@@ -4,7 +4,7 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
-## Sesión 2026-09-14 — App nativa iOS (SwiftUI), fases 0–1
+## Sesión 2026-09-14 — App nativa iOS (SwiftUI), fases 0–2
 
 El repo pasó a una Mac (MacBook Pro 2020 **Intel**, macOS 26.6, Xcode 26.5) para
 construir la app iOS. Decisiones del dueño: destino **iPhone/iPad** (no Mac de
@@ -22,20 +22,53 @@ escritorio); **Android sigue en Capacitor**; v1 = Telemedicina + Push y bandeja.
   - Lista de pacientes: pide pacientes, review-queue y asignaciones en paralelo; pone
     "revisar" primero, ordenado por vencimiento; búsqueda sin tildes con la clave
     precalculada por carga; alta de paciente; recarga cada 20 s en primer plano.
-  - Hilo del paciente: marcador de lugar hasta la fase 2.
+  - Hilo del paciente (fase 2): consultas paginadas como en `IntakeChat.vue`
+    ("Consulta 2/2 · 14 sept", solo lectura en las anteriores), mensajes de todos con el
+    autor una vez por racha, aviso de activación una sola vez, confirmación sí/no,
+    respuestas rápidas y nueva consulta. Fotos de galería y cámara → JPEG sin metadatos
+    (sin GPS), lado mayor ≤ 4096 px → `/api/attachments`. Imágenes inline pedidas con
+    Bearer, reducidas y en caché, con visor de zoom. Secciones, ficha y derivar se ven
+    grises hasta la fase 3; dictado, hasta la fase 4.
+  - En Debug: `CEPI_BOT_BASE` (cepi-bot en otro host) y `CEPI_DEV_EMAIL`/`PASSWORD`/`PACIENTE`
+    para entrar y abrir un hilo sin tocar la pantalla.
 - `CLAUDE.md` y `cepi-frontend/NATIVE.md` apuntan a `cepi-ios/` para iOS.
 
-Tests: `cepi-ios` **9 passed** (Swift Testing: contrato JSON, orden y búsqueda de la
-lista), 0 warnings. Primer build + tests en simulador: ~13 min en esta Mac (incluye
-arrancar el simulador).
+Tests: `cepi-ios` **24 passed**, 0 warnings con la concurrencia estricta de Swift 6.
+- 23 de unidad (Swift Testing): contrato JSON con respuestas reales del stack local
+  (sesión, lista, chat, hilo, sesiones, adjuntos), orden y búsqueda de la lista, consultas
+  del hilo, marcadores de imagen y preparación de fotos.
+- 1 de UI (`HiloFlujoUITests`), de punta a punta contra el stack local: entra como
+  `primario@cepi.local`, escribe y envía un turno, espera la respuesta del bot y comprueba
+  en `/api/patient-thread` que quedó en el hilo que lee la web. Pasó en 54 s.
 
-**Sin verificar:** el login contra el backend real, porque esta máquina no tiene
-credenciales. La fase 1 se da por cerrada cuando entre un usuario demo. Google queda
+Primer build + tests: ~13 min en esta Mac; los incrementales, 1–4 min.
+
+**Verificado contra backend local** (no producción, que tiene PII real):
+- Fase 1: `primario` entra por el login real y ve los 50 pacientes ficticios. Una
+  derivación real (`derma2` → `escalar a primario`, por cepi-bot) sube al paciente arriba
+  con "revisar" y "a cargo" en la siguiente recarga automática.
+- Fase 2: el turno enviado desde la app aparece en el hilo del backend (UI test).
+
+**Pendiente:** en el hilo, el último mensaje queda parcialmente tapado por el composer.
+Reservar el tamaño de las imágenes no lo resolvió; está en diagnóstico. Google sigue
 deshabilitado, con la explicación visible, hasta la fase 4.
 
+**Stack local en esta Mac** (sin sudo; Homebrew pertenece al usuario `crifa`):
+- Postgres 18: base propia en `~/.cepi-dev/pg18`, con los binarios de
+  `/Library/PostgreSQL/18` (el servicio de EDB está apagado y es de otro usuario).
+  pgvector 0.8.6 compilado en `~/.cepi-dev/pgvector` y cargado con
+  `extension_control_path`. Arranque:
+  `/Library/PostgreSQL/18/bin/pg_ctl -D ~/.cepi-dev/pg18 -l ~/.cepi-dev/pg18.log -o "-p 5432 -k /tmp" -w start`.
+- Datos: `PATH=/Library/PostgreSQL/18/bin:$PATH bash scripts/reset-cepi.sh`; después
+  arrancar el backend (crea las tablas por tipo) y correr
+  `TodoERP/database/medical-seed/seeder/run.sh`.
+- TodoERP (:3001) y cepi-bot (:3002) con Node 24 (`/usr/local/opt/node/bin`) y las
+  variables de `ecosystem.config.cjs`. cepi-bot con Telegram y DeepSeek vacíos y
+  `CEPI_LLM_PROVIDER=stub` (ver el aviso en `CLAUDE.md`).
+
 **Entorno de esta Mac** (no afecta a `cepi-ios/`): `node` apunta al nvm de otro usuario
-(`/Users/crifa/.nvm/…/v16.0.0`), demasiado viejo para Vite 5 / Capacitor 8; Homebrew
-tiene Node 24.1 instalado sin enlazar. `cepi-frontend/node_modules` vino de Linux (solo
+(`/Users/crifa/.nvm/…/v16.0.0`), demasiado viejo para Vite 5 / Capacitor 8; Node 24.1
+está en `/usr/local/opt/node/bin`. `cepi-frontend/node_modules` vino de Linux (solo
 binarios `rollup-linux-*`) y `package.json` declara `@rollup/rollup-linux-x64-gnu` como
 dependencia, así que build e install del frontend en Mac probablemente fallen (no
 probado). No hay sesión de `gh` ni llave SSH para pushear.

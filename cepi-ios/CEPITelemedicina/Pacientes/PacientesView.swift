@@ -15,7 +15,9 @@ struct PacientesView: View {
             lista
         } detail: {
             if let id = seleccion, let fila = modelo.fila(id) {
-                HiloPendienteView(fila: fila)
+                // `.id`: otro paciente es otro hilo, con su estado desde cero.
+                HiloView(fila: fila)
+                    .id(fila.id)
             } else {
                 ContentUnavailableView(
                     "Elige un paciente",
@@ -40,6 +42,13 @@ struct PacientesView: View {
                 await modelo.cargar(api: sesion.api)
             }
         }
+        #if DEBUG
+        // Solo Debug: `CEPI_DEV_PACIENTE=<id>` abre ese hilo al entrar, para probar en el
+        // simulador sin tocar la pantalla (como el ingreso automático del login).
+        .onAppear {
+            if seleccion == nil { seleccion = ProcessInfo.processInfo.environment["CEPI_DEV_PACIENTE"] }
+        }
+        #endif
     }
 
     private var lista: some View {

@@ -25,9 +25,9 @@ final class Sesion {
     @ObservationIgnored private var ultimaRenovacion: Date = .distantPast
     @ObservationIgnored private var escucha: Task<Void, Never>?
 
-    init(credenciales: Credenciales = .compartidas, base: URL = Config.apiBase) {
+    init(credenciales: Credenciales = .compartidas, base: URL = Config.apiBase, baseBot: URL = Config.botBase) {
         self.credenciales = credenciales
-        api = CEPIAPI(cliente: APIClient(base: base, credenciales: credenciales))
+        api = CEPIAPI(cliente: APIClient(base: base, baseBot: baseBot, credenciales: credenciales))
         escucha = Task { [weak self, credenciales] in
             for await _ in credenciales.expiraciones {
                 self?.cerrarLocal()

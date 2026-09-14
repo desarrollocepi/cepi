@@ -1,7 +1,8 @@
 import Foundation
 
-/// Error de una llamada al backend. `status == 0` es falta de red: la UI distingue "no hay
-/// conexión" de "el servidor dijo que no" sin parsear mensajes.
+/// Error de una llamada al backend. `status == 0` es falta de red y `-1` una respuesta que no
+/// se pudo leer: la UI distingue "no hay conexión" de "el servidor dijo que no" sin parsear
+/// mensajes.
 struct APIError: LocalizedError, Sendable {
     let status: Int
     let mensaje: String
@@ -10,18 +11,21 @@ struct APIError: LocalizedError, Sendable {
     var sinRed: Bool { status == 0 }
 }
 
-/// Cliente JSON del backend. Espejo de `call()` en `cepi-frontend/src/api.js`: Bearer si
-/// hay sesión, `{ok, error}` en los fallos.
+/// Cliente del backend. Espejo de `call()` en `cepi-frontend/src/api.js`: Bearer si hay
+/// sesión, `{ok, error}` en los fallos.
 ///
 /// No está atado al hilo principal: la espera de red y el decodificado JSON corren fuera
 /// de él, y la UI recibe el resultado ya armado.
 final class APIClient: Sendable {
     let base: URL
+    /// A dónde van las rutas `/api/bot/*` (cepi-bot). En producción es el mismo host.
+    let baseBot: URL
     private let http: URLSession
     private let credenciales: Credenciales
 
-    init(base: URL, credenciales: Credenciales) {
+    init(base: URL, baseBot: URL? = nil, credenciales: Credenciales) {
         self.base = base
+        self.baseBot = baseBot ?? base
         self.credenciales = credenciales
         let configuracion = URLSessionConfiguration.default
         // Un turno del bot espera al LLM: el minuto por defecto se queda corto.
@@ -33,23 +37,53 @@ final class APIClient: Sendable {
     func get<Respuesta: Decodable & Sendable>(
         _ ruta: String, query: [URLQueryItem] = []
     ) async throws -> Respuesta {
-        try await enviar("GET", ruta, query: query, cuerpo: nil)
+        try decodificar(try await ejecutar("GET", ruta, query: query))
     }
 
     func post<Respuesta: Decodable & Sendable>(
         _ ruta: String, json: some Encodable & Sendable
     ) async throws -> Respuesta {
-        try await enviar("POST", ruta, query: [], cuerpo: try JSONEncoder().encode(json))
+        let cuerpo = try JSONEncoder().encode(json)
+        return try decodificar(try await ejecutar("POST", ruta, cuerpo: cuerpo, tipo: "application/json"))
     }
 
-    private func enviar<Respuesta: Decodable & Sendable>(
-        _ metodo: String, _ ruta: String, query: [URLQueryItem], cuerpo: Data?
+    /// Un binario autenticado (`/api/attachments/:id/file`). Las imágenes clínicas no se
+    /// pueden pedir con `AsyncImage`: no manda el header `Authorization`.
+    func datos(_ ruta: String) async throws -> Data {
+        try await ejecutar("GET", ruta)
+    }
+
+    /// Sube un archivo como `multipart/form-data` en el campo `file`, igual que
+    /// `uploadAttachment` en la web.
+    func subir<Respuesta: Decodable & Sendable>(
+        _ ruta: String, archivo: Data, nombre: String, mime: String
     ) async throws -> Respuesta {
-        var pedido = URLRequest(url: Self.url(base: base, ruta: ruta, query: query))
+        let limite = "cepi-\(UUID().uuidString)"
+        let nombreSeguro = nombre.replacingOccurrences(of: "\"", with: "'")
+        var cuerpo = Data()
+        cuerpo.append(Data("--\(limite)\r\n".utf8))
+        cuerpo.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(nombreSeguro)\"\r\n".utf8))
+        cuerpo.append(Data("Content-Type: \(mime)\r\n\r\n".utf8))
+        cuerpo.append(archivo)
+        cuerpo.append(Data("\r\n--\(limite)--\r\n".utf8))
+        return try decodificar(try await ejecutar(
+            "POST", ruta, cuerpo: cuerpo, tipo: "multipart/form-data; boundary=\(limite)"
+        ))
+    }
+
+    /// La URL final de una ruta: las de cepi-bot van a su host.
+    func url(para ruta: String, query: [URLQueryItem] = []) -> URL {
+        Self.url(base: ruta.hasPrefix("/api/bot") ? baseBot : base, ruta: ruta, query: query)
+    }
+
+    private func ejecutar(
+        _ metodo: String, _ ruta: String, query: [URLQueryItem] = [], cuerpo: Data? = nil, tipo: String? = nil
+    ) async throws -> Data {
+        var pedido = URLRequest(url: url(para: ruta, query: query))
         pedido.httpMethod = metodo
         if let cuerpo {
             pedido.httpBody = cuerpo
-            pedido.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            pedido.setValue(tipo, forHTTPHeaderField: "Content-Type")
         }
         let token = await credenciales.token()
         if let token {
@@ -74,10 +108,14 @@ final class APIClient: Sendable {
             let mensaje = (try? JSONDecoder().decode(CuerpoError.self, from: datos))?.error
             throw APIError(status: status, mensaje: mensaje ?? "Error del servidor (HTTP \(status)).")
         }
+        return datos
+    }
+
+    private func decodificar<Respuesta: Decodable>(_ datos: Data) throws -> Respuesta {
         do {
             return try JSONDecoder().decode(Respuesta.self, from: datos)
         } catch {
-            throw APIError(status: status, mensaje: "Respuesta inesperada del servidor.")
+            throw APIError(status: -1, mensaje: "Respuesta inesperada del servidor.")
         }
     }
 
