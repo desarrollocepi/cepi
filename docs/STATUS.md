@@ -39,7 +39,8 @@ Tests: `cepi-ios` **24 passed**, 0 warnings con la concurrencia estricta de Swif
   del hilo, marcadores de imagen y preparación de fotos.
 - 1 de UI (`HiloFlujoUITests`), de punta a punta contra el stack local: entra como
   `primario@cepi.local`, escribe y envía un turno, espera la respuesta del bot y comprueba
-  en `/api/patient-thread` que quedó en el hilo que lee la web. Pasó en 54 s.
+  en `/api/patient-thread` que quedó en el hilo que lee la web. También mide que el último
+  mensaje quede por encima del composer, al abrir y tras la respuesta. Pasó en 47 s.
 
 Primer build + tests: ~13 min en esta Mac; los incrementales, 1–4 min.
 
@@ -49,9 +50,12 @@ Primer build + tests: ~13 min en esta Mac; los incrementales, 1–4 min.
   con "revisar" y "a cargo" en la siguiente recarga automática.
 - Fase 2: el turno enviado desde la app aparece en el hilo del backend (UI test).
 
-**Pendiente:** en el hilo, el último mensaje queda parcialmente tapado por el composer.
-Reservar el tamaño de las imágenes no lo resolvió; está en diagnóstico. Google sigue
-deshabilitado, con la explicación visible, hasta la fase 4.
+**Corregido en la sesión:** al abrir el hilo, el último mensaje quedaba fuera de la
+pantalla, debajo del composer. Un UI test de diagnóstico midió la causa: `LazyVStack`
+estima las alturas de lo que no midió, y "ir al final" quedaba corto. El hilo pasó a
+`VStack` (una página es una sola consulta), y el UI test lo comprueba desde entonces.
+
+**Pendiente:** Google sigue deshabilitado, con la explicación visible, hasta la fase 4.
 
 **Stack local en esta Mac** (sin sudo; Homebrew pertenece al usuario `crifa`):
 - Postgres 18: base propia en `~/.cepi-dev/pg18`, con los binarios de

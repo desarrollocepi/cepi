@@ -30,6 +30,14 @@ final class HiloFlujoUITests: XCTestCase {
 
         let caja = app.descendants(matching: .any)["composer.texto"]
         XCTAssertTrue(caja.waitForExistence(timeout: 90), "No se abrió el hilo del paciente")
+
+        // Al abrir, el hilo tiene que quedar en el último mensaje (el aviso de activación), no
+        // debajo del composer: con LazyVStack quedaba fuera de la pantalla.
+        let aviso = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Paciente activo:")).firstMatch
+        XCTAssertTrue(aviso.waitForExistence(timeout: 60), "No llegó el aviso de activación")
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertLessThanOrEqual(aviso.frame.maxY, caja.frame.minY, "El último mensaje quedó tapado por el composer")
+
         caja.tap()
         caja.typeText(texto)
 
@@ -40,6 +48,8 @@ final class HiloFlujoUITests: XCTestCase {
         // Con el LLM en modo stub, cepi-bot contesta con un eco: si aparece, el turno pasó por el bot.
         let eco = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Eco: \"\(texto)\"")).firstMatch
         XCTAssertTrue(eco.waitForExistence(timeout: 90), "No llegó la respuesta del bot")
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertLessThanOrEqual(eco.frame.maxY, caja.frame.minY, "La respuesta del bot quedó tapada por el composer")
 
         // Y quedó en el hilo del backend, que es lo que muestra la web.
         let propios = try await mensajesPropiosEnElBackend()

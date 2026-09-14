@@ -123,7 +123,11 @@ struct HiloView: View {
     private func feed(_ visibles: [MensajeHilo]) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                // VStack y no LazyVStack: el lazy estima las alturas de lo que todavía no midió,
+                // y "ir al final" quedaba corto, con el último mensaje fuera de la pantalla
+                // (medido con un UI test). Una página es una sola consulta: pocos mensajes, y las
+                // imágenes tienen tamaño fijo.
+                VStack(alignment: .leading, spacing: 10) {
                     if visibles.isEmpty && !modelo.ocupado {
                         Text("Escribe o pega un texto con los datos del paciente y la IA los carga en la ficha. También puedes conversar normalmente; antes de guardar se pide confirmación.")
                             .font(.callout)
