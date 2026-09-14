@@ -4,6 +4,44 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-14 — App nativa iOS (SwiftUI), fases 0–1
+
+El repo pasó a una Mac (MacBook Pro 2020 **Intel**, macOS 26.6, Xcode 26.5) para
+construir la app iOS. Decisiones del dueño: destino **iPhone/iPad** (no Mac de
+escritorio); **Android sigue en Capacitor**; v1 = Telemedicina + Push y bandeja.
+
+- **PAPER §24 (D-Aux-19)**: SwiftUI nativo en lugar de React Native o Capacitor iOS.
+  Incluye el contrato con el backend (sin cambios), objetivos de rendimiento medibles,
+  cuentas por fase y un bloqueante de revisión de Apple: borrar la cuenta desde la app,
+  guía 5.1.1(v), porque el login con Google crea cuentas.
+- **`cepi-ios/`**: proyecto Xcode con carpetas sincronizadas (agregar un `.swift` no toca
+  el `pbxproj`), iOS 17+, Swift 6 estricto, sin dependencias de terceros.
+  - Sesión: login con email, JWT en Keychain, sesión deslizante con `/me` al abrir y al
+    volver a primer plano (si pasaron más de 30 min). Un 401 lleva al login; un 403 no.
+    Cambio de organización activa.
+  - Lista de pacientes: pide pacientes, review-queue y asignaciones en paralelo; pone
+    "revisar" primero, ordenado por vencimiento; búsqueda sin tildes con la clave
+    precalculada por carga; alta de paciente; recarga cada 20 s en primer plano.
+  - Hilo del paciente: marcador de lugar hasta la fase 2.
+- `CLAUDE.md` y `cepi-frontend/NATIVE.md` apuntan a `cepi-ios/` para iOS.
+
+Tests: `cepi-ios` **9 passed** (Swift Testing: contrato JSON, orden y búsqueda de la
+lista), 0 warnings. Primer build + tests en simulador: ~13 min en esta Mac (incluye
+arrancar el simulador).
+
+**Sin verificar:** el login contra el backend real, porque esta máquina no tiene
+credenciales. La fase 1 se da por cerrada cuando entre un usuario demo. Google queda
+deshabilitado, con la explicación visible, hasta la fase 4.
+
+**Entorno de esta Mac** (no afecta a `cepi-ios/`): `node` apunta al nvm de otro usuario
+(`/Users/crifa/.nvm/…/v16.0.0`), demasiado viejo para Vite 5 / Capacitor 8; Homebrew
+tiene Node 24.1 instalado sin enlazar. `cepi-frontend/node_modules` vino de Linux (solo
+binarios `rollup-linux-*`) y `package.json` declara `@rollup/rollup-linux-x64-gnu` como
+dependencia, así que build e install del frontend en Mac probablemente fallen (no
+probado). No hay sesión de `gh` ni llave SSH para pushear.
+
+---
+
 ## Sesión 2026-06-09 — Telemedicina (primario → turno → especialistas)
 
 Capa de teleconsulta sobre lo ya construido. Plan completo en

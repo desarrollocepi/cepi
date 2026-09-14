@@ -1618,6 +1618,184 @@ Lo que sí queda en bandeja, sin tocar la ficha:
 - documento que no parsea (falta `CI:` o falta `Fecha de toma de muestra:`).
 
 
+## 24. App nativa iOS (`cepi-ios/`)
+
+La telemedicina se usa con el paciente delante: el médico dicta, fotografía la lesión y
+llena la ficha desde el teléfono. En Android eso corre hoy como WebView (Capacitor,
+`cepi-frontend/NATIVE.md`); en iOS nunca se empaquetó. Para iPhone y iPad se construye
+una app **nativa en SwiftUI** contra el mismo backend. Android sigue en Capacitor.
+
+### 24.1 Por qué SwiftUI (D-Aux-19)
+
+| opción | código que comparte | cómo se siente en iOS | costo |
+|---|---|---|---|
+| Capacitor iOS | todo el Vue | WKWebView: scroll, teclado y transiciones de página web; arranca cargando el bundle | días |
+| React Native | **nada** — Android sigue en Vue | casi nativo, con un runtime JS de por medio | reescritura + un tercer stack |
+| **SwiftUI** | nada | nativo: sin runtime intermedio, APIs del sistema directas | reescritura del alcance v1 |
+
+La ventaja de React Native es escribir iOS y Android una sola vez. Con Android fuera del
+alcance esa ventaja no existe, y queda una reescritura que igual paga un runtime JS.
+Capacitor iOS es lo más barato, pero conserva justo el WebView del que se quiere salir.
+
+SwiftUI además cambia plugins por APIs del sistema: dictado con `Speech` en el
+dispositivo (un método del plugin de dictado tumba la app en Android y hubo que
+esquivarlo, ver `native/speech.js`), cámara y fotos con `PhotosUI`, JWT en Keychain.
+Y no depende de CocoaPods ni de un bundler JS para compilar en la Mac de build.
+
+**Lo que la app nativa no arregla:** la espera del turno del bot es latencia del LLM, no
+del WebView. Lo que sí mejora es lo que el médico toca: lista, hilo, teclado, fotos,
+arranque y memoria. §24.5 lo convierte en números.
+
+### 24.2 Alcance v1
+
+| entra | queda en web / Android por ahora |
+|---|---|
+| Login con email y con Google; sesión deslizante; cambio de org activa | registro y verificación de email |
+| Lista de pacientes: búsqueda, alta, "revisar" primero, a cargo | portal de casos (§22) |
+| Hilo del paciente por consulta, composer, respuestas rápidas, pendiente sí/no | admin, perfil |
+| Fotos (cámara y galería) e imágenes inline con zoom | DoctoPro |
+| Ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar | |
+| Dictado en español en el dispositivo, manos libres | |
+| Push (FCM→APNs), bandeja de notificaciones, abrir el paciente desde la push | |
+
+El visor editable de la ficha (`public/ficha.html`) entra **como documento dentro de un
+WKWebView**: es una hoja imprimible con su propia API (`fillFicha`/`readFicha`), no una
+pantalla de uso continuo, y reescribirla no mejora nada que se note.
+
+### 24.3 Arquitectura
+
+```
+cepi-ios/
+├── CEPITelemedicina.xcodeproj   carpetas sincronizadas: un .swift nuevo no toca el proyecto
+├── CEPITelemedicina/
+│   ├── App/             entrada, sesión, pantalla raíz, login
+│   ├── API/             cliente HTTP, modelos del contrato, Keychain
+│   ├── Pacientes/       lista y alta
+│   ├── Chat/            hilo, composer, dictado, adjuntos        (fase 2)
+│   ├── Ficha/           formularios nativos y visor ficha.html   (fase 3)
+│   ├── Notificaciones/  bandeja y push                           (fase 5)
+│   └── Recursos/        Assets (ícono, logo)
+└── CEPITelemedicinaTests/   contrato JSON y lógica pura (Swift Testing)
+```
+
+- **Sin dependencias de terceros**, salvo dos SDK de Google por Swift Package Manager
+  cuando lleguen sus fases: `FirebaseMessaging` (el backend ya envía por FCM,
+  `channels/nativePush.ts`) y `GoogleSignIn`. Cada dependencia es un plugin más que puede
+  romperse como el de dictado.
+- **iOS 17** mínimo (`@Observable`). Swift 6 con concurrencia estricta: la red y el
+  decodificado JSON corren fuera del hilo principal; la UI no espera al parser.
+- El JWT vive en **Keychain**, no en `UserDefaults`.
+- Backend: `https://telemedicina.cepi.ec`. En Debug se cambia sin recompilar con la
+  variable de entorno `CEPI_API_BASE` (ngrok, stack local).
+- **"Nunca ocultes un botón"** vale igual acá: `.disabled` más una explicación visible,
+  no un `if`. Ejemplo: con una sola organización, el selector aparece gris y dice "única
+  organización de tu cuenta".
+- Los formularios de la ficha **vienen del servidor** (`form` en la respuesta del chat,
+  `FICHA_GROUP_SPEC` en `flowV1.ts`). La app conoce los 10 tipos de campo de `BotForm.vue`
+  (`text`, `textarea`, `date`, `checkbox`, `radio`, `heading`, `entity_search`,
+  `icd_search`, `body_map`, `image_upload`). Un campo nuevo de un tipo conocido no pide
+  versión nueva de la app; un **tipo** nuevo sí, y mientras tanto se pinta como texto,
+  igual que hace la web.
+
+### 24.4 Contrato con el backend — sin cambios
+
+Todo lo que consume la app ya existe y lo usa la web:
+
+| función | endpoint | servicio |
+|---|---|---|
+| login | `POST /api/auth/login` → `{token, user}` | TodoERP |
+| Google | `POST /api/auth/google {credential}` | TodoERP |
+| sesión deslizante | `GET /api/auth/me` → `{token, user}` (JWT de 8 h, se reemite) | TodoERP |
+| org activa | `POST /api/orgs/switch {org_id}` → `{token}` | TodoERP |
+| pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
+| "revisar" y a cargo | `GET /api/review-queue`, `GET /api/patient-assignments` | TodoERP |
+| hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
+| turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
+| sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |
+| destinos de derivación | `GET /api/groups`, `GET /api/groups/:slug/members` | TodoERP |
+| adjuntos | `POST /api/attachments` (multipart), `GET /api/attachments/:id/file` | TodoERP |
+| CIE-10 | `GET /api/icd10/search?q=` | TodoERP |
+| notificaciones | `GET /api/reminders`, `POST /api/reminders/:id/complete`, `GET /api/review-queue/patient/:entityId` | TodoERP |
+| push | `POST/DELETE /api/push/device-token {platform:'ios', token}` | TodoERP |
+
+Un token vencido o inválido responde **401** (`authMiddleware.ts`); un permiso que falta,
+**403**. La app cierra sesión solo ante un 401 de una llamada que llevaba token: un 403
+dice "no podés hacer esto", no "no sos vos".
+
+Tras cada turno la app **relee el hilo** en vez de pintar el `text` de la respuesta, igual
+que `IntakeChat.vue`: así el iPhone y la web muestran exactamente el mismo hilo.
+
+**Por verificar con un token real, no por suposición:** `verifyGoogleIdToken` acepta un
+único `aud` (`GOOGLE_CLIENT_ID`, el cliente web). En iOS se configura `GoogleSignIn` con
+ese cliente web como `serverClientID`. Si aun así el token llega con el cliente iOS como
+`aud`, el cambio mínimo es que el backend acepte una lista de client IDs.
+
+### 24.5 Rendimiento: qué se mide
+
+"Mejor rendimiento" sin números es una opinión. Estos objetivos se miden con Instruments
+en un **iPhone real**, no en el simulador de la Mac Intel, y se recalibran con la primera
+medición:
+
+| métrica | objetivo inicial |
+|---|---|
+| arranque en frío con sesión → lista visible | < 1 s (los datos llegan después, sin bloquear) |
+| scroll de la lista (500 pacientes) y de un hilo largo | sin *hitches* perceptibles (< 5 ms/s) |
+| enviar mensaje → eco en pantalla | inmediato (optimista) |
+| hilo con 50 imágenes | < 150 MB de memoria |
+
+Decisiones que salen de acá: la lista pide pacientes, "revisar" y a cargo **en paralelo**
+(la web lo hace en serie); el texto de búsqueda se normaliza una vez por carga, no por
+tecla; las imágenes autenticadas pasan por un cargador propio con caché (`AsyncImage` no
+manda el header `Authorization`).
+
+### 24.6 Push
+
+- `FirebaseMessaging` obtiene el token FCM y lo registra con `platform: 'ios'`. APNs va
+  por la llave `.p8` subida a Firebase (ya documentado en `NATIVE.md`).
+- Tocar la notificación: `data.entity_id` → `GET /api/review-queue/patient/:entityId` →
+  abre el hilo del paciente. Sin portal de casos en v1, el destino es siempre el paciente.
+- Con la app abierta: banner y vibración, **sin sonido** — el mismo criterio que Android
+  (`native/push.js`), porque se usa en consulta.
+- Al cerrar sesión se borra el token (`DELETE /api/push/device-token`), para que las
+  derivaciones no le lleguen al teléfono de otro.
+
+### 24.7 Distribución y revisión de Apple
+
+- Bundle id **`ec.cepi.telemedicina`**, el mismo de `capacitor.config.ts` y de Firebase.
+  El proyecto iOS de Capacitor nunca se generó, así que no hay nada que migrar.
+- TestFlight → App Store. **No hay OTA**: la app nativa se actualiza por la tienda. Lo que
+  cambia seguido (los formularios de la ficha) ya viene del servidor (§24.3).
+- App de salud: Apple revisa con más rigor (guías 1.4.1 y 5.1.1). **Bloqueante conocido:**
+  el login con Google *crea* cuentas (find-or-create en `loginWithGoogle`), y Apple exige
+  que una app que crea cuentas permita **borrarlas desde la app** (5.1.1(v)). Hoy no hay
+  endpoint para eso; hace falta antes de enviar a revisión.
+- La Mac de build es Intel. macOS 26 es la última versión con soporte Intel: sirve para
+  compilar y subir mientras el Xcode que exija Apple corra en macOS 26. Conviene prever
+  una Mac con Apple Silicon antes de ese límite.
+
+### 24.8 Cuentas, en el orden en que hacen falta
+
+| cuándo | qué | para qué |
+|---|---|---|
+| fases 0–1, simulador | nada | compila y corre sin firmar |
+| fase 1, iPhone propio | Apple ID en Xcode (el equipo personal gratuito alcanza) | instalar en un dispositivo |
+| fase 4 | Google Cloud: client ID **iOS** en el proyecto del OAuth web actual | login con Google |
+| fase 5 | **Apple Developer Program** (USD 99/año) + llave APNs `.p8`; Firebase: app iOS y `GoogleService-Info.plist` | push (el equipo gratuito no permite push) |
+| fase 6 | App Store Connect: ficha de la app, política de privacidad (`privacidad.html` ya existe) | TestFlight y tienda |
+
+### 24.9 Fases
+
+| fase | entrega | se da por hecha cuando |
+|---|---|---|
+| 0 | esta sección + esqueleto `cepi-ios/` | compila y los tests de contrato pasan en simulador |
+| 1 | login, sesión en Keychain, cambio de org, lista de pacientes y alta | un usuario demo entra y ve su lista contra el backend real |
+| 2 | hilo por consulta, composer, pendiente sí/no, respuestas rápidas, fotos, imágenes con zoom | un turno enviado desde el iPhone aparece igual en la web |
+| 3 | ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar, visor | se llena una ficha completa desde el iPhone |
+| 4 | dictado en el dispositivo + Google Sign-In | se dicta en español en modo avión |
+| 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al iPhone y tocarla abre el paciente |
+| 6 | cola offline, borrado de cuenta, TestFlight | la build se distribuye por TestFlight |
+
+
 ---
 
 **Fin del documento.**

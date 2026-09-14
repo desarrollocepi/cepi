@@ -14,7 +14,8 @@ cepi/
 ├── scripts/              reset, dev-token, dev-chat, backup
 ├── TodoERP/              submódulo: ERP genérico + MCP server
 ├── cepi-bot/             agente conversacional (HTTP + MCP client)
-├── cepi-frontend/        UI de chat (Vue 3 + Vite)
+├── cepi-frontend/        UI de chat (Vue 3 + Vite) — web + APK Android (Capacitor)
+├── cepi-ios/             app nativa iPhone/iPad (SwiftUI) — PAPER §24
 ├── cepi-isic/            servicio Python de embeddings/clasificación
 ├── backend/              chatbot legacy (DeepSeek + tree.js) — sin PM2
 └── frontend/             site público legacy CEPI — sin PM2
@@ -29,7 +30,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 - **TodoERP genérico, cepi medical**: `TodoERP/` no debe contener vocabulario clínico. Si una capacidad parece útil para más de un dominio, vive en TodoERP. La opt-in al pipeline médico se hace con `CEPI_MEDICAL=1` en el backend.
 - **Confirmation gate**: las escrituras que el agente *infiere* de texto libre o de un comando se confirman con sí/no antes de persistir (PAPER §13.3.1, D-Aux-1). El patrón vive en `cepi-bot/src/server.ts` (pending_action). Los **envíos de formularios de la ficha** (`ficha_grp_*`, incluidas las imágenes §4.7/§8) ya son una acción explícita del usuario: se guardan directo, sin gate.
 - **PII**: campos con `pii: true` en `entity_definitions.config.fields` se redactan al cruzar dos fronteras: `cepi-bot → LLM` (PAPER §13.3.1) y `TodoERP → role sin pii:read:<slug>` (R4 de REFACTOR_PLAN). Ambas implementadas.
-- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend` y `cepi-bot`. Total actual ~202 tests.
+- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend` y `cepi-bot`. Total actual ~202 tests. Si tocaste `cepi-ios/`, también `xcodebuild test` (ver Atajos).
 - **Git**: el subm `TodoERP/` tiene su propio remote (`seyacat/TodoERP`); el cepi raíz lo apunta por SHA. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
 
 ## Cuando agregás...
@@ -60,6 +61,12 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 4. Si tiene relaciones, no olvides los inversos.
 5. Idempotencia: usar `ON CONFLICT (id) DO UPDATE`.
 
+### una pantalla o un endpoint en la app iOS
+1. El `.swift` va en la carpeta de su dominio (`App/`, `API/`, `Pacientes/`, `Chat/`…). Las carpetas del proyecto están sincronizadas: **no se edita el `project.pbxproj`** para agregar archivos.
+2. Endpoint nuevo: función en `API/CEPIAPI.swift`, modelo en `API/Modelos.swift` y un test de contrato con el JSON real del backend en `CEPITelemedicinaTests/`.
+3. El backend no se toca por la app: si hace falta un endpoint, primero PAPER §24.4.
+4. "Nunca ocultes un botón" vale igual: `.disabled(…)` más un texto que diga por qué.
+
 ### un hook de ciclo de vida
 1. Handler en `TodoERP/backend/src/hooks/medical.ts` (o `domain.ts`).
 2. Registrar vía `registerHook(...)` en una factory; llamarla en `app.ts` con la guarda env adecuada.
@@ -80,6 +87,10 @@ bash scripts/dev-chat.sh --new "/help"
 
 # Backup
 bash scripts/backup-db.sh
+
+# App iOS: compilar + tests en simulador (en Debug, CEPI_API_BASE cambia el backend)
+xcodebuild test -project cepi-ios/CEPITelemedicina.xcodeproj -scheme CEPITelemedicina \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
 ```
 
 ## Bots de testing (browser-bot multi-perfil)

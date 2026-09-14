@@ -1,6 +1,10 @@
-# Apps nativas iOS + Android (Capacitor)
+# Apps nativas: Android (Capacitor) + iOS (SwiftUI)
 
-La app web (`cepi-frontend`, Vue 3 + Vite, PWA) se empaqueta como **apps nativas**
+> **iOS no se empaqueta desde acá.** iPhone/iPad es una app nativa en SwiftUI,
+> `cepi-ios/` (decisión y plan en PAPER §24). Este documento es para Android; lo de
+> Firebase, APNs y cuentas del final vale para las dos.
+
+La app web (`cepi-frontend`, Vue 3 + Vite, PWA) se empaqueta como **app Android**
 con **Capacitor 8**. Estrategia: **híbrido** — el build web viaja dentro de la app
 y se actualiza **OTA** (over-the-air) sin re-subir a las tiendas para cambios de
 UI; **push nativo** vía **FCM (Android) + APNs (iOS)**.
@@ -15,8 +19,8 @@ UI; **push nativo** vía **FCM (Android) + APNs (iOS)**.
 
 | | Android | iOS |
 |---|---|---|
-| Máquina | Linux/Mac (este repo compila en Linux) | **Mac + Xcode 26+** (obligatorio) |
-| Toolchain | **JDK 21** (Capacitor 8 lo exige), Android SDK (compileSdk 36), gradle wrapper | CocoaPods, Xcode |
+| Máquina | Linux/Mac (este repo compila en Linux) | **Mac + Xcode 26+** (obligatorio) — proyecto en `cepi-ios/` |
+| Toolchain | **JDK 21** (Capacitor 8 lo exige), Android SDK (compileSdk 36), gradle wrapper | Xcode (SwiftUI, sin CocoaPods) |
 
 ⚠️ **JDK 21**: el build de Android falla con JDK 17 (`invalid source release: 21`).
 Usá `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64` (o el JBR de Android Studio).
@@ -50,18 +54,12 @@ keyPassword=…
 ```
 Guardá el keystore + passwords en un gestor: **si lo perdés, no podés publicar updates** (salvo con Play App Signing).
 
-## iOS — build (en Mac)
+## iOS — app nativa, no Capacitor
 
-```bash
-cd cepi-frontend
-npm i @capacitor/ios@^8
-npx cap add ios           # crea ios/ (SOLO en Mac; corre pod install)
-npm run build && npx cap sync ios
-npx cap open ios          # abre Xcode
-```
-En Xcode: agregar `GoogleService-Info.plist` al target; habilitar **Push
-Notifications** + **Background Modes → Remote notifications**; Podfile `platform :ios, '15.0'`;
-Archive → subir con Organizer/Transporter.
+No correr `npx cap add ios`: iPhone/iPad es `cepi-ios/` (SwiftUI, PAPER §24), con el mismo
+bundle id `ec.cepi.telemedicina` y el mismo backend de push. En su Xcode: agregar
+`GoogleService-Info.plist` al target; habilitar **Push Notifications** + **Background
+Modes → Remote notifications**; Archive → subir con Organizer/Transporter.
 
 ## Push nativo (FCM/APNs)
 
