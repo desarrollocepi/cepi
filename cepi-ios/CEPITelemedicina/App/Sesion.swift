@@ -3,6 +3,10 @@ import Observation
 
 /// Estado de la sesión y única puerta de entrada y salida. Espejo de `refresh()` y
 /// `onLogout()` en `App.vue`.
+///
+/// Solo un 401 manda al login. Si un fallo pasajero de `/me` (recarga, cambio de org, 5xx,
+/// 429) mostrara el login, la gente vuelve a entrar con Google una y otra vez hasta agotar
+/// el rate-limit de `/auth/google`: pasó en la web. `SesionTests` lo fija.
 @MainActor
 @Observable
 final class Sesion {
@@ -25,9 +29,12 @@ final class Sesion {
     @ObservationIgnored private var ultimaRenovacion: Date = .distantPast
     @ObservationIgnored private var escucha: Task<Void, Never>?
 
-    init(credenciales: Credenciales = .compartidas, base: URL = Config.apiBase, baseBot: URL = Config.botBase) {
+    init(
+        credenciales: Credenciales = .compartidas, base: URL = Config.apiBase, baseBot: URL = Config.botBase,
+        red: URLSessionConfiguration = .default
+    ) {
         self.credenciales = credenciales
-        api = CEPIAPI(cliente: APIClient(base: base, baseBot: baseBot, credenciales: credenciales))
+        api = CEPIAPI(cliente: APIClient(base: base, baseBot: baseBot, credenciales: credenciales, configuracion: red))
         escucha = Task { [weak self, credenciales] in
             for await _ in credenciales.expiraciones {
                 self?.cerrarLocal()

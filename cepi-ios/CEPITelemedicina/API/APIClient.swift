@@ -23,11 +23,14 @@ final class APIClient: Sendable {
     private let http: URLSession
     private let credenciales: Credenciales
 
-    init(base: URL, baseBot: URL? = nil, credenciales: Credenciales) {
+    /// `configuracion` solo cambia en los tests, para responder sin backend.
+    init(
+        base: URL, baseBot: URL? = nil, credenciales: Credenciales,
+        configuracion: URLSessionConfiguration = .default
+    ) {
         self.base = base
         self.baseBot = baseBot ?? base
         self.credenciales = credenciales
-        let configuracion = URLSessionConfiguration.default
         // Un turno del bot espera al LLM: el minuto por defecto se queda corto.
         configuracion.timeoutIntervalForRequest = 120
         configuracion.httpAdditionalHeaders = ["Accept": "application/json"]

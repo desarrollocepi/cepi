@@ -44,6 +44,18 @@
       <!-- Sin sesión el login se pinta POR ENCIMA de la ruta, no como una ruta más:
            así el enlace a un caso sobrevive al login y se abre al entrar. -->
       <VerifyEmail v-if="view === 'verify'" :email="verifyEmailAddr" @done="goLogin" />
+      <!-- Con un token guardado NO se pinta el login mientras se valida (recarga, cambio
+           de org): verlo invitaba a volver a entrar con Google en cada refresco y eso
+           agotaba el rate-limit de /auth/login y /auth/google. -->
+      <div v-else-if="validando" class="sesion-estado">Abriendo tu sesión…</div>
+      <div v-else-if="sinValidar" class="sesion-estado">
+        <p>No se pudo validar tu sesión: {{ sinValidar }}</p>
+        <p>Tu sesión sigue abierta; no hace falta volver a ingresar.</p>
+        <div class="sesion-acciones">
+          <button type="button" @click="refresh">Reintentar</button>
+          <button type="button" class="secundario" @click="onLogout">Cerrar sesión</button>
+        </div>
+      </div>
       <template v-else-if="!authed">
         <Register v-if="view === 'register'" @go-login="view = 'login'" @registered="onRegistered" />
         <Login v-else @logged-in="onLoggedIn" @go-register="view = 'register'" />
@@ -233,8 +245,15 @@ bindBackState(() => view.value === 'verify', () => { goLogin(); });
 // Tema claro fijo por ahora (se quitó el toggle de modo oscuro).
 document.documentElement.dataset.theme = 'light';
 
+// `validando` arranca en true si hay token: el primer render ya es "Abriendo tu sesión…"
+// y no un destello del formulario de login.
+const validando = ref(!!localStorage.getItem('cepi.jwt'));
+const sinValidar = ref('');
+
 async function refresh() {
-  if (!localStorage.getItem('cepi.jwt')) { authed.value = false; return; }
+  if (!localStorage.getItem('cepi.jwt')) { authed.value = false; validando.value = false; return; }
+  validando.value = true;
+  sinValidar.value = '';
   try {
     const r = await whoami();
     // Conservar/renovar el token en cada carga (sesión deslizante): así el
@@ -242,9 +261,24 @@ async function refresh() {
     if (r?.token) localStorage.setItem('cepi.jwt', r.token);
     user.value = r?.user || null;
     authed.value = !!user.value;
-  } catch {
-    authed.value = false;
+  } catch (e) {
+    if (e?.status === 401) {
+      // Solo un 401 dice que el token ya no sirve (vencido, usuario inactivo).
+      logout();
+      user.value = null;
+      authed.value = false;
+    } else {
+      // Sin red, 5xx o 429: el token puede seguir siendo válido. Mandar al login
+      // acá era lo que hacía volver a entrar y saturaba los intentos.
+      sinValidar.value = e?.message || 'sin conexión con el servidor';
+    }
+  } finally {
+    validando.value = false;
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { if (sinValidar.value) refresh(); });
 }
 
 function onLoggedIn() {
@@ -264,6 +298,7 @@ function onLogout() {
   logout();
   user.value = null;
   authed.value = false;
+  sinValidar.value = '';
   router.push(inicioSegunHost());
 }
 
@@ -310,6 +345,18 @@ onMounted(refresh);
   max-width: min(520px, 92vw); background: #1e293b; color: #fff; border-radius: 10px;
   padding: 12px 16px; font-size: 0.88rem; line-height: 1.4; box-shadow: 0 10px 30px rgba(0,0,0,.35); cursor: pointer;
 }
+
+.sesion-estado {
+  max-width: 360px; margin: 60px auto; padding: 24px; text-align: center;
+  color: var(--text-muted); display: flex; flex-direction: column; gap: 8px;
+}
+.sesion-estado p { margin: 0; }
+.sesion-acciones { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+.sesion-acciones button {
+  padding: 8px 14px; border-radius: 4px; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+}
+.sesion-acciones button.secundario { background: #fff; color: var(--text); border-color: var(--border); }
 
 .logo { height: 38px; object-fit: contain; display: block; }
 .brand { color: #fff; letter-spacing: 0.02em; font-size: 1rem; }
