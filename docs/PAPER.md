@@ -1678,10 +1678,11 @@ cepi-ios/
 └── CEPITelemedicinaTests/   contrato JSON y lógica pura (Swift Testing)
 ```
 
-- **Sin dependencias de terceros**, salvo dos SDK de Google por Swift Package Manager
-  cuando lleguen sus fases: `FirebaseMessaging` (el backend ya envía por FCM,
-  `channels/nativePush.ts`) y `GoogleSignIn`. Cada dependencia es un plugin más que puede
-  romperse como el de dictado.
+- **Sin dependencias de terceros**, salvo `FirebaseMessaging` por Swift Package Manager
+  cuando llegue push (el backend ya envía por FCM, `channels/nativePush.ts`). Google
+  Sign-In **no** usa el SDK: la hoja de login del sistema (`ASWebAuthenticationSession`)
+  con OAuth + PKCE contra un client ID de tipo iOS da el ID token que ya valida el backend.
+  Cada dependencia es un plugin más que puede romperse como el de dictado.
 - **iOS 17** mínimo (`@Observable`). Swift 6 con concurrencia estricta: la red y el
   decodificado JSON corren fuera del hilo principal; la UI no espera al parser.
 - El JWT vive en **Keychain**, no en `UserDefaults`.
@@ -1735,10 +1736,10 @@ dice "no podés hacer esto", no "no sos vos".
 Tras cada turno la app **relee el hilo** en vez de pintar el `text` de la respuesta, igual
 que `IntakeChat.vue`: así el iPhone y la web muestran exactamente el mismo hilo.
 
-**Por verificar con un token real, no por suposición:** `verifyGoogleIdToken` acepta un
-único `aud` (`GOOGLE_CLIENT_ID`, el cliente web). En iOS se configura `GoogleSignIn` con
-ese cliente web como `serverClientID`. Si aun así el token llega con el cliente iOS como
-`aud`, el cambio mínimo es que el backend acepte una lista de client IDs.
+**Google Sign-In:** el ID token de la app trae como `aud` el client ID de iOS, no el de la
+web. Único cambio de backend de la app, y genérico: `GOOGLE_CLIENT_ID` acepta varios IDs
+separados por coma (`allowedGoogleAudiences` en `authService.ts`). En producción hay que
+agregar el de iOS a esa variable.
 
 ### 24.5 Rendimiento: qué se mide
 

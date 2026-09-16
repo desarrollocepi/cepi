@@ -13,6 +13,11 @@ struct CEPIAPI: Sendable {
         try await cliente.post("/api/auth/login", json: ["email": email, "password": password])
     }
 
+    /// Cambia el ID token de Google por la sesión de CEPI (cuenta nueva → rol pendiente).
+    func loginGoogle(idToken: String) async throws -> SesionRespuesta {
+        try await cliente.post("/api/auth/google", json: ["credential": idToken])
+    }
+
     func yo() async throws -> SesionRespuesta {
         try await cliente.get("/api/auth/me")
     }

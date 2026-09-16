@@ -13,6 +13,10 @@ enum Config {
     /// el mismo host; en local, un servidor estático sobre `cepi-frontend/public` (`CEPI_WEB_BASE`).
     static let webBase: URL = desdeEntorno("CEPI_WEB_BASE") ?? apiBase
 
+    /// Client ID de Google de tipo **iOS** (proyecto `cepi-500221`). No es secreto: los client
+    /// IDs viajan en cada login. `nil` deja el botón de Google gris, con la razón.
+    static let googleClientIDiOS: String? = "610463685358-sn7jttlf2e69r0q4dovndpb1qkd3c137.apps.googleusercontent.com"
+
     private static func desdeEntorno(_ clave: String) -> URL? {
         #if DEBUG
         if let valor = ProcessInfo.processInfo.environment[clave], let url = URL(string: valor) {

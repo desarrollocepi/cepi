@@ -74,17 +74,21 @@ struct LoginView: View {
                 .disabled(enviando || !completo)
 
                 VStack(spacing: 6) {
-                    Button {} label: {
+                    Button {
+                        Task { await entrarConGoogle() }
+                    } label: {
                         Label("Continuar con Google", systemImage: "person.badge.key")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-                    .disabled(true)
-                    Text("El ingreso con Google llega en la fase 4: falta el client ID de iOS.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                    .disabled(enviando || Config.googleClientIDiOS == nil)
+                    if Config.googleClientIDiOS == nil {
+                        Text("Falta configurar el client ID de iOS de Google.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
             .padding(24)
@@ -117,6 +121,21 @@ struct LoginView: View {
         defer { enviando = false }
         do {
             try await sesion.entrar(email: email, password: password)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func entrarConGoogle() async {
+        guard let clientID = Config.googleClientIDiOS, !enviando else { return }
+        enviando = true
+        error = nil
+        defer { enviando = false }
+        do {
+            let idToken = try await LoginGoogle(clientID: clientID).idToken()
+            try await sesion.entrarConGoogle(idToken: idToken)
+        } catch LoginGoogle.Falla.cancelado {
+            // Cerrar la hoja de Google no es un error.
         } catch {
             self.error = error.localizedDescription
         }

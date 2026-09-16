@@ -75,6 +75,12 @@ final class Sesion {
         await renovar()
     }
 
+    func entrarConGoogle(idToken: String) async throws {
+        let respuesta = try await api.loginGoogle(idToken: idToken)
+        await credenciales.guardar(respuesta.token)
+        await renovar()
+    }
+
     /// La org activa viaja en el JWT: cambiarla reemite el token, y lo que depende de la org
     /// (la lista de pacientes) se recarga al ver el `orgActiva` nuevo.
     func cambiarOrganizacion(a id: String) async throws {
