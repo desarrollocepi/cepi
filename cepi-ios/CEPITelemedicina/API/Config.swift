@@ -9,6 +9,10 @@ enum Config {
     /// aparte (:3002), por eso en Debug se puede separar con `CEPI_BOT_BASE`.
     static let botBase: URL = desdeEntorno("CEPI_BOT_BASE") ?? apiBase
 
+    /// Donde se sirven los documentos de la web (`ficha.html`, `cuerpos.png`). En producción es
+    /// el mismo host; en local, un servidor estático sobre `cepi-frontend/public` (`CEPI_WEB_BASE`).
+    static let webBase: URL = desdeEntorno("CEPI_WEB_BASE") ?? apiBase
+
     private static func desdeEntorno(_ clave: String) -> URL? {
         #if DEBUG
         if let valor = ProcessInfo.processInfo.environment[clave], let url = URL(string: valor) {

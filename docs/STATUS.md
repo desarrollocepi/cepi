@@ -4,6 +4,53 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-16 — App iOS: fase 3 (ficha nativa) y primer deploy al iPhone
+
+- **Git:** `feat/ios-nativa` subida a GitHub, con los 3 commits que venían de la otra
+  máquina. TodoERP ahora es `desarrollocepi/TodoERP` (privado); el commit al que apunta el
+  submódulo está en su remoto.
+- **Fase 3 — ficha nativa** (`cepi-ios/CEPITelemedicina/Ficha/`):
+  - Los formularios del bot se pintan nativos con los 10 tipos de campo de `BotForm.vue`;
+    uno desconocido cae a texto. Van en una hoja sobre el hilo, con Cerrar y Guardar en la
+    barra.
+  - Mapa corporal con las regiones de `BodyMapField.vue` (son 38, no 36 como dice su
+    comentario), fotos múltiples (JPEG sin GPS), CIE-10 del ERP y búsqueda de entidad paginada.
+  - Secciones de la ficha por categoría, auto-form por paciente (apagado por defecto, como la
+    web) y nueva consulta.
+  - Derivar: a toda la red, a un círculo o especialidad, a una persona o al responsable del caso.
+  - Visor de la ficha: `ficha.html` en WKWebView cargado del servidor (`CEPI_WEB_BASE` en
+    local), paginado por consulta, con lo cambiado respecto de la anterior en rojo, guardar
+    (`ficha_save`) e imprimir.
+- **Bug que encontró el UI test:** con el formulario dentro del hilo, el teclado y el composer
+  tapaban su botón Guardar y el envío nunca salía (confirmado con cuadros del video de
+  XCTest). Por eso el formulario pasó a una hoja.
+
+Tests: `cepi-ios` **39 passed**, 0 warnings.
+- 36 de unidad: contrato con los formularios reales del bot, lógica de formulario, regiones,
+  secciones y datos del visor.
+- 3 de UI de punta a punta contra el stack local: un turno en el hilo, un grupo de texto (3.2)
+  y una pregunta de opción (1.4), guardados y comprobados en el backend.
+
+**Deploy al iPhone:** un iPhone 11 (iOS 26.6.1) quedó registrado en el equipo **Cempiel Cia.
+LTDA.** (`KLR354RZKZ`, fijo en el proyecto). Build Release firmado, instalado y abierto con
+`devicectl`; desde la pantalla de inicio usa producción. Para repetir:
+`xcodebuild build -project cepi-ios/CEPITelemedicina.xcodeproj -scheme CEPITelemedicina -configuration Release -destination "id=<UDID>" -allowProvisioningUpdates`
+y después `xcrun devicectl device install app --device <id> <ruta del .app>`
+(`xcrun devicectl list devices` da los ids). Requisitos que ya quedaron hechos: Apple ID en
+Xcode, Modo de desarrollador en el teléfono y el dispositivo registrado en el portal.
+
+**Notas del entorno:**
+- El simulador de esta Mac Intel falla en corridas largas de UI tests ("Timed out while
+  fetching snapshot from testmanagerd"). `xcrun simctl erase` y volver a arrancarlo lo resolvió.
+- Playwright MCP agregado para este proyecto (scope local, con Node 24).
+- App Store Connect API: no se pidió acceso. Exige aceptar condiciones en nombre de Cempiel
+  y una revisión de Apple; solo hace falta para automatizar TestFlight.
+
+**Pendiente:** uso real en el iPhone; fase 4 (dictado y Google Sign-In) y fase 5 (push: llave
+APNs y app iOS en Firebase).
+
+---
+
 ## Sesión 2026-09-14 — App nativa iOS (SwiftUI), fases 0–2
 
 El repo pasó a una Mac (MacBook Pro 2020 **Intel**, macOS 26.6, Xcode 26.5) para

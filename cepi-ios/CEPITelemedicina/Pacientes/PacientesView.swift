@@ -16,7 +16,7 @@ struct PacientesView: View {
         } detail: {
             if let id = seleccion, let fila = modelo.fila(id) {
                 // `.id`: otro paciente es otro hilo, con su estado desde cero.
-                HiloView(fila: fila)
+                HiloView(fila: fila) { seleccion = nil }
                     .id(fila.id)
             } else {
                 ContentUnavailableView(

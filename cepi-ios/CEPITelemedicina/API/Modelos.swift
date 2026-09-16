@@ -264,6 +264,11 @@ struct RespuestaChat: Decodable, Sendable {
     let pendiente: AccionPendiente?
     let traeEpisodioActivo: Bool
     let episodioActivo: String?
+    /// `form` presente (objeto o `null`) cambia el formulario activo; ausente, lo deja.
+    let traeFormulario: Bool
+    let formulario: FormularioBot?
+    /// Secciones de la ficha; `nil` si no vinieron.
+    let marcadores: [Marcador]?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -271,6 +276,8 @@ struct RespuestaChat: Decodable, Sendable {
         case respuestasRapidas = "quick_replies"
         case pendiente = "pending_action"
         case episodioActivo = "active_episode_id"
+        case formulario = "form"
+        case marcadores = "bookmarks"
     }
 
     init(from decoder: any Decoder) throws {
@@ -282,6 +289,9 @@ struct RespuestaChat: Decodable, Sendable {
         pendiente = try contenedor.decodeIfPresent(AccionPendiente.self, forKey: .pendiente)
         traeEpisodioActivo = contenedor.contains(.episodioActivo)
         episodioActivo = try contenedor.decodeIfPresent(String.self, forKey: .episodioActivo)
+        traeFormulario = contenedor.contains(.formulario)
+        formulario = try contenedor.decodeIfPresent(FormularioBot.self, forKey: .formulario)
+        marcadores = try contenedor.decodeIfPresent([Marcador].self, forKey: .marcadores)
     }
 }
 

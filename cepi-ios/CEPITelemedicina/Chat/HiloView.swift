@@ -1,10 +1,12 @@
 import PhotosUI
 import SwiftUI
 
-/// El hilo de un paciente: sus consultas, los mensajes de todos y el composer. Equivale a
-/// IntakeChat.vue sin la ficha, que llega en la fase 3 (PAPER §24.9).
+/// El hilo de un paciente: sus consultas, los mensajes de todos, la ficha que se llena por
+/// secciones y el composer. Equivale a IntakeChat.vue.
 struct HiloView: View {
     let fila: FilaPaciente
+    /// Cierra el hilo (tras derivar, el médico pasa al siguiente paciente).
+    let alTerminar: () -> Void
 
     @Environment(Sesion.self) private var sesion
     @State private var modelo: HiloModelo
@@ -12,11 +14,15 @@ struct HiloView: View {
     @State private var fotoElegida: PhotosPickerItem?
     @State private var camaraAbierta = false
     @State private var imagenAbierta: ImagenAbierta?
+    @State private var mostrarSecciones = false
+    @State private var mostrarDerivar = false
+    @State private var mostrarFicha = false
 
     private static let fin = "fin-del-hilo"
 
-    init(fila: FilaPaciente) {
+    init(fila: FilaPaciente, alTerminar: @escaping () -> Void = {}) {
         self.fila = fila
+        self.alTerminar = alTerminar
         _modelo = State(initialValue: HiloModelo(pacienteId: fila.id))
     }
 
@@ -28,7 +34,7 @@ struct HiloView: View {
 
         VStack(spacing: 0) {
             barraDeConsultas(episodios, indice: indice, enLaActual: enLaActual)
-            feed(visibles)
+            feed(visibles, enLaActual: enLaActual)
         }
         .safeAreaInset(edge: .bottom) {
             if enLaActual {
@@ -89,6 +95,55 @@ struct HiloView: View {
             VisorImagen(id: imagen.id)
                 .environment(sesion)
         }
+        // El formulario de la ficha va en una hoja: en el hilo, el teclado y el composer tapaban
+        // su botón Guardar. Con auto-form encendido la hoja pasa al siguiente grupo sin cerrarse.
+        .sheet(isPresented: Binding(
+            get: { modelo.formulario != nil },
+            set: { if !$0 { modelo.cerrarFormulario() } }
+        )) {
+            if let formulario = modelo.formulario {
+                FormularioBotView(
+                    formulario: formulario,
+                    ocupado: modelo.ocupado,
+                    alEnviar: { datos in
+                        Task { await modelo.enviarFormulario(formulario.id, datos: datos, api: sesion.api) }
+                    },
+                    alMandar: { mensaje in
+                        Task { await modelo.enviar(mensaje, api: sesion.api) }
+                    },
+                    alCerrar: { modelo.cerrarFormulario() }
+                )
+                // Un formulario nuevo (o el mismo con otros valores) arranca de cero.
+                .id(formulario)
+                .presentationDetents([.medium, .large])
+                .environment(sesion)
+            }
+        }
+        .sheet(isPresented: $mostrarSecciones) {
+            SeccionesView(marcadores: modelo.marcadores) { marcador in
+                Task { await modelo.abrirSeccion(marcador, api: sesion.api) }
+            }
+        }
+        .sheet(isPresented: $mostrarDerivar) {
+            DerivarView(
+                alDerivar: { comando in
+                    guard await modelo.enviar(comando, api: sesion.api) else {
+                        return modelo.error ?? "No se pudo derivar."
+                    }
+                    mostrarDerivar = false
+                    alTerminar()
+                    return nil
+                },
+                responsable: { await modelo.responsableDelCaso(api: sesion.api) }
+            )
+            .environment(sesion)
+        }
+        .fullScreenCover(isPresented: $mostrarFicha) {
+            VisorFicha(pacienteId: fila.id, nombre: fila.nombre, episodioActivo: modelo.episodioActivo) { datos, episodio in
+                await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
+            }
+            .environment(sesion)
+        }
     }
 
     private func barraDeConsultas(_ episodios: Episodios, indice: Int, enLaActual: Bool) -> some View {
@@ -120,7 +175,7 @@ struct HiloView: View {
         .background(.bar)
     }
 
-    private func feed(_ visibles: [MensajeHilo]) -> some View {
+    private func feed(_ visibles: [MensajeHilo], enLaActual: Bool) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 // VStack y no LazyVStack: el lazy estima las alturas de lo que todavía no midió,
@@ -215,20 +270,40 @@ struct HiloView: View {
 
     /// Lo que todavía no está se ve, gris y con la fase en la que llega (CLAUDE.md: nunca
     /// ocultes un botón).
+    private var enLaActualMenu: Bool {
+        let episodios = modelo.episodios
+        return episodios.esActiva(indice: episodios.indice(de: modelo.pagina), activo: modelo.episodioActivo)
+    }
+
     private var menuDeAcciones: some View {
         Menu {
             Button("Nueva consulta", systemImage: "plus.bubble") {
                 Task { await modelo.enviar("nuevo episodio", api: sesion.api) }
             }
             .disabled(modelo.ocupado)
-            Section("Llegan en la fase 3") {
-                Button("Secciones de la ficha", systemImage: "list.bullet.rectangle") {}
-                    .disabled(true)
-                Button("Ver ficha", systemImage: "doc.text.magnifyingglass") {}
-                    .disabled(true)
-                Button("Derivar", systemImage: "arrowshape.turn.up.right") {}
-                    .disabled(true)
+            Section("Ficha") {
+                Button { mostrarSecciones = true } label: {
+                    Label("Secciones de la ficha", systemImage: "list.bullet.rectangle")
+                    if modelo.marcadores.isEmpty {
+                        Text("Disponibles al abrir la consulta")
+                    } else if !enLaActualMenu {
+                        Text("Solo en la consulta actual")
+                    }
+                }
+                .disabled(modelo.ocupado || modelo.marcadores.isEmpty || !enLaActualMenu)
+                Button {
+                    Task { await modelo.alternarAutoFormulario(api: sesion.api) }
+                } label: {
+                    Label(modelo.autoFormulario ? "Auto-form encendido" : "Auto-form apagado",
+                          systemImage: modelo.autoFormulario ? "repeat.circle.fill" : "repeat.circle")
+                    Text(modelo.autoFormulario ? "Pide la siguiente sección faltante" : "Solo muestra la sección que abras")
+                }
+                .disabled(modelo.ocupado || !enLaActualMenu)
+                Button("Ver ficha", systemImage: "doc.text.magnifyingglass") { mostrarFicha = true }
+                    .disabled(modelo.ocupado)
             }
+            Button("Derivar", systemImage: "arrowshape.turn.up.right") { mostrarDerivar = true }
+                .disabled(modelo.ocupado)
         } label: {
             Label("Acciones", systemImage: "ellipsis.circle")
         }

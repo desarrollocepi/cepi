@@ -1686,8 +1686,11 @@ cepi-ios/
   decodificado JSON corren fuera del hilo principal; la UI no espera al parser.
 - El JWT vive en **Keychain**, no en `UserDefaults`.
 - Backend: `https://telemedicina.cepi.ec`. En Debug se cambia sin recompilar con
-  variables de entorno: `CEPI_API_BASE` (TodoERP) y `CEPI_BOT_BASE` (cepi-bot, que en
-  local corre aparte; en producción comparte host bajo `/api/bot`).
+  variables de entorno: `CEPI_API_BASE` (TodoERP), `CEPI_BOT_BASE` (cepi-bot, que en
+  local corre aparte; en producción comparte host bajo `/api/bot`) y `CEPI_WEB_BASE`
+  (donde se sirve `ficha.html`; en local, un servidor estático sobre `cepi-frontend/public`).
+  El visor carga la hoja desde el servidor y no la empaqueta: una sola copia del documento,
+  y un cambio en la web llega a la app sin versión nueva.
   `CEPI_DEV_EMAIL`/`CEPI_DEV_PASSWORD`/`CEPI_DEV_PACIENTE` entran y abren un hilo sin
   tocar la pantalla. Solo existen en Debug.
 - **Pruebas en dos niveles**: `CEPITelemedicinaTests` (contrato JSON con respuestas reales

@@ -63,7 +63,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 
 ### una pantalla o un endpoint en la app iOS
 1. El `.swift` va en la carpeta de su dominio (`App/`, `API/`, `Pacientes/`, `Chat/`…). Las carpetas del proyecto están sincronizadas: **no se edita el `project.pbxproj`** para agregar archivos.
-2. Endpoint nuevo: función en `API/CEPIAPI.swift`, modelo en `API/Modelos.swift` y un test de contrato con el JSON real del backend en `CEPITelemedicinaTests/`.
+2. Endpoint nuevo: función en `API/CEPIAPI.swift`, modelo en `API/Modelos*.swift` (`ModelosFicha.swift` para formularios, derivación y CIE-10) y un test de contrato con el JSON real del backend en `CEPITelemedicinaTests/`.
 3. El backend no se toca por la app: si hace falta un endpoint, primero PAPER §24.4.
 4. "Nunca ocultes un botón" vale igual: `.disabled(…)` más un texto que diga por qué.
 
