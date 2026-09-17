@@ -56,8 +56,19 @@ if [ "$WITH_FAKE" = "1" ]; then
     echo "[reset-cepi] WARNING: pm2 todoerp-backend not found — ensure the backend"
     echo "[reset-cepi]          restarts to create shadow tables before seeding."
   fi
+  # 014 (per-org pathology index), 017 (sandbox org patients) and 018 (per-org split)
+  # need entity_* tables, which only exist now that the backend has provisioned them
+  # (step 2 skipped those parts). 018 runs after the synthetic dataset so it splits it.
+  echo "[reset-cepi] re-applying 014 + 017 on the provisioned tables"
+  for f in 014_patologia.sql 017_org_pruebas_sandbox.sql; do
+    PGPASSWORD=cerebro psql -h localhost -U postgres -d cepi -v ON_ERROR_STOP=1 \
+      -f "$TODOERP/database/medical-seed/$f" > /dev/null
+  done
   echo "[reset-cepi] step 3: synthetic clinical dataset"
   bash "$TODOERP/database/medical-seed/seeder/run.sh"
+  echo "[reset-cepi] step 4: split records per organization (018)"
+  PGPASSWORD=cerebro psql -h localhost -U postgres -d cepi -v ON_ERROR_STOP=1 \
+    -f "$TODOERP/database/medical-seed/018_org_drpro.sql" > /dev/null
 fi
 
 echo "[reset-cepi] done."

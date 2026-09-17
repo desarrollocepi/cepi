@@ -130,9 +130,14 @@ rol: `primario derma1 derma2 residente super admin`):
   `curl http://localhost:8899` (o `scripts/browser-bot/drive.sh …`).
 - Idempotente: si el bot ya corre, no relanza. Reiniciar:
   `pkill -f browser-bot/bot.cjs && ./lanzar-bots.sh`.
-- Datos de prueba multi-org: los usuarios demo viven en **ambas** orgs
-  (`cepi` + `cepi-testing`) — así la derivación funciona sin importar en qué org
-  caiga el caso (el revisor debe pertenecer a la org del caso) y el switch del
-  topbar sigue siendo probable. El auto-registro asigna las orgs por defecto vía
-  `assignDefaultOrgs` (`REGISTER_DEFAULT_ORG_SLUGS`, default `cepi,cepi-testing`).
-  Ver `medical-seed/007_telemedicine.sql`.
+- Datos de prueba multi-org: los usuarios demo viven en `cepi` y `cepi-drpro`, así el switch
+  del topbar sigue siendo probable; entran a `cepi` por defecto. **No** están en la sandbox
+  (`cepi-testing`): ahí solo hay cuentas propias de ella, y en local dos colegas ficticios
+  (`seeder/006`) para poder derivar. Ver `medical-seed/007_telemedicine.sql`.
+- Organizaciones (D-Aux-21, PAPER §13.7): `cepi` es telemedicina, `cepi-drpro` el consultorio
+  (espejo DrPro y patología, `medical-seed/018`) y `cepi-testing` la **sandbox**
+  (`medical-seed/017`). El paciente, el informe de patología y los adjuntos son de UNA org: la
+  misma persona en dos orgs son dos registros. Desde la sandbox no se alcanza a nadie que no
+  sea miembro, y el auto-registro (`assignDefaultOrgs`) nunca agrega a ella. Ahí vive la
+  cuenta con la que Apple revisa la app; su recorrido en local: `scripts/cuenta-revisor.mjs`
+  + `RevisorUITests`.

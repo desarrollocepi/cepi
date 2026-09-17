@@ -847,6 +847,115 @@ Acción explícita del médico para que un caso lo revisen colegas. **Nunca auto
 - **Genérico**: el ID de la tool no menciona dominio médico; sirve para escalar facturas dudosas, tickets, contratos, etc.
 - En el contexto médico: el médico escala un episodio a un colega o al supermédico cuando duda del diagnóstico (con o sin sugerencia de la IA).
 
+### 13.7 Registros por organización y org sandbox (D-Aux-21) — capacidad genérica
+
+Las organizaciones (migración 016, plan en `docs/ORGANIZACIONES_PLAN.md`) separaban la ficha y el chat, pero dejaban al **paciente global**. Con más de una org real (telemedicina y el consultorio que espeja DrPro) y con una org de pruebas en producción (la cuenta demo de Apple, §24.7), eso filtraba pacientes reales a quien no debía verlos.
+
+**Decisión:** todo lo clínico es de **una** organización. Una persona atendida en dos orgs tiene **un registro de paciente por org**; cada uno ve solo lo suyo.
+
+- **Org-scoped** (`ORG_SCOPED_DEFS`): paciente, episodio, sesión del bot, diagnóstico, receta, laboratorio, imagen, consentimiento e **informe de patología** (migración 021 para paciente y patología). `org_id NOT NULL`, estampado con la org activa del token al crear (nunca del payload; sin org activa, la org por defecto). Con org activa, leer, buscar, filtrar, editar, borrar y restaurar solo dentro de esa org; lo de otra org responde **404**.
+- **Sin org activa** (API keys, tokens sin `org_id`, guest): paciente e informe de patología (`ORG_REQUIRED_DEFS`) **no se ven ni se referencian**. El resto de las scoped conserva la regla de 016 (todo menos lo de una sandbox) porque el bot guest lee y escribe sus sesiones con una API key sin org.
+- **Referenciar es leer.** Un campo de relación solo puede apuntar a una fila scoped de la misma org (400). Los inversos (`_relations`, p. ej. los episodios del paciente) se filtran a lo visible: con datos anteriores, un paciente podía tener episodios de otra org.
+- **Adjuntos**: `attachments.org_id NOT NULL` (021), estampado al subir. Hace falta porque se suben **sin entidad** (la imagen clínica los referencia después). Chatter no necesita columna: basta el chequeo por entidad.
+- **Integraciones y colas sin org**: `/api/drpro`, `/api/doctopro` y `/api/patologia/bandeja` solo abren si la org activa tiene la feature en `organizations.data.features` (`requireOrgFeature`). Cierra también a cuentas `pendiente` sin membresía.
+- **Patología** (§23): el importador busca la cédula por SQL en todas las orgs **no sandbox** y crea **un informe por org** con ficha de ese nombre, con un token de esa org. Idempotente por `(org_id, numero_cp)`. Lo que no se asocia va a la bandeja, que no es de ninguna org (feature `patologia`, hoy en `cepi-drpro`). Si en una org la cédula tiene varias fichas o el nombre no coincide, se importa donde sí y el caso queda en la bandeja sin datos de la ficha.
+- **Org sandbox** (`data.sandbox = true`): los datos ya los aísla la org; la marca agrega la regla de **personas**. Desde ella solo se alcanza a sus miembros (`/groups/:slug/members` y conteos, grupo `all`, `request_review`, `POST /reminders`, `assign`), y `assignDefaultOrgs` nunca agrega a una sandbox. La org activa por defecto de quien está en una real y una sandbox es la real (`getUserOrgs` las ordena al final).
+- **Membresía de la sandbox: manual.** Seed 017 saca de `cepi-testing`, **una sola vez** (marca `data.membresias_depuradas_at`), a todo el que además es miembro de una org no sandbox: los médicos reales que entraron por el default de registro. Desde entonces solo un admin agrega o quita miembros, y re-aplicar 017 no vuelve a depurar. 007 no se tocó (cambiarlo haría que el deploy re-aplique 007–013 sobre producción) y sigue sumando a los usuarios demo a la sandbox: 017 los saca en cada aplicación, por su lista de emails. En desarrollo, `seeder/006` crea dos colegas ficticios solo de la sandbox, en `dermatologia`.
+- **Orgs de cepi**: `cepi` (telemedicina), `cepi-drpro` "CEPI — Consultorio (DrPro)" con features `drpro`, `doctopro`, `patologia` (seed 018), `cepi-testing` sandbox con 6 pacientes ficticios (seed 017). `doctopro` es la cuenta sandbox vieja de la misma plataforma (read/write, "degradada a tipo directorio"); `drpro` es el espejo de producción.
+- Punto único: `TodoERP/backend/src/services/orgScope.ts`. Las lecturas por SQL directo (`review-queue`, `patient-assignments`, `patient-thread`, importador de patología) usan los mismos predicados. El bot y el MCP llegan a los datos solo por la API con el token del usuario.
+
+**Seeds re-aplicables.** El deploy corre todo el SQL pendiente en una transacción y re-aplica cada seed posterior a uno que cambió, así que 017 y 018 no llevan `BEGIN/COMMIT` propios y son idempotentes en su intención: lo que es de una sola vez lleva marca en `organizations.data` (`cepi-testing.membresias_depuradas_at`; `cepi-drpro.membresias_copiadas_at` y `reparto_inicial_at`), y lo repetible solo actúa sobre datos que siguen mal ubicados. `cepi-drpro` no se modifica si ya existe (nombre y features quedan como los deje un admin).
+
+**Reparto de los datos existentes** (`medical-seed/018_org_drpro.sql`): episodios con `drpro_cita_id` y sus hijas (incluidas sesiones del bot e informes que cuelgan de ellos) → `cepi-drpro`. Pacientes solo DrPro (con `drpro_id` o episodios DrPro, sin nada de telemedicina) → enteros a `cepi-drpro`. Pacientes **mixtos** → el original queda en `cepi` con lo de telemedicina; una copia (id determinista, mismas columnas, con el `drpro_id`) va a `cepi-drpro` y a ella se re-apuntan los episodios DrPro, sus hijas, las relaciones en los dos sentidos, el chatter del espejo y sus adjuntos; cada informe de patología del paciente se duplica en la otra ficha. Los episodios del importador de patología cuentan como neutros. Adjuntos: del espejo → `cepi-drpro`; ligados a una entidad o a una imagen → la org de esa entidad; el resto → `cepi`. Pacientes y adjuntos creados por cuentas solo-sandbox → su sandbox (una vez). **Filas de una sandbox que apuntan a un paciente de otra org** (episodios con sus hijas, sesiones del bot, imágenes, consentimientos) → a la org de ese paciente: es información suya y la cuenta demo no debe verla (repetible: después de moverlas ya no cumplen la condición). Membresías (una vez): todo miembro de `cepi` también lo es de `cepi-drpro`; la cuenta del espejo, solo de `cepi-drpro` (el espejo escribe en la org con la feature `drpro`, sin mirar sus membresías).
+
+**Consulta previa** (solo lectura; correr en producción **antes** de aplicar 021/018):
+
+```sql
+-- 1. Organizaciones, marcas y miembros
+SELECT o.slug, o.active, o.data, count(uo.user_id) AS miembros
+  FROM organizations o LEFT JOIN user_organizations uo ON uo.org_id = o.id
+ GROUP BY o.id ORDER BY o.slug;
+-- 2. Cuentas de servicio y quién escribió como espejo DrPro (debe ser la cuenta del rol espejo_drpro)
+SELECT r.name AS rol, u.id, u.email FROM users u JOIN roles r ON r.id = u.role_id
+ WHERE r.name IN ('espejo_drpro', 'espejo_patologia');
+SELECT u.email, r.name AS rol, count(*) AS asientos
+  FROM chatter c LEFT JOIN users u ON u.id = c.created_by LEFT JOIN roles r ON r.id = u.role_id
+ WHERE c.source = 'drpro' GROUP BY 1, 2;
+-- 3. Episodios DrPro por org (hoy) y cuántas hijas los acompañan
+SELECT o.slug, count(*) AS episodios_drpro
+  FROM entity_episode e JOIN organizations o ON o.id = e.org_id
+ WHERE COALESCE(e.drpro_cita_id, '') <> '' GROUP BY 1;
+SELECT 'diagnosis' AS tabla, count(*) FROM entity_diagnosis x WHERE x.episode_id IN (SELECT id FROM entity_episode WHERE COALESCE(drpro_cita_id,'') <> '')
+UNION ALL SELECT 'clinical_image', count(*) FROM entity_clinical_image x WHERE x.episode_id IN (SELECT id FROM entity_episode WHERE COALESCE(drpro_cita_id,'') <> '')
+UNION ALL SELECT 'pathology_report', count(*) FROM entity_pathology_report x WHERE x.episode_id IN (SELECT id FROM entity_episode WHERE COALESCE(drpro_cita_id,'') <> '')
+UNION ALL SELECT 'bot_session', count(*) FROM entity_bot_session x WHERE x.active_episode_id IN (SELECT id::text FROM entity_episode WHERE COALESCE(drpro_cita_id,'') <> '');
+-- 4. Clasificación de pacientes (misma regla que medical-seed/018)
+WITH sbx AS (SELECT id FROM organizations WHERE COALESCE(data->>'sandbox','') = 'true'),
+     espejo AS (SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'espejo_drpro'),
+     patologo AS (SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'espejo_patologia'),
+     ep_drpro AS (SELECT id, patient_id FROM entity_episode WHERE COALESCE(drpro_cita_id,'') <> '' AND org_id NOT IN (SELECT id FROM sbx)),
+     cls AS (
+       SELECT p.id,
+              (COALESCE(p.drpro_id,'') <> '' OR EXISTS (SELECT 1 FROM ep_drpro d WHERE d.patient_id = p.id)) AS drpro,
+              (   EXISTS (SELECT 1 FROM entity_episode e WHERE e.patient_id = p.id AND e.id NOT IN (SELECT id FROM ep_drpro)
+                            AND e.org_id NOT IN (SELECT id FROM sbx) AND (e.created_by IS NULL OR e.created_by NOT IN (SELECT id FROM patologo)))
+               OR EXISTS (SELECT 1 FROM entity_bot_session s WHERE s.active_patient_id = p.id::text
+                            AND COALESCE(s.active_episode_id,'') NOT IN (SELECT id::text FROM ep_drpro) AND s.org_id NOT IN (SELECT id FROM sbx))
+               OR EXISTS (SELECT 1 FROM entity_clinical_image ci WHERE ci.patient_id = p.id
+                            AND ci.episode_id NOT IN (SELECT id FROM ep_drpro) AND ci.org_id NOT IN (SELECT id FROM sbx))
+               OR EXISTS (SELECT 1 FROM entity_consent c WHERE c.patient_id = p.id AND c.org_id NOT IN (SELECT id FROM sbx))
+               OR EXISTS (SELECT 1 FROM attachments a WHERE a.entity_id = p.id AND (a.created_by IS NULL OR a.created_by NOT IN (SELECT id FROM espejo)))
+              ) AS tele
+         FROM entity_patient p)
+SELECT CASE WHEN drpro AND tele THEN 'mixto (se parte)' WHEN drpro THEN 'solo DrPro (a cepi-drpro)' ELSE 'telemedicina o sin historia (queda en cepi)' END AS clase,
+       count(*)
+  FROM cls GROUP BY 1 ORDER BY 1;
+-- 5. Informes de patología (hoy) y los que cuelgan de episodios del importador
+SELECT count(*) AS informes,
+       count(*) FILTER (WHERE e.created_by IN (SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'espejo_patologia')) AS en_episodio_del_importador,
+       count(*) FILTER (WHERE COALESCE(e.drpro_cita_id,'') <> '') AS en_episodio_drpro
+  FROM entity_pathology_report pr JOIN entity_episode e ON e.id = pr.episode_id;
+-- 6. Adjuntos: del espejo, ligados a una entidad, referenciados por una imagen, resto (→ cepi)
+SELECT count(*) AS total,
+       count(*) FILTER (WHERE a.created_by IN (SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'espejo_drpro')) AS del_espejo,
+       count(*) FILTER (WHERE a.entity_id IS NOT NULL) AS ligados,
+       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM entity_clinical_image ci WHERE ci.attachment_id = a.id::text)) AS de_imagen
+  FROM attachments a;
+-- 7. Filas de una sandbox que apuntan a un paciente de otra org (018 las devuelve a la org del paciente)
+WITH sbx AS (SELECT id FROM organizations WHERE COALESCE(data->>'sandbox','') = 'true')
+SELECT 'episodios' AS filas, count(*) FROM entity_episode e JOIN entity_patient p ON p.id = e.patient_id
+ WHERE e.org_id IN (SELECT id FROM sbx) AND p.org_id <> e.org_id
+UNION ALL SELECT 'sesiones del bot', count(*) FROM entity_bot_session s JOIN entity_patient p ON p.id::text = s.active_patient_id
+ WHERE s.org_id IN (SELECT id FROM sbx) AND p.org_id <> s.org_id
+UNION ALL SELECT 'imágenes', count(*) FROM entity_clinical_image ci JOIN entity_patient p ON p.id = ci.patient_id
+ WHERE ci.org_id IN (SELECT id FROM sbx) AND p.org_id <> ci.org_id
+UNION ALL SELECT 'consentimientos', count(*) FROM entity_consent c JOIN entity_patient p ON p.id = c.patient_id
+ WHERE c.org_id IN (SELECT id FROM sbx) AND p.org_id <> c.org_id
+UNION ALL SELECT 'diagnósticos de esos episodios', count(*) FROM entity_diagnosis d JOIN entity_episode e ON e.id = d.episode_id
+  JOIN entity_patient p ON p.id = e.patient_id
+ WHERE d.org_id IN (SELECT id FROM sbx) AND e.org_id IN (SELECT id FROM sbx) AND p.org_id <> e.org_id;
+-- (Antes de 021 el paciente no tiene org_id: correr esta consulta después de 021, dentro
+--  del ensayo del deploy, o leer `p.org_id` como 'cepi'.)
+-- 8. Pacientes creados por cuentas que solo están en una sandbox (irán a la sandbox)
+SELECT count(*) AS pacientes_de_cuentas_solo_sandbox
+  FROM entity_patient p
+ WHERE p.created_by IN (SELECT uo.user_id FROM user_organizations uo GROUP BY uo.user_id
+                         HAVING bool_and(uo.org_id IN (SELECT id FROM organizations WHERE COALESCE(data->>'sandbox','') = 'true')));
+-- 9. Misma cédula en más de una ficha hoy (duplicados previos; el importador de patología los manda a la bandeja)
+SELECT count(*) AS cedulas_repetidas FROM (
+  SELECT regexp_replace(COALESCE(cedula,''), '\D', '', 'g') AS c FROM entity_patient
+   WHERE COALESCE(cedula,'') <> '' GROUP BY 1 HAVING count(*) > 1) x;
+-- 10. Miembros de cepi-testing que 017 va a sacar (una vez): los que también están en una org no sandbox
+SELECT u.email, u.active, r.name AS rol,
+       (SELECT string_agg(o2.slug, ',') FROM user_organizations uo2 JOIN organizations o2 ON o2.id = uo2.org_id
+         WHERE uo2.user_id = u.id AND o2.slug <> 'cepi-testing') AS otras_orgs
+  FROM user_organizations uo JOIN organizations o ON o.id = uo.org_id AND o.slug = 'cepi-testing'
+  JOIN users u ON u.id = uo.user_id LEFT JOIN roles r ON r.id = u.role_id
+ WHERE EXISTS (SELECT 1 FROM user_organizations uo2 JOIN organizations o2 ON o2.id = uo2.org_id
+                WHERE uo2.user_id = u.id AND o2.id <> o.id AND COALESCE(o2.data->>'sandbox','') <> 'true')
+ ORDER BY u.email;
+```
+
 ---
 
 ## 14. Casos de uso principales
@@ -1116,6 +1225,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-16** | Diagnóstico de la ficha | **Un dato único** (`episode.codigo_cie10`) que se pisa con el último valor. Se evaluó y **descartó** una tabla de diagnósticos multi-fuente versionada: el historial de cambios ya lo da `chatter` y los candidatos de la IA con su probabilidad ya van a `entity_classifications`. La procedencia del cambio se marca con `chatter.source` (migración 019). Ver §21.3. |
 | **D-Aux-18** | Portal de casos | `casos.cepi.ec`: segunda superficie del frontend médico para **revisar, buscar y consolidar**, no para capturar. Comparte usuarios y componentes con telemedicina; **sin chat** en v1. Reusa los 27 grupos de `FICHA_GROUP_SPEC` en vez del formulario del ERP, que es estructurado por entidad y no tiene forma de ficha. Ver §22. |
 | **D-Aux-17** | Materialización lazy | No se baja el histórico completo de DrPro (17.990 citas/año). El espejo indexa la agenda desde el mes en curso y materializa la ficha de un paciente **bajo demanda**. Ver §21.4. |
+| **D-Aux-21** | Registros por organización | Todo lo clínico es de **una** org (paciente e informe de patología incluidos): una persona atendida en dos orgs tiene un registro por org, sin deduplicación. Sin org activa no se ve ningún paciente. Integraciones en vivo y bandeja de patología por `organizations.data.features`. Org sandbox (`data.sandbox`): solo alcanza a sus miembros y nadie entra por defecto. Orgs: `cepi` (telemedicina), `cepi-drpro` (consultorio), `cepi-testing` (sandbox). Ver §13.7 y §24.7. |
 
 ---
 
@@ -1789,8 +1899,31 @@ manda el header `Authorization`).
 
   El acceso real lo sigue decidiendo el backend (cuenta nueva = rol `pendiente`).
 - La **cuenta demo** que pide Apple para revisar vive solo en la org de pruebas
-  (`cepi-testing`), nunca en `cepi`: el revisor entra a producción. Ojo con
-  `assignDefaultOrgs`, que asigna las dos por defecto.
+  (`cepi-testing`), nunca en `cepi`: el revisor entra a producción. `cepi-testing` es una
+  **org sandbox** (D-Aux-21, §13.7): la cuenta demo ve solo los 6 pacientes ficticios del
+  seed 017 (y lo que ella misma cree), ni un paciente, imagen o informe de otra org, no abre
+  DrPro ni DoctoPro, y solo puede derivar a miembros de `cepi-testing`.
+  - **Qué hace el deploy** (CI, `docs/DEPLOY.md`): aplica 021 y la cascada de seeds desde el
+    primero que cambió (014 en adelante) en una transacción, reinicia y re-aplica. En el
+    primer deploy: 014 pasa el índice de patología a
+    `(org_id, numero_cp)`; 017 depura una vez la membresía de `cepi-testing` (y saca a los demo de 007); 018 crea
+    `cepi-drpro`, copia membresías una vez, reparte los datos y devuelve a su org las filas
+    de la sandbox que apuntan a pacientes reales. En los siguientes: nada de lo de una vez
+    se repite, y lo repetible solo encuentra lo que haya quedado mal ubicado.
+  - **Pendiente en producción (no se hace desde el código), en este orden:**
+    1. Antes del deploy, correr la consulta previa de §13.7 y revisar los conteos (quién
+       escribe como espejo DrPro, cuántos mixtos se van a partir, filas de la sandbox que
+       vuelven a su org, quiénes salen de `cepi-testing`). Un push a `ci/<algo>` muestra el
+       ensayo del SQL pendiente.
+    2. Después del deploy, revisar las membresías de `cepi-drpro`: el seed copió a todos los
+       de `cepi`; sacar a quien no trabaja en el consultorio.
+    3. Poner `REGISTER_DEFAULT_ORG_SLUGS=cepi` (el código ya ignora las sandbox, pero la
+       variable debe decir lo que se quiere).
+    4. Si telemedicina usa la búsqueda de DoctoPro del intake, agregar `doctopro` a las
+       features de `cepi` (hoy solo está en `cepi-drpro`).
+    5. La membresía de `cepi-testing` es manual desde la depuración. Para que la derivación
+       se pueda mostrar, agregar a la sandbox al menos un colega que solo exista en ella, en
+       algún grupo: con la cuenta demo sola, "Todos" y los círculos resuelven a nadie.
 - `Recursos/PrivacyInfo.xcprivacy` declara el uso de `UserDefaults` (razón `CA92.1`) y los
   datos que maneja, todos para el funcionamiento de la app y sin rastreo. Sin la
   declaración de `UserDefaults`, App Store Connect rechaza la build.
