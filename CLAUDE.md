@@ -39,6 +39,9 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
   falta de permiso es ruido.
 - **PII**: campos con `pii: true` en `entity_definitions.config.fields` se redactan al cruzar dos fronteras: `cepi-bot → LLM` (PAPER §13.3.1) y `TodoERP → role sin pii:read:<slug>` (R4 de REFACTOR_PLAN). Ambas implementadas.
 - **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend` y `cepi-bot`. Total actual ~202 tests.
+- **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).
+  Nada de rsync ni scp a mano. Todo SQL tiene que ser idempotente y transaccional, y un seed
+  médico nuevo se agrega a `medical-seed/apply.sh` o el deploy no lo aplica.
 - **Git**: los remotes viven en la cuenta `desarrollocepi` (`desarrollocepi/cepi` público, `desarrollocepi/TodoERP` privado). El subm `TodoERP/` tiene su propio remote; el cepi raíz lo apunta por SHA. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
 
 ## Cuando agregás...
