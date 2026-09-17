@@ -4,6 +4,52 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-17 — Orgs por registro, DrPro aparte, sandbox para Apple y E2E del revisor
+
+- **Git:** TodoERP dejó de ser submódulo (lo hizo la otra máquina) y ya es un repo aparte en
+  `./TodoERP`, remote `desarrollocepi/TodoERP`. Se integró `ci/deploy-prod` en
+  `feat/ios-nativa`. TodoERP `main` = `feat/espejo-drpro` = `7556db3`.
+- **Deploy por CI** (`docs/DEPLOY.md`): el ensayo en `ci/orgs-drpro-sandbox` (run 35185938792)
+  pasó tests y el dry-run contra prod. SQL pendiente: 021, 014–018, con el ensayo en
+  `ROLLBACK` OK. **Falta el push de `feat/ios-nativa` a `master`**, que es lo que despliega.
+- **Organizaciones (D-Aux-21, PAPER §13.7):** paciente, informe de patología y adjuntos son
+  de UNA org. `cepi` es telemedicina, `cepi-drpro` el consultorio (espejo DrPro, patología) y
+  `cepi-testing` la sandbox, aislada también en personas. `/api/drpro`, `/api/doctopro` y
+  `/api/patologia` solo abren con la feature en la org activa. Los seeds 017/018 reparten los
+  datos existentes; lo de una sola vez queda marcado en la org.
+- **Borrado de cuenta** (App Store 5.1.1(v)) en iOS, web y APK; `DELETE /api/auth/me`
+  anonimiza y conserva el nombre del profesional. Ya estaba en prod (TodoERP `f7b63f7`); la
+  UI web e iOS llega con el próximo deploy o build.
+- **iOS:**
+  - "Sin conexión con el servidor" al abrir un paciente en el iPhone: reintento ante
+    `networkConnectionLost`, código de URLError en el mensaje y en el log.
+  - Se quitó el micrófono gris con "Dictado: llega en la fase 4".
+  - La confirmación de borrar la cuenta desde el menú no se presentaba (alerta colgada de un
+    `Menu` en la barra): ahora la presenta la lista.
+- **App Store Connect:** app "CEPI Telemedicina" creada. TestFlight con el grupo interno
+  "CEPI interno" (distribución automática) y los builds 1 y 2.
+- **E2E de la cuenta del revisor** (solo sandbox, login a mano):
+  `scripts/cuenta-revisor.mjs` + `RevisorUITests`.
+
+Tests:
+- TodoERP: **396 passed**.
+- cepi-bot: **105 passed**. En esta Mac hicieron falta los binarios darwin de rollup y esbuild.
+- cepi-ios: **52 de unidad** y **6 de UI** contra el stack local, en verde.
+- Web (Playwright): el revisor solo ve ficticios; `primario` ve registros distintos en `cepi`
+  y `cepi-drpro`.
+
+**Pendiente (usuario):**
+1. Push a `master` para desplegar.
+2. Después del deploy:
+   - revisar quién quedó en `cepi-drpro` (el seed copió a todos los de `cepi`);
+   - confirmar que `DRPRO_MEDICO_EMAIL` es una cuenta existente;
+   - crear en prod la cuenta demo de Apple solo en `cepi-testing` y darle a la sandbox un
+     colega en `dermatologia` para poder mostrar la derivación.
+3. Teléfono de contacto para la revisión beta.
+4. Estado de comerciante UE en App Store Connect.
+
+---
+
 ## Sesión 2026-09-16 — App iOS: fase 3 (ficha nativa) y primer deploy al iPhone
 
 - **Git:** `feat/ios-nativa` subida a GitHub, con los 3 commits que venían de la otra
