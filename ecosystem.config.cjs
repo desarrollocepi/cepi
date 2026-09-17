@@ -58,7 +58,7 @@ module.exports = {
         NODE_ENV: 'development',
         PORT: 3002,
         TODOERP_API_URL: 'http://localhost:3001',
-        CEPI_LLM_PROVIDER: 'claude',
+        CEPI_LLM_PROVIDER: 'deepseek',
         // ── WhatsApp webhook (segundo listener en el mismo proceso) ──
         WHATSAPP_WEBHOOK_PORT: 9997,
         WHATSAPP_VERIFY_TOKEN: 'mywpverifytoken',    // el mismo configurado en Meta

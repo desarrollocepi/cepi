@@ -28,7 +28,7 @@ Requisitos:
 ### 1. Clonar (con submódulo)
 
 ```powershell
-git clone --recurse-submodules git@github.com:seyacat/cepi.git
+git clone --recurse-submodules git@github.com:desarrollocepi/cepi.git
 cd cepi
 git submodule update --init
 ```
