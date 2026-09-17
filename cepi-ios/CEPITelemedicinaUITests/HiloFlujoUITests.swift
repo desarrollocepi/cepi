@@ -27,6 +27,7 @@ final class HiloFlujoUITests: XCTestCase {
             "CEPI_DEV_PACIENTE": paciente,
         ]
         app.launch()
+        StackLocal.descartarGuardarContrasena(en: app)
 
         let caja = app.descendants(matching: .any)["composer.texto"]
         XCTAssertTrue(caja.waitForExistence(timeout: 90), "No se abrió el hilo del paciente")

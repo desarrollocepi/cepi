@@ -9,6 +9,8 @@ struct PacientesView: View {
     @State private var seleccion: FilaPaciente.ID?
     @State private var busqueda = ""
     @State private var creando = false
+    @State private var confirmarBorrado = false
+    @State private var errorOrganizacion: String?
 
     var body: some View {
         NavigationSplitView {
@@ -34,6 +36,15 @@ struct PacientesView: View {
                 await modelo.cargar(api: sesion.api)
                 try? await Task.sleep(for: .seconds(20))
             }
+        }
+        .eliminarCuenta(confirmar: $confirmarBorrado)
+        .alert("No se pudo cambiar de organización", isPresented: Binding(
+            get: { errorOrganizacion != nil },
+            set: { if !$0 { errorOrganizacion = nil } }
+        )) {
+            Button("Aceptar", role: .cancel) {}
+        } message: {
+            Text(errorOrganizacion ?? "")
         }
         .sheet(isPresented: $creando) {
             NuevoPacienteView { registro in
@@ -90,7 +101,7 @@ struct PacientesView: View {
         .navigationTitle("Pacientes")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                MenuCuenta()
+                MenuCuenta(confirmarBorrado: $confirmarBorrado, errorOrganizacion: $errorOrganizacion)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Nuevo paciente", systemImage: "person.badge.plus") { creando = true }

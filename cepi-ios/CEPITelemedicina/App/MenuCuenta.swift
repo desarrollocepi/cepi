@@ -3,12 +3,15 @@ import SwiftUI
 /// Cuenta y organización activa, en la barra de la lista. El selector de organización se
 /// muestra siempre: con una sola, gris y diciendo por qué no hay a cuál cambiar
 /// (CLAUDE.md: nunca ocultes un botón).
+///
+/// Las alertas (confirmar el borrado, error al cambiar de org) las presenta quien contiene
+/// la barra, no este menú: una alerta colgada de un `Menu` dentro de un `ToolbarItem` no
+/// llega a presentarse cuando el menú se cierra al elegir la opción.
 struct MenuCuenta: View {
     @Environment(Sesion.self) private var sesion
+    @Binding var confirmarBorrado: Bool
+    @Binding var errorOrganizacion: String?
     @State private var orgElegida = ""
-    @State private var error: String?
-    @State private var mostrarError = false
-    @State private var confirmarBorrado = false
 
     var body: some View {
         Menu {
@@ -41,17 +44,11 @@ struct MenuCuenta: View {
         } label: {
             Label("Cuenta", systemImage: "person.crop.circle")
         }
-        .eliminarCuenta(confirmar: $confirmarBorrado)
         .onAppear { orgElegida = sesion.usuario?.orgActiva ?? "" }
         .onChange(of: sesion.usuario?.orgActiva) { _, activa in orgElegida = activa ?? "" }
         .onChange(of: orgElegida) { _, id in
             guard !id.isEmpty, id != sesion.usuario?.orgActiva else { return }
             Task { await cambiar(a: id) }
-        }
-        .alert("No se pudo cambiar de organización", isPresented: $mostrarError) {
-            Button("Aceptar", role: .cancel) {}
-        } message: {
-            Text(error ?? "")
         }
     }
 
@@ -60,8 +57,7 @@ struct MenuCuenta: View {
             try await sesion.cambiarOrganizacion(a: id)
         } catch {
             orgElegida = sesion.usuario?.orgActiva ?? ""
-            self.error = error.localizedDescription
-            mostrarError = true
+            errorOrganizacion = error.localizedDescription
         }
     }
 }

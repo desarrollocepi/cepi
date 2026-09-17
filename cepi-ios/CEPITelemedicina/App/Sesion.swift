@@ -44,6 +44,14 @@ final class Sesion {
 
     /// Al abrir la app: si hay token guardado, validarlo y traer el usuario.
     func restaurar() async {
+        #if DEBUG
+        // Solo Debug: con `CEPI_DEV_EMAIL` se entra siempre con esa cuenta. Sin esto, una
+        // sesión que quedó en el Keychain del simulador (otra cuenta, o una pendiente) gana
+        // y el ingreso automático de LoginView nunca corre.
+        if ProcessInfo.processInfo.environment["CEPI_DEV_EMAIL"] != nil {
+            await credenciales.guardar(nil)
+        }
+        #endif
         guard await credenciales.token() != nil else {
             estado = .sinSesion
             return

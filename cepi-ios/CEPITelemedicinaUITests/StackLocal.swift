@@ -35,7 +35,28 @@ enum StackLocal {
             "CEPI_DEV_PACIENTE": paciente,
         ]
         app.launch()
+        descartarGuardarContrasena(en: app)
         return app
+    }
+
+    /// Tras escribir usuario y contraseña, iOS ofrece guardarlos ("Save Password?") en un
+    /// diálogo del sistema que tapa la app y bloquea los toques. Se descarta si aparece.
+    static func descartarGuardarContrasena(en app: XCUIApplication, espera: TimeInterval = 8) {
+        // El diálogo es una vista remota que aparece dentro del árbol de la propia app.
+        let sistema = [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")]
+        let limite = Date.now.addingTimeInterval(espera)
+        repeat {
+            for proceso in sistema {
+                for etiqueta in ["Not Now", "Ahora no"] {
+                    let boton = proceso.buttons[etiqueta]
+                    if boton.exists {
+                        boton.tap()
+                        return
+                    }
+                }
+            }
+            RunLoop.current.run(until: .now.addingTimeInterval(0.5))
+        } while Date.now < limite
     }
 
     /// Espera a que el hilo termine de abrir: el aviso de activación llega con las secciones.
