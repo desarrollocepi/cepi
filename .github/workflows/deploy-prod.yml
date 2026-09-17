@@ -56,7 +56,7 @@ jobs:
       STAGE: DEVELOP
       CEPI_MEDICAL: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Submódulo TodoERP (privado)
         env:
@@ -67,17 +67,19 @@ jobs:
           echo "$GITHUB_ED25519" >> ~/.ssh/known_hosts
           git -c core.sshCommand="ssh -i ~/.ssh/todoerp -o IdentitiesOnly=yes" submodule update --init TodoERP
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: |
             TodoERP/backend/package-lock.json
+            TodoERP/mcp/package-lock.json
             cepi-bot/package-lock.json
 
       - name: Dependencias
         run: |
           (cd TodoERP/backend && npm ci --no-audit --no-fund)
+          (cd TodoERP/mcp && npm ci --no-audit --no-fund)   # mcp_generality.test.ts importa ../mcp/src
           (cd cepi-bot && npm ci --no-audit --no-fund)
 
       - name: Base de tests
@@ -96,7 +98,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Submódulo TodoERP (privado)
         env:
@@ -107,7 +109,7 @@ jobs:
           echo "$GITHUB_ED25519" >> ~/.ssh/known_hosts
           git -c core.sshCommand="ssh -i ~/.ssh/todoerp -o IdentitiesOnly=yes" submodule update --init TodoERP
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
