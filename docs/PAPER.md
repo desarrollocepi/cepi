@@ -1776,6 +1776,22 @@ manda el header `Authorization`).
   El proyecto iOS de Capacitor nunca se generó, así que no hay nada que migrar.
 - TestFlight → App Store. **No hay OTA**: la app nativa se actualiza por la tienda. Lo que
   cambia seguido (los formularios de la ficha) ya viene del servidor (§24.3).
+- La app es **cerrada para el negocio**, no pública:
+  1. **TestFlight interno** primero: hasta 100 usuarios del equipo de App Store Connect,
+     sin revisión de Apple.
+  2. **TestFlight externo** si los médicos no son parte del equipo: pasa Beta App Review.
+  3. **Unlisted App Distribution** para quedarse: revisión normal, no aparece en búsquedas,
+     se instala solo con el enlace.
+
+  El acceso real lo sigue decidiendo el backend (cuenta nueva = rol `pendiente`).
+- La **cuenta demo** que pide Apple para revisar vive solo en la org de pruebas
+  (`cepi-testing`), nunca en `cepi`: el revisor entra a producción. Ojo con
+  `assignDefaultOrgs`, que asigna las dos por defecto.
+- `Recursos/PrivacyInfo.xcprivacy` declara el uso de `UserDefaults` (razón `CA92.1`) y los
+  datos que maneja, todos para el funcionamiento de la app y sin rastreo. Sin la
+  declaración de `UserDefaults`, App Store Connect rechaza la build.
+  `ITSAppUsesNonExemptEncryption = NO`: solo HTTPS y el hash de PKCE, así que no pregunta
+  por cifrado en cada build.
 - App de salud: Apple revisa con más rigor (guías 1.4.1 y 5.1.1). **Bloqueante conocido:**
   el login con Google *crea* cuentas (find-or-create en `loginWithGoogle`), y Apple exige
   que una app que crea cuentas permita **borrarlas desde la app** (5.1.1(v)). Hoy no hay
