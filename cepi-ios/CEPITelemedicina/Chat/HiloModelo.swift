@@ -27,7 +27,8 @@ final class HiloModelo {
     /// no "Sin consultas todavía", que se leía como que el paciente no tenía ficha.
     private(set) var cargado = false
     @ObservationIgnored private var sesionId: String?
-    @ObservationIgnored private var abierto = false
+    /// La apertura en curso o terminada; ver `abrir`.
+    @ObservationIgnored private var apertura: Task<Void, Never>?
 
     init(pacienteId: String) {
         self.pacienteId = pacienteId
@@ -42,9 +43,20 @@ final class HiloModelo {
 
     /// Al abrir: reanuda la sesión abierta propia (o crea una) activando al paciente. El bot
     /// saluda y dice qué falta de la ficha sin pasar por el LLM.
+    ///
+    /// Corre en una tarea del MODELO, no en la de la vista: en iPhone, al abrir otro paciente
+    /// SwiftUI cancela y relanza el `.task` de la vista. Con la apertura atada a esa tarea, la
+    /// primera corrida quedaba cancelada a mitad y la segunda salía por "ya está abierto": el
+    /// hilo se quedaba en "Cargando la información…" para siempre. Ahora la segunda llamada
+    /// espera a la misma apertura.
     func abrir(api: CEPIAPI) async {
-        guard !abierto else { return }
-        abierto = true
+        if apertura == nil {
+            apertura = Task { await activar(api: api) }
+        }
+        await apertura?.value
+    }
+
+    private func activar(api: CEPIAPI) async {
         // Lo guardado se pide ya, en paralelo con la activación del bot (que en producción
         // tarda): así se ve lo que hay en cuanto llega, sin esperar al saludo.
         async let historial: Void = releer(api: api)
@@ -58,8 +70,6 @@ final class HiloModelo {
             await releer(api: api)
         } catch {
             await historial
-            // Salir del paciente cancela la tarea: no es un error y hay que poder reabrirlo.
-            if Task.isCancelled { abierto = false; return }
             self.error = error.localizedDescription
         }
     }

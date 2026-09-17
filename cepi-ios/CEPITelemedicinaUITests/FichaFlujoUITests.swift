@@ -14,11 +14,7 @@ final class FichaFlujoUITests: XCTestCase {
 
         let campo = app.textFields["campo.tiempo_evolucion"]
         XCTAssertTrue(campo.waitForExistence(timeout: 60), "No apareció el formulario 3.2")
-        campo.tap()
-        if let actual = campo.value as? String, !actual.isEmpty {
-            campo.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: actual.count))
-        }
-        campo.typeText(texto)
+        StackLocal.escribir(campo, texto)
         app.buttons["formulario.enviar"].tap()
 
         let guardado = try await StackLocal.esperarEnBackend(60) {

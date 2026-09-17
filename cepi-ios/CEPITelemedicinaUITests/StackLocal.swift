@@ -39,6 +39,22 @@ enum StackLocal {
         return app
     }
 
+    /// Toca el campo hasta que tenga el teclado y reemplaza su texto. En este simulador el
+    /// toque llega a veces antes de que el campo acepte el foco, y `typeText` falla con
+    /// "Neither element nor any descendant has keyboard focus".
+    static func escribir(_ campo: XCUIElement, _ texto: String) {
+        XCTAssertTrue(campo.waitForExistence(timeout: 30), "No existe el campo \(campo)")
+        let limite = Date.now.addingTimeInterval(15)
+        repeat {
+            campo.tap()
+            RunLoop.current.run(until: .now.addingTimeInterval(0.7))
+        } while !((campo.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) && Date.now < limite
+        if let actual = campo.value as? String, !actual.isEmpty, actual != campo.placeholderValue {
+            campo.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: actual.count))
+        }
+        campo.typeText(texto)
+    }
+
     /// Tras escribir usuario y contraseña, iOS ofrece guardarlos ("Save Password?") en un
     /// diálogo del sistema que tapa la app y bloquea los toques. Se descarta si aparece.
     static func descartarGuardarContrasena(en app: XCUIApplication, espera: TimeInterval = 8) {

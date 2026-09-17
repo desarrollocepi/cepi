@@ -184,7 +184,7 @@ struct HiloView: View {
                 // imágenes tienen tamaño fijo.
                 VStack(alignment: .leading, spacing: 10) {
                     if !modelo.cargado && modelo.error == nil {
-                        ProgressView("Cargando el hilo…")
+                        ProgressView("Cargando la información…")
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else if visibles.isEmpty && !modelo.ocupado {
