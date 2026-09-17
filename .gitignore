@@ -67,3 +67,9 @@ release-state.png
 
 # Estado del MCP de Playwright (snapshots y logs de consola por sesión)
 .playwright-mcp/
+busqueda-pacientes.png
+caso-nav.png
+caso-nav2.png
+donde-estan.png
+formato-ficha-hcu.png
+msp-002-lleno.png

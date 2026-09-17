@@ -844,6 +844,67 @@ export async function prepararDatosGrupo(
  * Es el camino de edición del portal de casos: mismas coerciones y derivados que el
  * chat, y recálculo de la completitud al terminar.
  */
+/**
+ * Guarda la ficha ENTERA de una vez, repartiendo cada clave a su entidad: §1-§2
+ * son del paciente, §3 en adelante del episodio.
+ *
+ * Es lo que hace el botón «Guardar» de los formatos documentales del portal y el
+ * del visor de telemedicina. Se guarda al pulsar, nunca campo a campo mientras se
+ * escribe: en un documento de una página el usuario corrige varias casillas antes
+ * de dar por buena la versión, y un autoguardado dejaría en la historia clínica
+ * estados intermedios que nadie firmó.
+ *
+ * Un campo vacío NO borra: `entities.update` mezcla clave a clave, así que una
+ * cadena vacía pisaría el valor guardado. Misma guarda que los formularios de grupo.
+ */
+export async function guardarFichaCompleta(
+  mcp: TodoErpMcpClient,
+  target: FichaTarget,
+  data: Record<string, unknown>,
+): Promise<{ ok: boolean; errores: string[]; camposPaciente: number; camposEpisodio: number; completitud: number | null }> {
+  const patientData: Record<string, unknown> = {};
+  const episodeData: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data || {})) {
+    if (v === '' || v === null || v === undefined) continue;
+    if (FICHA_PATIENT_KEYS.has(k)) patientData[k] = v;
+    else if (FICHA_EPISODE_KEYS.has(k)) episodeData[k] = v;
+    // Lo que no pertenece a ninguna de las dos se descarta en silencio: los
+    // formatos documentales llevan casillas propias (unicódigo, signos vitales)
+    // que no son campos de la ficha.
+  }
+
+  const errores: string[] = [];
+  if (target.patientId && Object.keys(patientData).length) {
+    const r: any = await mcp.call('entities.update', {
+      id: target.patientId, record_type: 'business', data: coercePatch(patientData),
+    });
+    if (r?.ok === false || r?.isError) errores.push(`paciente: ${r?.error || 'error'}`);
+  }
+  if (target.episodeId && Object.keys(episodeData).length) {
+    const r: any = await mcp.call('entities.update', {
+      id: target.episodeId, record_type: 'business', data: coercePatch(episodeData),
+    });
+    if (r?.ok === false || r?.isError) errores.push(`episodio: ${r?.error || 'error'}`);
+  }
+
+  let completitud: number | null = null;
+  if (target.episodeId) {
+    try {
+      completitud = (await recalcularCompletitud(mcp, target)).pct;
+    } catch (err) {
+      console.error('[ficha] guardado ok pero falló el recálculo:', (err as any)?.message || err);
+    }
+  }
+
+  return {
+    ok: errores.length === 0,
+    errores,
+    camposPaciente: Object.keys(patientData).length,
+    camposEpisodio: Object.keys(episodeData).length,
+    completitud,
+  };
+}
+
 export async function guardarGrupoFicha(
   mcp: TodoErpMcpClient,
   args: { groupId: string; data: Record<string, unknown>; patientId?: string | null; episodeId?: string | null },
@@ -1034,30 +1095,13 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
   // then refreshes the patient context held in the session.
   if (ctx.formSubmission?.form_id === 'ficha_save') {
     const data = (ctx.formSubmission.data || {}) as Record<string, unknown>;
-    const patientData: Record<string, unknown> = {};
-    const episodeData: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(data)) {
-      // Never let an empty field clear stored data — entities.update merges
-      // field-by-field, so an empty string would overwrite the existing value.
-      // (Same guard the group forms apply in BotForm.onSubmit.)
-      if (v === '' || v === null || v === undefined) continue;
-      if (FICHA_PATIENT_KEYS.has(k)) patientData[k] = v;
-      else if (FICHA_EPISODE_KEYS.has(k)) episodeData[k] = v;
-    }
     const epId = ctx.formSubmission.episode_id || session.active_episode_id;
-    const errs: string[] = [];
-    if (session.active_patient_id && Object.keys(patientData).length) {
-      const r = await mcp.call('entities.update', {
-        id: session.active_patient_id, record_type: 'business', data: patientData,
-      });
-      if (!(r as any)?.ok) errs.push(`paciente: ${(r as any)?.error || 'error'}`);
-    }
-    if (epId && Object.keys(episodeData).length) {
-      const r = await mcp.call('entities.update', {
-        id: epId, record_type: 'business', data: episodeData,
-      });
-      if (!(r as any)?.ok) errs.push(`episodio: ${(r as any)?.error || 'error'}`);
-    }
+    // Mismo guardado que usa el botón del portal: una sola implementación del
+    // reparto paciente/episodio y de la guarda de campos vacíos.
+    const res = await guardarFichaCompleta(mcp, {
+      patientId: session.active_patient_id, episodeId: epId,
+    }, data);
+    const errs = res.errores;
     // Refresh the patient context the session carries for the bot.
     if (session.active_patient_id) {
       try {

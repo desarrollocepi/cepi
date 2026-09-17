@@ -25,10 +25,11 @@ import { ChatTurn } from './llm.js';
 import { TodoErpMcpClient } from './mcpClient.js';
 import { createSession, loadSession, saveSession, BOT_SESSION_ENTITY_ID, BotSession } from './sessionStore.js';
 import {
-  handleV1Flow, fichaGroupFormFilled, firstIncompleteFichaGroup, fichaCompleta, recalcularCompletitud, guardarGrupoFicha,
+  handleV1Flow, fichaGroupFormFilled, firstIncompleteFichaGroup, fichaCompleta, recalcularCompletitud, guardarGrupoFicha, guardarFichaCompleta,
   nextIncompleteFichaGroupId, fichaGroupIsComplete, fichaBookmarks, BotForm,
   FICHA_GROUPS,
 } from './flowV1.js';
+import { extraerEpisodio } from './extraerFicha.js';
 import { icdSearch } from './icdWho.js';
 import { extractPendingQuestions, pendingQuestionsNote } from './pendingQuestions.js';
 import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_ICD } from './episodeImages.js';
@@ -349,6 +350,78 @@ app.post('/api/bot/ficha/grupo', async (req: Request, res: Response, next: NextF
     }
     next(err);
   }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/ficha/guardar — guarda la ficha ENTERA desde un formato documental.
+ * Body: {episode_id?, patient_id?, data}
+ *
+ * Es el destino del botón «Guardar» del visor de formatos del portal. A diferencia
+ * de /ficha/grupo, que recibe un grupo y valida contra sus campos declarados, acá
+ * llega el documento completo y el reparto lo hace `guardarFichaCompleta`: §1-§2 al
+ * paciente, §3 en adelante al episodio, descartando lo que no sea campo de la ficha
+ * y sin dejar que un vacío borre lo guardado.
+ */
+app.post('/api/bot/ficha/guardar', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt    = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    const apiKey = req.header('x-api-key') || process.env.CEPI_GUEST_API_KEY || '';
+    if (!jwt && !apiKey) return res.status(401).json({ ok: false, error: 'Auth required' });
+
+    const { data, episode_id, patient_id } = req.body || {};
+    if (!data || typeof data !== 'object') return res.status(400).json({ ok: false, error: 'data required' });
+    if (!episode_id && !patient_id) {
+      return res.status(400).json({ ok: false, error: 'episode_id o patient_id required' });
+    }
+
+    mcp = new TodoErpMcpClient({ jwt, apiKey });
+    await mcp.connect();
+    const r = await guardarFichaCompleta(mcp, {
+      patientId: patient_id ? String(patient_id) : null,
+      episodeId: episode_id ? String(episode_id) : null,
+    }, data as Record<string, unknown>);
+    res.json(r);
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/ficha/extraer — rellena campos vacíos leyendo el texto libre del crudo.
+ * Body: {episode_id} o {episode_ids: [...]} para un lote.
+ *
+ * No consulta a DrPro: trabaja sobre `drpro_raw`, que es inmutable y ya está en la
+ * base. Por eso se puede reescribir el prompt y volver a pasarlo cuantas veces haga
+ * falta. Nunca pisa un campo con valor, y marca en `ficha_fuente` lo que escribió.
+ */
+app.post('/api/bot/ficha/extraer', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt    = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    const apiKey = req.header('x-api-key') || process.env.CEPI_GUEST_API_KEY || '';
+    if (!jwt && !apiKey) return res.status(401).json({ ok: false, error: 'Auth required' });
+
+    const uno = req.body?.episode_id ? [String(req.body.episode_id)] : null;
+    const varios = Array.isArray(req.body?.episode_ids) ? req.body.episode_ids.map(String) : null;
+    const ids = uno || varios;
+    if (!ids?.length) return res.status(400).json({ ok: false, error: 'episode_id o episode_ids required' });
+    // Tope por petición: cada episodio es una llamada al LLM, y un lote sin límite
+    // dejaría al bot minutos sin atender a nadie más.
+    if (ids.length > 50) return res.status(400).json({ ok: false, error: 'máximo 50 episodios por petición' });
+
+    mcp = new TodoErpMcpClient({ jwt, apiKey });
+    await mcp.connect();
+    const soloVacios = req.body?.solo_vacios !== false;
+    const resultados = [];
+    for (const id of ids) {
+      try { resultados.push(await extraerEpisodio(mcp, id, { soloVacios })); }
+      catch (err: any) { resultados.push({ episode_id: id, ok: false, escritos: [], omitidos_por_ocupado: [], motivo: String(err?.message || err) }); }
+    }
+    res.json({ ok: true, total: resultados.length, resultados });
+  } catch (err: any) { next(err); }
   finally { if (mcp) await mcp.close().catch(() => {}); }
 });
 
