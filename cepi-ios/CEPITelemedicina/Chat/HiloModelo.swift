@@ -50,6 +50,8 @@ final class HiloModelo {
             aplicar(try await api.chat("activar paciente \(pacienteId)", sesion: propia?.id))
             await releer(api: api)
         } catch {
+            // Salir del paciente cancela la tarea: no es un error y hay que poder reabrirlo.
+            if Task.isCancelled { abierto = false; return }
             self.error = error.localizedDescription
         }
     }
@@ -122,7 +124,7 @@ final class HiloModelo {
         do {
             mensajes = try await api.hilo(paciente: pacienteId)
         } catch {
-            self.error = "No se pudo cargar el hilo: \(error.localizedDescription)"
+            if !Task.isCancelled { self.error = "No se pudo cargar el hilo: \(error.localizedDescription)" }
         }
     }
 
@@ -151,7 +153,7 @@ final class HiloModelo {
             }
             aplicar(try await ejecutar(sesionId), explicito: explicito)
         } catch {
-            self.error = error.localizedDescription
+            if !Task.isCancelled { self.error = error.localizedDescription }
             procesado = false
         }
         // Tras un éxito trae el turno ya atribuido; tras un fallo quita el eco, para que no

@@ -40,6 +40,33 @@ struct SesionTests {
         await prueba.cerrar()
     }
 
+    /// En un teléfono real, un POST sobre una conexión que el servidor cerró por inactividad
+    /// falla con `networkConnectionLost`: se reintenta una vez y el usuario no ve nada.
+    @Test func unaConexionPerdidaSeReintentaUnaVez() async {
+        let prueba = await Prueba(token: "vigente")
+        prueba.servidor.fijar("GET /api/auth/me", .conexionPerdida, Self.me(token: "renovado"))
+
+        await prueba.sesion.restaurar()
+
+        #expect(prueba.servidor.pedidos == ["GET /api/auth/me", "GET /api/auth/me"])
+        #expect(prueba.sesion.estado == .activa)
+        await prueba.cerrar()
+    }
+
+    @Test func sinRedElMensajeLlevaElCodigo() async throws {
+        let prueba = await Prueba(token: "vigente")
+        prueba.servidor.fijar("GET /api/auth/me", .sinRed)
+
+        await prueba.sesion.restaurar()
+
+        guard case .sinValidar(let mensaje) = prueba.sesion.estado else {
+            Issue.record("estado inesperado: \(prueba.sesion.estado)")
+            return
+        }
+        #expect(mensaje.contains("\(URLError.notConnectedToInternet.rawValue)"))
+        await prueba.cerrar()
+    }
+
     @Test func soloUn401CierraLaSesion() async {
         let prueba = await Prueba(token: "vencido")
         prueba.servidor.fijar("GET /api/auth/me", .http(401, #"{"ok":false,"error":"Token inválido"}"#))
@@ -168,6 +195,7 @@ final class ServidorFalso: @unchecked Sendable {
     enum Respuesta {
         case http(Int, String)
         case sinRed
+        case conexionPerdida
     }
 
     let host = "prueba-\(UUID().uuidString.lowercased()).local"
@@ -242,6 +270,8 @@ final class ProtocoloFalso: URLProtocol {
         switch servidor.responder("\(request.httpMethod ?? "GET") \(url.path())", cuerpo: cuerpo) {
         case .sinRed:
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+        case .conexionPerdida:
+            client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
         case let .http(status, cuerpo):
             let respuesta = HTTPURLResponse(
                 url: url, statusCode: status, httpVersion: "HTTP/1.1",

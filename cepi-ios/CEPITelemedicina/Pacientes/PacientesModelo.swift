@@ -63,7 +63,7 @@ final class PacientesModelo {
         } catch {
             // En los refrescos periódicos un fallo no pisa la lista; solo se muestra si
             // nunca llegó a cargar.
-            if !cargado { self.error = error.localizedDescription }
+            if !cargado, !Task.isCancelled { self.error = error.localizedDescription }
         }
     }
 

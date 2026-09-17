@@ -53,12 +53,6 @@ struct Composer: View {
                 .disabled(!hayCamara || ocupado || subiendo)
                 .accessibilityLabel("Tomar foto")
 
-                Button {} label: {
-                    Image(systemName: "mic")
-                }
-                .disabled(true)
-                .accessibilityLabel("Dictar")
-
                 Spacer()
 
                 Button(action: alEnviar) {
@@ -75,18 +69,16 @@ struct Composer: View {
             }
             .font(.title3)
 
-            Text(avisos)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            // El dictado no está hasta que exista (PAPER §24.9, fase 4): un micrófono gris con
+            // "llega en la fase 4" se leía como función a medias, y la App Store lo rechaza.
+            if !hayCamara {
+                Text("Cámara: este dispositivo no tiene")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-
-    private var avisos: String {
-        var partes = ["Dictado: llega en la fase 4"]
-        if !hayCamara { partes.append("Cámara: este dispositivo no tiene") }
-        return partes.joined(separator: " · ")
     }
 }

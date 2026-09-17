@@ -64,7 +64,7 @@ final class Sesion {
         } catch {
             // Con el usuario ya cargado, un fallo al renovar no interrumpe el trabajo: se
             // reintenta la próxima vez que la app vuelva a primer plano.
-            if usuario == nil { estado = .sinValidar(error.localizedDescription) }
+            if usuario == nil, !Task.isCancelled { estado = .sinValidar(error.localizedDescription) }
         }
     }
 

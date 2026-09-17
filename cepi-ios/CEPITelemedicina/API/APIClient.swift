@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Error de una llamada al backend. `status == 0` es falta de red y `-1` una respuesta que no
 /// se pudo leer: la UI distingue "no hay conexión" de "el servidor dijo que no" sin parsear
@@ -104,9 +105,15 @@ final class APIClient: Sendable {
         let datos: Data
         let respuesta: URLResponse
         do {
-            (datos, respuesta) = try await http.data(for: pedido)
+            (datos, respuesta) = try await pedirConReintento(pedido)
         } catch {
-            throw APIError(status: 0, mensaje: "Sin conexión con el servidor.")
+            // El código de URLError queda en el mensaje y en el log: "sin conexión" cubre
+            // desde un teléfono sin red hasta un TLS roto, y sin el código no se distinguen.
+            let codigo = (error as? URLError)?.code.rawValue ?? 0
+            if (error as? URLError)?.code != .cancelled {
+                Self.registro.error("\(metodo, privacy: .public) \(ruta, privacy: .public) falló en la red: \(codigo)")
+            }
+            throw APIError(status: 0, mensaje: "Sin conexión con el servidor (código \(codigo)).")
         }
         let status = (respuesta as? HTTPURLResponse)?.statusCode ?? 0
 
@@ -120,6 +127,19 @@ final class APIClient: Sendable {
             throw APIError(status: status, mensaje: mensaje ?? "Error del servidor (HTTP \(status)).")
         }
         return datos
+    }
+
+    private static let registro = Logger(subsystem: "ec.cepi.telemedicina", category: "red")
+
+    /// Un reintento cuando se cae la conexión (`networkConnectionLost`). En un teléfono real
+    /// pasa al reusar una conexión que el servidor ya cerró por inactividad: URLSession
+    /// reintenta solo los GET, así que un POST como "activar paciente" fallaba a la primera.
+    private func pedirConReintento(_ pedido: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await http.data(for: pedido)
+        } catch let error as URLError where error.code == .networkConnectionLost {
+            return try await http.data(for: pedido)
+        }
     }
 
     private func decodificar<Respuesta: Decodable>(_ datos: Data) throws -> Respuesta {
