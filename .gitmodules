@@ -1,4 +1,0 @@
-[submodule "TodoERP"]
-	path = TodoERP
-	url = git@github.com:desarrollocepi/TodoERP.git
-	branch = main

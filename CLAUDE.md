@@ -12,7 +12,7 @@ cepi/
 ├── ecosystem.config.cjs  PM2 con los 4 servicios JS + 1 Python
 ├── docker-compose.yml    deploy alternativo
 ├── scripts/              reset, dev-token, dev-chat, backup
-├── TodoERP/              submódulo: ERP genérico + MCP server
+├── TodoERP/              repo aparte, ignorado por cepi: ERP genérico + MCP server
 ├── cepi-bot/             agente conversacional (HTTP + MCP client)
 ├── cepi-frontend/        UI de chat (Vue 3 + Vite)
 ├── cepi-isic/            servicio Python de embeddings/clasificación
@@ -42,7 +42,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 - **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).
   Nada de rsync ni scp a mano. Todo SQL tiene que ser idempotente y transaccional, y un seed
   médico nuevo se agrega a `medical-seed/apply.sh` o el deploy no lo aplica.
-- **Git**: los remotes viven en la cuenta `desarrollocepi` (`desarrollocepi/cepi` público, `desarrollocepi/TodoERP` privado). El subm `TodoERP/` tiene su propio remote; el cepi raíz lo apunta por SHA. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
+- **Git**: los remotes viven en la cuenta `desarrollocepi` (`desarrollocepi/cepi` público, `desarrollocepi/TodoERP` privado). `TodoERP/` es un repo independiente que vive dentro de la carpeta de cepi: no es submódulo, cepi lo ignora (`/TodoERP/` en `.gitignore`) y se commitea y pushea por separado. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
 
 ## Cuando agregás...
 

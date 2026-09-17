@@ -11,10 +11,19 @@ Prod es el EC2 `3.23.236.49` (`casos.cepi.ec`, `telemedicina.cepi.ec`). Se despl
 
 Dos deploys nunca corren a la vez (`concurrency: deploy-prod`, sin cancelar el que está en curso).
 
-## TodoERP es un submódulo
+## TodoERP es un repo aparte
 
-Lo que se despliega es el SHA de TodoERP al que apunta `cepi`. Un push a TodoERP no
-dispara nada: para desplegarlo hay que subir el puntero en `master` de `cepi`.
+TodoERP (`desarrollocepi/TodoERP`, privado) vive dentro de la carpeta de cepi pero cepi no
+lo registra. El CI lo clona con una deploy key de solo lectura (`scripts/deploy/ci-todoerp.sh`)
+y **despliega la punta de su rama `main`** en el momento del run. El job de deploy usa el
+mismo commit que pasó los tests, no vuelve a leer la rama.
+
+Consecuencias:
+
+- Un push a TodoERP no dispara nada. Para desplegarlo: push a `master` de cepi o *Run workflow*.
+- Lo que esté en `main` de TodoERP es lo que va a prod. Una rama feature de TodoERP no se
+  despliega hasta que se lleva a `main`.
+- La tabla `deploy_sql_aplicado` guarda en `commit_sha` el commit de TodoERP del deploy.
 
 ## Qué hace cada job
 
@@ -80,7 +89,7 @@ En `desarrollocepi/cepi` → Settings → Secrets and variables → Actions:
 | Nombre | Tipo | Qué es |
 |---|---|---|
 | `PROD_SSH_KEY` | secret | llave privada con la que Actions entra al EC2 |
-| `TODOERP_DEPLOY_KEY` | secret | llave privada de una deploy key **de solo lectura** en `desarrollocepi/TodoERP` |
+| `TODOERP_DEPLOY_KEY` | secret | llave privada de una deploy key **de solo lectura** en `desarrollocepi/TodoERP`; con ella el CI clona TodoERP |
 | `PROD_HOST` | variable | `3.23.236.49` |
 | `PROD_USER` | variable | `ubuntu` |
 | `PROD_SSH_KNOWN_HOSTS` | variable | clave de host del EC2, para no aceptar un host cualquiera |

@@ -2,8 +2,8 @@
 # Deploy de producción, lado servidor. Lo invoca .github/workflows/deploy-prod.yml
 # después de subir el release a /opt/cepi-deploy/incoming. Ver docs/DEPLOY.md.
 #
-#   remote-deploy.sh deploy  <sha>   aplica el release que está en incoming
-#   remote-deploy.sh dry-run <sha>   ensaya lo mismo sin tocar nada vivo
+#   remote-deploy.sh deploy  <sha-cepi> [sha-TodoERP]   aplica el release que está en incoming
+#   remote-deploy.sh dry-run <sha-cepi> [sha-TodoERP]   ensaya lo mismo sin tocar nada vivo
 #   remote-deploy.sh baseline        marca los SQL actuales como ya aplicados (una sola vez)
 #
 # Orden de deploy, y qué pasa si falla cada paso:
@@ -45,6 +45,7 @@ SERVICIOS=(todoerp-backend cepi-bot)
 
 MODO=${1:?uso: remote-deploy.sh deploy|dry-run <sha> | baseline}
 SHA=${2:-manual}
+SHA_TODOERP=${3:-$SHA}   # los SQL viven en TodoERP: la tabla de control guarda este
 mkdir -p "$LOGS"
 LOG=$LOGS/$(date -u +%Y%m%dT%H%M%SZ)_${MODO}_${SHA:0:12}.log
 
@@ -99,7 +100,7 @@ guion_sql() {
     cat "$raiz/$f"
     printf '\n;\n'
     if [[ $registrar == 1 ]]; then
-      printf "INSERT INTO %s (archivo, sha256, commit_sha) VALUES ('%s', '%s', '%s')\n" "$TRACK" "$f" "$sha" "$SHA"
+      printf "INSERT INTO %s (archivo, sha256, commit_sha) VALUES ('%s', '%s', '%s')\n" "$TRACK" "$f" "$sha" "$SHA_TODOERP"
       printf "  ON CONFLICT (archivo) DO UPDATE SET sha256 = EXCLUDED.sha256, commit_sha = EXCLUDED.commit_sha, aplicado_at = now();\n"
     fi
   done <<< "$lista"
@@ -191,7 +192,7 @@ dry-run|deploy)
   [[ -d $STAGE/TodoERP/backend/src && -f $STAGE/cepi-frontend/dist/index.html ]] \
     || { echo "El release en $STAGE está incompleto"; exit 1; }
   tabla_control_existe || { echo "Falta la tabla $TRACK: correr 'remote-deploy.sh baseline' una vez"; exit 1; }
-  echo "release ${SHA:0:12} · modo $MODO · log en $LOG"
+  echo "release cepi ${SHA:0:12} · TodoERP ${SHA_TODOERP:0:12} · modo $MODO · log en $LOG"
 
   paso "1. SQL pendiente"
   PENDIENTE=$(sql_pendiente "$STAGE")
