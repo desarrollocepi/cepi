@@ -35,7 +35,11 @@
       </li>
     </ul>
 
-    <button v-if="hayMas && !cargando" class="pl-mas" @click="buscar(true)">Ver más</button>
+    <button
+      v-if="pacientes.length" class="pl-mas" :disabled="!hayMas || cargando"
+      :title="hayMas ? 'Cargar los siguientes resultados' : 'Ya se listaron todos los pacientes'"
+      @click="buscar(true)"
+    >{{ cargando ? 'Buscando…' : (hayMas ? 'Ver más' : 'No hay más resultados') }}</button>
   </div>
 </template>
 
@@ -107,4 +111,7 @@ defineExpose({ buscar });
 .pl-sub { font-size: 12px; color: #64748b; }
 .pl-ced { margin-right: 6px; padding: 0 5px; font-size: 11px; color: #334155; background: #f1f5f9; border-radius: 4px; }
 .pl-mas { margin: 10px auto 20px; padding: 7px 16px; font-size: 13px; color: #0369a1; background: none; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
+/* Deshabilitado en vez de oculto: que desaparezca no dice si la lista se acabó
+   o si el botón se rompió. Ver la regla en CLAUDE.md. */
+.pl-mas:disabled { color: #94a3b8; background: none; border-color: #e2e8f0; cursor: default; }
 </style>

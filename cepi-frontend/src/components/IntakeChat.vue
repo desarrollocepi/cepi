@@ -27,11 +27,15 @@
       </div>
     </div>
 
-    <div v-if="patientName && episodeOrder.length > 1" class="iepisodes">
+    <div v-if="patientName && episodeOrder.length" class="iepisodes">
       <button type="button" class="enav" :disabled="busy || episodeIndex <= 0" @click="prevEpisode" title="Consulta anterior">‹</button>
       <span class="ep-label">{{ episodeLabel }}</span>
       <button type="button" class="enav" :disabled="busy || episodeIndex >= episodeOrder.length - 1" @click="nextEpisode" title="Consulta siguiente">›</button>
-      <button v-if="!isActiveEpisode" type="button" class="enav enav-now" @click="backToActiveEpisode">↻ actual</button>
+      <button
+        type="button" class="enav enav-now" :disabled="busy || isActiveEpisode"
+        :title="isActiveEpisode ? 'Ya estás en la consulta actual' : 'Volver a la consulta actual'"
+        @click="backToActiveEpisode"
+      >↻ actual</button>
     </div>
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
 
@@ -391,7 +395,10 @@ const isActiveEpisode = computed(() => {
 });
 const episodeLabel = computed(() => {
   const ord = episodeOrder.value;
-  if (ord.length <= 1) return '';
+  // Con una sola consulta la etiqueta iba vacía y la barra quedaba con dos flechas
+  // muertas y un hueco. Decir que es la única explica por qué no hay a dónde ir.
+  if (ord.length === 1) return 'Única consulta';
+  if (!ord.length) return '';
   const cur = ord[episodeIndex.value];
   const first = messages.value.find(m => (m.episode_id || null) === cur);
   const when = first?.ts ? new Date(first.ts).toLocaleDateString('es', { day: '2-digit', month: 'short' }) : '';

@@ -16,7 +16,11 @@ async function call(path, opts = {}) {
   try { body = await res.json(); } catch { /* */ }
   if (!res.ok) {
     const msg = body?.error || `HTTP ${res.status}`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    // El código HTTP viaja en el Error: sin esto, distinguir un 403 de un 404 exigía
+    // parsear el mensaje, que además cambia con el idioma y con el endpoint.
+    err.status = res.status;
+    throw err;
   }
   return body;
 }
@@ -259,6 +263,37 @@ export async function switchOrg(orgId) {
   if (res?.token) localStorage.setItem('cepi.jwt', res.token);  // nueva org activa
   return res;
 }
+/**
+ * Cambia la org activa a la del registro indicado, si el usuario pertenece a ella.
+ *
+ * Un enlace no lleva la organización, y los datos scoped solo se leen desde la org
+ * activa: abrirlo desde otra org daba 404 y una pantalla vacía sin explicación. Esto
+ * NO hace visible nada entre organizaciones — la membresía la valida el servidor y
+ * responde 403 a quien no pertenece. O el enlace cambia de org, o falla diciéndolo.
+ *
+ * Devuelve 'cambiada' | 'igual' | 'ajena' | 'error'. No lanza: es un reintento.
+ */
+export async function switchOrgToRecord(entityId, recordId) {
+  let res;
+  try {
+    res = await call('/api/orgs/switch-to-record', {
+      method: 'POST',
+      body: JSON.stringify({ entity_id: entityId, record_id: recordId }),
+    });
+  } catch (e) {
+    // 403 = pertenece a una org ajena. 404 = no existe, o no es visible para nadie
+    // con esta cuenta; en ambos casos el registro sigue sin revelarse.
+    return e?.status === 403 ? 'ajena' : 'error';
+  }
+  if (res?.sin_cambio) return 'igual';
+  if (res?.token) { localStorage.setItem('cepi.jwt', res.token); return 'cambiada'; }
+  return 'error';
+}
+
+/** Los mismos, atados a la definición que usa el portal. */
+export const switchOrgToEpisodio = (id) => switchOrgToRecord(DEF_EPISODE, id);
+export const switchOrgToPaciente = (id) => switchOrgToRecord(DEF_PATIENT, id);
+
 export async function createOrg(slug, name) {
   return call('/api/orgs', { method: 'POST', body: JSON.stringify({ slug, name }) });
 }
@@ -414,6 +449,17 @@ export async function listarPacientes({ ids = [] } = {}) {
  * que el chat aplica al guardar los mismos grupos. Escribir directo al ERP dejaría
  * fichas con los derivados a medias según por dónde se hubieran editado.
  */
+/**
+ * Guarda la ficha entera desde un formato documental. El reparto §1-§2 → paciente
+ * y §3+ → episodio lo hace el backend, que es donde vive la lista de claves.
+ */
+export async function guardarFichaCompleta({ episodeId, patientId, data }) {
+  return call('/api/bot/ficha/guardar', {
+    method: 'POST',
+    body: JSON.stringify({ episode_id: episodeId || null, patient_id: patientId || null, data }),
+  });
+}
+
 export async function guardarGrupoFicha({ groupId, data, episodeId = null, patientId = null }) {
   return call('/api/bot/ficha/grupo', {
     method: 'POST',

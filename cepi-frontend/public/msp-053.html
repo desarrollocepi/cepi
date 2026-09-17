@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<!--
+  MSP form.053 — REFERENCIA, DERIVACIÓN, CONTRARREFERENCIA Y REFERENCIA INVERSA
+  ============================================================================
+  Mismo contrato que ficha.html y msp-002.html: se abre en un iframe y el
+  contenedor llama a `fillFicha(data)`. Se imprime a PDF desde el navegador.
+
+  ⚠️ MAQUETACIÓN RECONSTRUIDA, NO CALCADA DEL OFICIAL. No hay ningún formulario
+  del MSP en el repositorio; las secciones reproducen la estructura estándar del
+  053 (establecimiento que refiere, datos del paciente, tipo de trámite,
+  establecimiento al que se refiere, resumen del cuadro clínico, hallazgos,
+  diagnóstico con CIE, tratamiento, motivo de la referencia, y el bloque de
+  contrarreferencia que llena quien recibe). Contrastar con el oficial antes de
+  presentarlo.
+
+  Por qué encaja con este sistema: la derivación primario → especialista ya
+  existe en telemedicina, y este formulario es su expresión en papel.
+
+  Queda EN BLANCO a propósito lo que el sistema no sabe: códigos y datos de los
+  establecimientos, y todo el bloque de contrarreferencia (lo llena el receptor).
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>MSP form.053 — Referencia y contrarreferencia</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { margin: 0; padding: 0; background: #e8e8e8; font-family: Arial, Helvetica, sans-serif; color: #000; }
+  body { padding: 16px; }
+
+  .hoja {
+    width: 210mm; min-height: 297mm; margin: 0 auto 14px;
+    background: #fff; padding: 8mm 8mm 6mm; font-size: 8pt; line-height: 1.2;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15);
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  td, th { border: .6pt solid #000; padding: 2px 3px; vertical-align: top; }
+  th { background: #d9d9d9; font-size: 7pt; font-weight: 700; text-align: left; text-transform: uppercase; }
+  .sec { background: #b8b8b8; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; padding: 3px; border: .6pt solid #000; }
+  .rot { font-size: 6.5pt; color: #333; text-transform: uppercase; display: block; }
+
+  .cab { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .cab .msp { font-size: 11pt; font-weight: 700; }
+  .cab .form { margin-left: auto; font-size: 9pt; font-weight: 700; border: 1pt solid #000; padding: 2px 8px; }
+  .subtit { text-align: center; font-size: 10pt; font-weight: 700; text-transform: uppercase; margin: 2px 0 5px; }
+
+  input[type="text"] { width: 100%; border: 0; background: transparent; font: inherit; font-size: 8pt; color: #00308f; padding: 0; }
+  textarea { width: 100%; border: 0; background: transparent; font: inherit; font-size: 8pt; color: #00308f; resize: none; overflow: hidden; padding: 0; line-height: 1.25; }
+  input:focus, textarea:focus { outline: 1px dotted #999; }
+
+  .marca { width: 9mm; text-align: center; }
+  .marca input { width: 100%; text-align: center; }
+  .amano { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f0f0f0 6px, #f0f0f0 12px); }
+
+  .cambiado { color: #c8102e !important; font-weight: 700; }
+  .pie { margin-top: 5px; font-size: 6.5pt; color: #444; }
+  .aviso-borrador { margin: 0 auto 10px; max-width: 210mm; padding: 6px 10px; font-size: 8pt; background: #fff4d6; border: 1pt solid #e0a800; color: #6b4e00; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .hoja { box-shadow: none; margin: 0; }
+    .aviso-borrador { display: none; }
+    input, textarea { color: #000 !important; background: transparent !important; }
+    .cambiado { color: #000 !important; }
+    .amano { background: #fff; }
+  }
+</style>
+</head>
+<body>
+
+<p class="aviso-borrador">
+  <strong>Maquetación reconstruida.</strong> Reproduce la estructura del formulario 053
+  del MSP pero no está calcado del oficial. Contrástalo con el formulario en blanco del
+  Ministerio antes de presentarlo. Los datos de establecimientos y el bloque de
+  contrarreferencia salen en blanco: los llena quien refiere a mano y quien recibe.
+</p>
+
+<form class="hoja" id="msp053" autocomplete="off" novalidate>
+
+  <div class="cab">
+    <span class="msp">MINISTERIO DE SALUD PÚBLICA</span>
+    <span class="form">form.053</span>
+  </div>
+  <div class="subtit">Referencia, derivación, contrarreferencia y referencia inversa</div>
+
+  <table class="amano">
+    <tr>
+      <td style="width:34%"><span class="rot">Institución del sistema</span><input type="text" name="institucion"></td>
+      <td style="width:16%"><span class="rot">Unicódigo</span><input type="text" name="unicodigo"></td>
+      <td style="width:32%"><span class="rot">Establecimiento que refiere</span><input type="text" name="establecimiento_origen"></td>
+      <td style="width:18%"><span class="rot">N.º historia clínica</span><input type="text" name="hcu"></td>
+    </tr>
+  </table>
+
+  <div class="sec">A. Tipo de trámite</div>
+  <table>
+    <tr>
+      <td class="marca"><input type="text" name="t_referencia"></td><td style="width:22%">Referencia</td>
+      <td class="marca"><input type="text" name="t_derivacion"></td><td style="width:22%">Derivación</td>
+      <td class="marca"><input type="text" name="t_contrarreferencia"></td><td style="width:22%">Contrarreferencia</td>
+      <td class="marca"><input type="text" name="t_inversa"></td><td>Referencia inversa</td>
+    </tr>
+  </table>
+
+  <div class="sec">B. Datos del paciente</div>
+  <table>
+    <tr>
+      <td style="width:28%"><span class="rot">Primer apellido</span><input type="text" name="primer_apellido"></td>
+      <td style="width:26%"><span class="rot">Segundo apellido</span><input type="text" name="segundo_apellido"></td>
+      <td style="width:30%"><span class="rot">Nombres</span><input type="text" name="nombres"></td>
+      <td style="width:16%"><span class="rot">Cédula</span><input type="text" name="cedula"></td>
+    </tr>
+    <tr>
+      <td><span class="rot">Sexo</span><input type="text" name="sexo_txt"></td>
+      <td><span class="rot">Edad</span><input type="text" name="edad"></td>
+      <td><span class="rot">Fecha de nacimiento</span><input type="text" name="fecha_nac"></td>
+      <td><span class="rot">Teléfono</span><input type="text" name="telefono"></td>
+    </tr>
+    <tr>
+      <td colspan="3"><span class="rot">Dirección</span><input type="text" name="direccion"></td>
+      <td><span class="rot">Sector / ciudad</span><input type="text" name="sector_ciudad"></td>
+    </tr>
+  </table>
+
+  <div class="sec">C. Establecimiento al que se refiere</div>
+  <table class="amano">
+    <tr>
+      <td style="width:40%"><span class="rot">Establecimiento</span><input type="text" name="establecimiento_destino"></td>
+      <td style="width:30%"><span class="rot">Servicio</span><input type="text" name="servicio_destino"></td>
+      <td style="width:30%"><span class="rot">Especialidad</span><input type="text" name="especialidad_destino"></td>
+    </tr>
+  </table>
+
+  <div class="sec">D. Resumen del cuadro clínico</div>
+  <table>
+    <tr><td><span class="rot">Motivo de consulta y enfermedad actual</span><textarea name="cuadro_clinico" rows="6"></textarea></td></tr>
+    <tr><td><span class="rot">Hallazgos relevantes del examen físico</span><textarea name="hallazgos" rows="6"></textarea></td></tr>
+    <tr><td><span class="rot">Resultados de exámenes complementarios</span><textarea name="examenes" rows="2"></textarea></td></tr>
+  </table>
+
+  <div class="sec">E. Diagnóstico</div>
+  <table>
+    <tr><th style="width:70%">Descripción</th><th style="width:14%">CIE</th><th class="marca">Pre</th><th class="marca">Def</th></tr>
+    <tr>
+      <td><textarea name="diagnostico" rows="2"></textarea></td>
+      <td><input type="text" name="codigo_cie10"></td>
+      <td class="marca"><input type="text" name="dx_pre"></td>
+      <td class="marca"><input type="text" name="dx_def"></td>
+    </tr>
+  </table>
+
+  <div class="sec">F. Tratamiento administrado</div>
+  <table><tr><td><textarea name="tratamiento" rows="3"></textarea></td></tr></table>
+
+  <div class="sec">G. Motivo de la referencia</div>
+  <table><tr><td><textarea name="motivo_referencia" rows="3"></textarea></td></tr></table>
+
+  <table style="margin-top:4px">
+    <tr>
+      <td style="width:25%"><span class="rot">Fecha</span><input type="text" name="fecha_pie"></td>
+      <td style="width:15%"><span class="rot">Hora</span><input type="text" name="hora"></td>
+      <td style="width:35%"><span class="rot">Profesional que refiere</span><input type="text" name="medico"></td>
+      <td style="width:25%"><span class="rot">Código / firma</span><input type="text" name="codigo_medico"></td>
+    </tr>
+  </table>
+
+  <div class="sec" style="margin-top:6px">H. Contrarreferencia — a llenar por el establecimiento que recibe</div>
+  <table class="amano">
+    <tr><td><span class="rot">Resumen de la atención brindada</span><textarea name="cr_resumen" rows="5"></textarea></td></tr>
+    <tr>
+      <td>
+        <table style="border:0">
+          <tr style="border:0">
+            <td style="width:70%"><span class="rot">Diagnóstico definitivo</span><input type="text" name="cr_diagnostico"></td>
+            <td style="width:14%"><span class="rot">CIE</span><input type="text" name="cr_cie"></td>
+            <td style="width:16%"><span class="rot">Fecha</span><input type="text" name="cr_fecha"></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr><td><span class="rot">Indicaciones y plan para el nivel que refirió</span><textarea name="cr_plan" rows="4"></textarea></td></tr>
+    <tr>
+      <td>
+        <table style="border:0">
+          <tr style="border:0">
+            <td style="width:60%"><span class="rot">Profesional que contrarrefiere</span><input type="text" name="cr_medico"></td>
+            <td style="width:40%"><span class="rot">Código / firma</span><input type="text" name="cr_codigo"></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <p class="pie">form.053 · Referencia y contrarreferencia — impreso desde CEPI</p>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('msp053');
+
+  function autoAlto(el) {
+    if (!el || el.tagName !== 'TEXTAREA') return;
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 2) + 'px';
+  }
+  function set(name, val) {
+    var el = form.elements[name];
+    if (!el) return false;
+    el.value = (val === null || val === undefined || val === false) ? '' : String(val);
+    autoAlto(el);
+    return true;
+  }
+  function trozo(etiqueta, valor) {
+    if (valor === null || valor === undefined || valor === '' || valor === false) return '';
+    return etiqueta + ': ' + (valor === true ? 'Sí' : valor);
+  }
+  function juntar(partes) { return partes.filter(Boolean).join('\n'); }
+
+  /* §4 de la ficha → «hallazgos relevantes del examen físico». Igual criterio que
+     en el 002: el 053 espera prosa, no las casillas de la ficha dermatológica. */
+  function hallazgos(d) {
+    var lesiones = [];
+    [['lesion_macula','Mácula'],['lesion_papula','Pápula'],['lesion_placa','Placa'],
+     ['lesion_vesicula','Vesícula'],['lesion_ampolla','Ampolla'],['lesion_tumor','Tumor'],
+     ['lesion_nodulo','Nódulo'],['lesion_ulcera','Úlcera']].forEach(function (p) {
+      if (d[p[0]] === true) lesiones.push(p[1]);
+    });
+    if (d.lesion_otra) lesiones.push(String(d.lesion_otra));
+
+    var caract = [];
+    [['caract_eritema','Eritema'],['caract_descamacion','Descamación'],['caract_exudacion','Exudación'],
+     ['caract_liquenificacion','Liquenificación'],['caract_otra','Otra']].forEach(function (p) {
+      if (d[p[0]]) caract.push(p[1] + (typeof d[p[0]] === 'string' ? ' (' + d[p[0]] + ')' : ''));
+    });
+
+    var topo = [];
+    [['topo_unica','única'],['topo_multiples','múltiples'],['topo_bilateral','bilateral'],
+     ['topo_simetrico','simétrica'],['topo_confluente','confluente'],['topo_agrupadas','agrupadas'],
+     ['topo_circular','circular'],['topo_lineal','lineal'],['topo_borde','de borde']].forEach(function (p) {
+      if (d[p[0]] === true) topo.push(p[1]);
+    });
+    if (d.topo_otra) topo.push(String(d.topo_otra));
+
+    var regiones = d.regiones_afectadas;
+    if (Array.isArray(regiones)) regiones = regiones.join(', ');
+    else if (regiones && typeof regiones === 'object') regiones = Object.keys(regiones).join(', ');
+
+    /* BLINK va en la referencia porque es justo lo que justifica derivar: son las
+       banderas de sospecha de malignidad. */
+    var blink = [];
+    [['blink_benigna','B reconocible como benigna'],['blink_lonely','L lesión solitaria'],
+     ['blink_irregular','I pigmentación irregular'],['blink_nervios_cambios','N/C paciente nervioso o lesión cambiante'],
+     ['blink_known_clues','K pistas dermatoscópicas']].forEach(function (p) {
+      if (d[p[0]] === true) blink.push(p[1]);
+    });
+
+    return juntar([
+      lesiones.length ? 'Lesión elemental: ' + lesiones.join(', ') : '',
+      caract.length ? 'Características: ' + caract.join(', ') : '',
+      topo.length ? 'Topografía: ' + topo.join(', ') : '',
+      regiones ? 'Regiones afectadas: ' + regiones : '',
+      blink.length ? 'BLINK positivo: ' + blink.join('; ') : '',
+      d.notas_examen ? 'Notas: ' + d.notas_examen : '',
+      /* Igual que en el 002: los episodios espejados de DrPro traen el examen
+         físico como texto, no como casillas. */
+      d.examen_fisico ? String(d.examen_fisico) : '',
+    ]);
+  }
+
+  function cuadro(d) {
+    return juntar([
+      d.motivo_consulta ? String(d.motivo_consulta) : '',
+      d.anamnesis ? String(d.anamnesis) : '',
+      trozo('Tiempo de evolución', d.tiempo_evolucion),
+      trozo('Curso', d.curso),
+      trozo('Picor', d.picor),
+      trozo('Dolor', d.dolor),
+      trozo('Causa aparente', d.causa_aparente),
+      trozo('Patología asociada / RAS', d.patologia_asociada),
+      trozo('Tratamientos previos', d.tratamientos_previos),
+      trozo('Antecedentes personales', d.antecedentes_personales),
+      trozo('Antecedentes familiares', d.antecedentes_familiares),
+    ]);
+  }
+
+  function fillFicha(d) {
+    d = d || {};
+    var ap = String(d.apellidos || '').trim().split(/\s+/);
+    var nombres = String(d.nombres || '').trim();
+    if (!nombres && d.nombre) nombres = String(d.nombre).replace(String(d.apellidos || ''), '').trim() || String(d.nombre);
+    set('primer_apellido', ap[0] || '');
+    set('segundo_apellido', ap.slice(1).join(' '));
+    set('nombres', nombres);
+    set('cedula', d.cedula);
+    set('sexo_txt', d.sexo || '');
+    set('edad', d.edad);
+    set('fecha_nac', String(d.fecha_nac || '').slice(0, 10));
+    set('telefono', d.telefono);
+    set('direccion', d.direccion);
+    set('sector_ciudad', d.sector_ciudad);
+
+    /* Se marca «Referencia» por defecto: es el trámite que hace el sistema al
+       derivar de primario a especialista. Los otros tres se marcan a mano. */
+    set('t_referencia', 'X');
+
+    set('cuadro_clinico', cuadro(d));
+    set('hallazgos', hallazgos(d));
+    set('examenes', d.estudios_complementarios_resumen ||
+      (d.estudios_complementarios_presente === false ? 'No se han realizado.' : ''));
+
+    set('diagnostico', d.diagnostico);
+    set('codigo_cie10', d.codigo_cie10);
+    var firmado = d.diagnostico_fuente && !/ia|modelo|sugerid/i.test(String(d.diagnostico_fuente));
+    if (d.diagnostico) set(firmado ? 'dx_def' : 'dx_pre', 'X');
+
+    set('tratamiento', d.tratamiento_resumen);
+    /* El motivo de la referencia no es un campo de la ficha: lo más cercano es el
+       plan. Se copia como punto de partida y el médico lo ajusta antes de firmar. */
+    set('motivo_referencia', d.plan || '');
+
+    var f = String(d.fecha || '').slice(0, 10);
+    set('fecha_pie', f);
+    set('medico', d.examinador_nombre || d.medico || '');
+  }
+
+  var CUBIERTOS = null;
+  function camposNoCubiertos(d) {
+    if (!CUBIERTOS) {
+      CUBIERTOS = {};
+      ['nombre','nombres','apellidos','cedula','sexo','edad','fecha_nac','telefono','direccion',
+       'sector_ciudad','fecha','motivo_consulta','anamnesis','tiempo_evolucion','curso','picor',
+       'dolor','sintomas_presente','causa_aparente','causa_aparente_presente','patologia_asociada',
+       'patologia_asociada_presente','tratamientos_previos','tratamientos_previos_presente',
+       'antecedentes_personales','antecedentes_personales_presente','antecedentes_familiares',
+       'antecedentes_familiares_presente','diagnostico','codigo_cie10','diagnostico_fuente',
+       'diagnostico_letra','tratamiento_resumen','plan','estudios_complementarios_resumen',
+       'estudios_complementarios_presente','examinador_nombre','medico','notas_examen',
+       'regiones_afectadas','examen_fisico'].forEach(function (k) { CUBIERTOS[k] = 1; });
+    }
+    var IGNORAR = /^(id|patient_id|medico_id|org_id|created_at|updated_at|estado|tipo|location|ficha_|drpro_|_)/;  /* drpro_* y _relations son fontanería del espejo, no dato clínico:
+       contarlos como "no cabe" convertía el aviso en ruido. */
+    var fuera = [];
+    Object.keys(d || {}).forEach(function (k) {
+      var v = d[k];
+      if (v === null || v === undefined || v === '' || v === false) return;
+      if (IGNORAR.test(k) || k.indexOf(':') >= 0) return;
+      if (CUBIERTOS[k]) return;
+      if (/^(lesion_|caract_|topo_|blink_)/.test(k)) return;
+      fuera.push(k);
+    });
+    return fuera;
+  }
+
+  var MAPA_CAMBIO = {
+    motivo_consulta: 'cuadro_clinico', anamnesis: 'cuadro_clinico', tiempo_evolucion: 'cuadro_clinico',
+    curso: 'cuadro_clinico', diagnostico: 'diagnostico', codigo_cie10: 'codigo_cie10',
+    tratamiento_resumen: 'tratamiento', plan: 'motivo_referencia',
+    estudios_complementarios_resumen: 'examenes',
+  };
+  function markChanges(cambios) {
+    form.querySelectorAll('.cambiado').forEach(function (e) { e.classList.remove('cambiado'); e.removeAttribute('title'); });
+    if (!cambios) return;
+    var claves = Array.isArray(cambios) ? cambios : Object.keys(cambios);
+    claves.forEach(function (k) {
+      var destino = MAPA_CAMBIO[k] || (/^(lesion_|caract_|topo_|blink_|regiones_)/.test(k) ? 'hallazgos' : null);
+      var el = destino && form.elements[destino];
+      if (!el) return;
+      el.classList.add('cambiado');
+      var antes = Array.isArray(cambios) ? null : cambios[k];
+      if (antes !== null && antes !== undefined) el.title = 'Antes: ' + (antes === '' ? '(vacío)' : antes);
+    });
+  }
+
+  window.fillFicha = fillFicha;
+  window.markChanges = markChanges;
+  window.camposNoCubiertos = camposNoCubiertos;
+})();
+</script>
+</body>
+</html>
