@@ -16,7 +16,11 @@ async function call(path, opts = {}) {
   try { body = await res.json(); } catch { /* */ }
   if (!res.ok) {
     const msg = body?.error || `HTTP ${res.status}`;
-    throw new Error(msg);
+    const err = new Error(msg);
+    // El código HTTP viaja en el Error: sin esto, distinguir un 403 de un 404 exigía
+    // parsear el mensaje, que además cambia con el idioma y con el endpoint.
+    err.status = res.status;
+    throw err;
   }
   return body;
 }
@@ -40,6 +44,13 @@ export function logout() {
   // Aviso para que la capa nativa desregistre el push (device-token).
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('cepi:logout'));
   // Future: hit a /api/bot/logout to mark bot_session.estado = 'cerrada'.
+}
+
+// Borra la cuenta propia (App Store 5.1.1(v), Google Play). El backend exige la
+// confirmación explícita en el cuerpo; las historias clínicas se conservan (PAPER
+// §24.7). Tras el éxito, quien llama sigue el mismo camino que un logout.
+export async function deleteAccount() {
+  return call('/api/auth/me', { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
 }
 
 export async function register({ name, email, password, phone, cedula }) {

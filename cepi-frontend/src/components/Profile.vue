@@ -60,12 +60,17 @@
     <div class="prof-logout">
       <button type="button" class="prof-logout-btn" @click="$emit('logout')">Logout</button>
     </div>
+
+    <div class="prof-delete">
+      <EliminarCuenta @eliminada="$emit('logout')" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue';
 import { updateProfile } from '../api.js';
+import EliminarCuenta from './EliminarCuenta.vue';
 
 const props = defineProps({ user: { type: Object, default: () => ({}) } });
 const emit = defineEmits(['back', 'saved', 'logout']);
@@ -164,4 +169,5 @@ async function save() {
   border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.9rem;
 }
 .prof-logout-btn:hover { background: #fef2f2; border-color: #b91c1c; }
+.prof-delete { margin-top: 18px; }
 </style>

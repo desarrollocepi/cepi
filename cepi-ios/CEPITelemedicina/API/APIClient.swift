@@ -50,6 +50,14 @@ final class APIClient: Sendable {
         return try decodificar(try await ejecutar("POST", ruta, cuerpo: cuerpo, tipo: "application/json"))
     }
 
+    /// DELETE con cuerpo JSON: el borrado de cuenta viaja con su confirmación explícita.
+    func delete<Respuesta: Decodable & Sendable>(
+        _ ruta: String, json: some Encodable & Sendable
+    ) async throws -> Respuesta {
+        let cuerpo = try JSONEncoder().encode(json)
+        return try decodificar(try await ejecutar("DELETE", ruta, cuerpo: cuerpo, tipo: "application/json"))
+    }
+
     /// Un binario autenticado (`/api/attachments/:id/file`). Las imágenes clínicas no se
     /// pueden pedir con `AsyncImage`: no manda el header `Authorization`.
     func datos(_ ruta: String) async throws -> Data {

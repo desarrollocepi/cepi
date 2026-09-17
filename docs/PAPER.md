@@ -1650,7 +1650,7 @@ arranque y memoria. §24.5 lo convierte en números.
 
 | entra | queda en web / Android por ahora |
 |---|---|
-| Login con email y con Google; sesión deslizante; cambio de org activa | registro y verificación de email |
+| Login con email y con Google; sesión deslizante; cambio de org activa; eliminar la cuenta | registro y verificación de email |
 | Lista de pacientes: búsqueda, alta, "revisar" primero, a cargo | portal de casos (§22) |
 | Hilo del paciente por consulta, composer, respuestas rápidas, pendiente sí/no | admin, perfil |
 | Fotos (cámara y galería) e imágenes inline con zoom | DoctoPro |
@@ -1708,9 +1708,10 @@ cepi-ios/
   versión nueva de la app; un **tipo** nuevo sí, y mientras tanto se pinta como texto,
   igual que hace la web.
 
-### 24.4 Contrato con el backend — sin cambios
+### 24.4 Contrato con el backend
 
-Todo lo que consume la app ya existe y lo usa la web:
+Todo lo que consume la app lo usa también la web. Salvo dos piezas genéricas (Google con
+varios client IDs y el borrado de cuenta, abajo), ya existía:
 
 | función | endpoint | servicio |
 |---|---|---|
@@ -1718,6 +1719,7 @@ Todo lo que consume la app ya existe y lo usa la web:
 | Google | `POST /api/auth/google {credential}` | TodoERP |
 | sesión deslizante | `GET /api/auth/me` → `{token, user}` (JWT de 8 h, se reemite) | TodoERP |
 | org activa | `POST /api/orgs/switch {org_id}` → `{token}` | TodoERP |
+| borrar la cuenta propia | `DELETE /api/auth/me {confirm: true}` → `{ok: true}`; 400 sin la confirmación, 409 si es el último super-admin activo | TodoERP |
 | pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
 | "revisar" y a cargo | `GET /api/review-queue`, `GET /api/patient-assignments` | TodoERP |
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
@@ -1730,14 +1732,16 @@ Todo lo que consume la app ya existe y lo usa la web:
 | push | `POST/DELETE /api/push/device-token {platform:'ios', token}` | TodoERP |
 
 Un token vencido o inválido responde **401** (`authMiddleware.ts`); un permiso que falta,
-**403**. La app cierra sesión solo ante un 401 de una llamada que llevaba token: un 403
+**403**. Un token bien firmado de una cuenta **inactiva o borrada** también es 401, desde el
+request siguiente al borrado y no cuando vence (`isUserActive`, §24.7); si la base no
+responde a esa consulta, **503**, para que un pico no cierre la sesión de todos. La app cierra sesión solo ante un 401 de una llamada que llevaba token: un 403
 dice "no podés hacer esto", no "no sos vos".
 
 Tras cada turno la app **relee el hilo** en vez de pintar el `text` de la respuesta, igual
 que `IntakeChat.vue`: así el iPhone y la web muestran exactamente el mismo hilo.
 
 **Google Sign-In:** el ID token de la app trae como `aud` el client ID de iOS, no el de la
-web. Único cambio de backend de la app, y genérico: `GOOGLE_CLIENT_ID` acepta varios IDs
+web. Cambio de backend genérico: `GOOGLE_CLIENT_ID` acepta varios IDs
 separados por coma (`allowedGoogleAudiences` en `authService.ts`). En producción hay que
 agregar el de iOS a esa variable.
 
@@ -1792,10 +1796,40 @@ manda el header `Authorization`).
   declaración de `UserDefaults`, App Store Connect rechaza la build.
   `ITSAppUsesNonExemptEncryption = NO`: solo HTTPS y el hash de PKCE, así que no pregunta
   por cifrado en cada build.
-- App de salud: Apple revisa con más rigor (guías 1.4.1 y 5.1.1). **Bloqueante conocido:**
-  el login con Google *crea* cuentas (find-or-create en `loginWithGoogle`), y Apple exige
-  que una app que crea cuentas permita **borrarlas desde la app** (5.1.1(v)). Hoy no hay
-  endpoint para eso; hace falta antes de enviar a revisión.
+- App de salud: Apple revisa con más rigor (guías 1.4.1 y 5.1.1). El login con Google
+  *crea* cuentas (find-or-create en `loginWithGoogle`), y Apple exige que una app que crea
+  cuentas permita **borrarlas desde la app** (5.1.1(v)); Google Play pide lo mismo.
+  **Resuelto** con el borrado de cuenta (D-Aux-20, abajo).
+- **Borrado de cuenta (D-Aux-20).** `DELETE /api/auth/me {confirm: true}`, en "Cuenta →
+  Eliminar cuenta" de la app, en "Mi perfil" de la web (y así en la APK) y en la pantalla
+  de cuenta pendiente, que es donde cae una cuenta recién creada con Google. La
+  confirmación dice qué se borra y que las historias clínicas se conservan.
+  - **Las historias clínicas no se borran.** Pertenecen al paciente y a la institución, y la
+    ley obliga a conservarlas. Se borra la **cuenta**, no lo que la persona registró: el `id`
+    del usuario se queda, así que `created_by`, `chatter`, adjuntos, relaciones y demás
+    referencias siguen íntegras.
+  - En una transacción (`accountDeletionService.ts`, genérico): email → `deleted-<id>` (sin `@`: inválido, único, no bloquea volver a
+    registrarse); contraseña vacía; `data` entero fuera (teléfono, cédula, `google_sub`,
+    Telegram/WhatsApp, códigos de verificación, permisos directos); sin rol; inactiva. Se
+    borran membresías de organización y de grupo, tokens de push nativo y suscripciones
+    web push. Los permisos temporales vigentes se revocan y los recordatorios pendientes
+    de la persona se cancelan; el historial de ambos se conserva. La proyección del usuario
+    como entidad (migración 020) sigue al cambio por su trigger.
+  - Con el mismo email o la misma cuenta de Google se puede volver a entrar: es una cuenta
+    **nueva**, en `pendiente`.
+  - **El JWT deja de valer enseguida.** `verifyToken` y `optionalAuth` preguntan
+    `isUserActive` antes de aceptar un token. La respuesta se cachea 10 s, igual que los
+    permisos, y el borrado (y el `PATCH` de admin) invalida esa entrada: en el proceso que
+    atendió el borrado el corte es inmediato. Con varias instancias del backend el resto
+    tardaría hasta 10 s; hoy corre una sola. De paso, desactivar a alguien desde admin
+    también corta sus tokens vigentes.
+  - **Guarda:** si es el último super-admin activo (`*:*:*:*` por `allow_grant_all` o por el
+    permiso literal) responde **409** y no borra. Los borrados se serializan con un
+    advisory lock para que dos admins no se borren a la vez.
+  - **El nombre se conserva.** Los registros guardan al profesional por id (`medico_id`,
+    `responsable_actual_id`, autor del `chatter`), y la historia clínica tiene que seguir
+    diciendo quién atendió; la misma obligación legal de conservarla es base para retener
+    el nombre. Anonimizarlo se puede decidir después; borrado, no se recupera.
 - La Mac de build es Intel. macOS 26 es la última versión con soporte Intel: sirve para
   compilar y subir mientras el Xcode que exija Apple corra en macOS 26. Conviene prever
   una Mac con Apple Silicon antes de ese límite.
@@ -1820,7 +1854,7 @@ manda el header `Authorization`).
 | 3 | ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar, visor | se llena una ficha completa desde el iPhone |
 | 4 | dictado en el dispositivo + Google Sign-In | se dicta en español en modo avión |
 | 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al iPhone y tocarla abre el paciente |
-| 6 | cola offline, borrado de cuenta, TestFlight | la build se distribuye por TestFlight |
+| 6 | cola offline, borrado de cuenta (hecho, §24.7), TestFlight | la build se distribuye por TestFlight |
 
 
 ---

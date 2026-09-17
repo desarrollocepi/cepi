@@ -129,6 +129,11 @@ struct TokenRespuesta: Decodable, Sendable {
     let token: String?
 }
 
+/// Respuestas que solo confirman (`DELETE /api/auth/me` → `{ok: true}`).
+struct Confirmacion: Decodable, Sendable {
+    let ok: Bool
+}
+
 /// `{ ok, data: [...] }`
 struct Lista<Elemento: Decodable & Sendable>: Decodable, Sendable {
     let data: [Elemento]

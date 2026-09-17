@@ -31,6 +31,13 @@ struct ContratoTests {
         #expect(respuesta.user.role == "pendiente")
     }
 
+    /// `DELETE /api/auth/me {"confirm":true}`, capturado del backend local. Los rechazos
+    /// (`{ok:false, error}`) los prueba `SesionTests` con el servidor falso.
+    @Test func borradoDeCuenta() throws {
+        let respuesta = try decodificar(Confirmacion.self, #"{"ok":true}"#)
+        #expect(respuesta.ok)
+    }
+
     @Test func registroConCamposDinamicos() throws {
         let lista = try decodificar(Lista<Registro>.self, """
         {"ok":true,"data":[{"id":"p1","title":"Ana Ruiz","entity_id":"11000000-0000-0000-0000-000000000000",

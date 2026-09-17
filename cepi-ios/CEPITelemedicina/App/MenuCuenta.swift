@@ -8,6 +8,7 @@ struct MenuCuenta: View {
     @State private var orgElegida = ""
     @State private var error: String?
     @State private var mostrarError = false
+    @State private var confirmarBorrado = false
 
     var body: some View {
         Menu {
@@ -32,9 +33,15 @@ struct MenuCuenta: View {
             Button("Cerrar sesión", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                 Task { await sesion.salir() }
             }
+            Section {
+                Button("Eliminar cuenta", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
+                    confirmarBorrado = true
+                }
+            }
         } label: {
             Label("Cuenta", systemImage: "person.crop.circle")
         }
+        .eliminarCuenta(confirmar: $confirmarBorrado)
         .onAppear { orgElegida = sesion.usuario?.orgActiva ?? "" }
         .onChange(of: sesion.usuario?.orgActiva) { _, activa in orgElegida = activa ?? "" }
         .onChange(of: orgElegida) { _, id in

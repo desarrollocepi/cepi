@@ -66,6 +66,60 @@ struct SesionTests {
         await prueba.cerrar()
     }
 
+    @Test func eliminarLaCuentaMandaLaConfirmacionYCierraLaSesion() async throws {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", Self.me(token: "t1"))
+        prueba.servidor.fijar("DELETE /api/auth/me", .http(200, #"{"ok":true}"#))
+        await prueba.sesion.restaurar()
+
+        try await prueba.sesion.eliminarCuenta()
+
+        #expect(prueba.servidor.pedidos.last == "DELETE /api/auth/me")
+        let cuerpo = try #require(prueba.servidor.cuerpo(de: "DELETE /api/auth/me"))
+        #expect(try JSONSerialization.jsonObject(with: cuerpo) as? [String: Bool] == ["confirm": true])
+        #expect(prueba.sesion.estado == .sinSesion)
+        #expect(prueba.sesion.usuario == nil)
+        #expect(await prueba.credenciales.token() == nil)
+        await prueba.cerrar()
+    }
+
+    /// Cuerpos reales del backend: si no se borró, la sesión sigue y el motivo llega a la
+    /// pantalla tal cual.
+    @Test(arguments: [
+        (409, #"{"ok":false,"error":"Es la única cuenta de administrador activa. Asigne otro administrador antes de eliminarla."}"#),
+        (400, #"{"ok":false,"error":"Falta la confirmación: enviar { \"confirm\": true }."}"#),
+        (500, #"{"ok":false,"error":"Internal server error"}"#),
+    ])
+    func siNoSeBorraLaSesionSigueAbierta(status: Int, cuerpo: String) async throws {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", Self.me(token: "t1"))
+        prueba.servidor.fijar("DELETE /api/auth/me", .http(status, cuerpo))
+        await prueba.sesion.restaurar()
+
+        let fallo = await #expect(throws: APIError.self) { try await prueba.sesion.eliminarCuenta() }
+
+        let motivo = try JSONDecoder().decode([String: JSONValor].self, from: Data(cuerpo.utf8))["error"]?.texto
+        #expect(fallo?.status == status)
+        #expect(fallo?.mensaje == motivo)
+        #expect(prueba.sesion.estado == .activa)
+        #expect(await prueba.credenciales.token() == "t1")
+        await prueba.cerrar()
+    }
+
+    @Test func sinRedTampocoSeCierraLaSesionAlEliminar() async {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", Self.me(token: "t1"))
+        prueba.servidor.fijar("DELETE /api/auth/me", .sinRed)
+        await prueba.sesion.restaurar()
+
+        let fallo = await #expect(throws: APIError.self) { try await prueba.sesion.eliminarCuenta() }
+
+        #expect(fallo?.sinRed == true)
+        #expect(prueba.sesion.estado == .activa)
+        #expect(await prueba.credenciales.token() == "t1")
+        await prueba.cerrar()
+    }
+
     @Test func siFallaLaRenovacionTrasCambiarDeOrgSeSigueTrabajando() async throws {
         let prueba = await Prueba(token: "t0")
         prueba.servidor.fijar("GET /api/auth/me", Self.me(token: "t1"), .http(500, #"{"ok":false,"error":"Internal server error"}"#))
@@ -120,18 +174,23 @@ final class ServidorFalso: @unchecked Sendable {
     private let candado = NSLock()
     private var colas: [String: [Respuesta]] = [:]
     private var registro: [String] = []
+    private var cuerpos: [String: Data] = [:]
 
     init() { ProtocoloFalso.registrar(self) }
 
     var pedidos: [String] { candado.withLock { registro } }
 
+    /// El cuerpo del último pedido a esa clave, si llevaba.
+    func cuerpo(de clave: String) -> Data? { candado.withLock { cuerpos[clave] } }
+
     func fijar(_ clave: String, _ respuestas: Respuesta...) {
         candado.withLock { colas[clave] = respuestas }
     }
 
-    func responder(_ clave: String) -> Respuesta {
+    func responder(_ clave: String, cuerpo: Data? = nil) -> Respuesta {
         candado.withLock {
             registro.append(clave)
+            if let cuerpo { cuerpos[clave] = cuerpo }
             guard var cola = colas[clave], let primera = cola.first else {
                 return .http(404, #"{"ok":false,"error":"sin respuesta fijada"}"#)
             }
@@ -155,6 +214,19 @@ final class ProtocoloFalso: URLProtocol {
         _ = candado.withLock { servidores.removeValue(forKey: host) }
     }
 
+    private static func leer(_ stream: InputStream) -> Data {
+        stream.open()
+        defer { stream.close() }
+        var datos = Data()
+        var bloque = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let leidos = stream.read(&bloque, maxLength: bloque.count)
+            guard leidos > 0 else { break }
+            datos.append(bloque, count: leidos)
+        }
+        return datos
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
@@ -165,7 +237,9 @@ final class ProtocoloFalso: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotFindHost))
             return
         }
-        switch servidor.responder("\(request.httpMethod ?? "GET") \(url.path())") {
+        // URLSession entrega el cuerpo como stream: `httpBody` llega en nil.
+        let cuerpo = request.httpBody ?? request.httpBodyStream.map(Self.leer)
+        switch servidor.responder("\(request.httpMethod ?? "GET") \(url.path())", cuerpo: cuerpo) {
         case .sinRed:
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
         case let .http(status, cuerpo):

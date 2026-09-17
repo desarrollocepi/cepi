@@ -102,6 +102,13 @@ final class Sesion {
         cerrarLocal()
     }
 
+    /// La sesión se cierra solo si el servidor confirmó el borrado. Si falla (último
+    /// administrador, sin red, 5xx) la sesión sigue abierta y el error sube a la pantalla.
+    func eliminarCuenta() async throws {
+        try await api.eliminarCuenta()
+        await salir()
+    }
+
     private func aplicar(_ usuario: Usuario) {
         self.usuario = usuario
         estado = usuario.role == "pendiente" ? .pendiente : .activa

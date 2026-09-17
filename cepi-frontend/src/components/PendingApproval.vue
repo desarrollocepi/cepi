@@ -6,11 +6,15 @@
       <p>Recibimos tu registro. Un administrador debe aprobar tu cuenta antes de que puedas usar la aplicación.</p>
       <p class="muted">Te avisaremos cuando esté lista.</p>
       <button class="link" @click="$emit('logout')">Cerrar sesión</button>
+      <!-- Una cuenta recién creada con Google cae acá: también tiene que poder borrarse. -->
+      <EliminarCuenta @eliminada="$emit('logout')" />
     </div>
   </div>
 </template>
 
 <script setup>
+import EliminarCuenta from './EliminarCuenta.vue';
+
 defineEmits(['logout']);
 </script>
 

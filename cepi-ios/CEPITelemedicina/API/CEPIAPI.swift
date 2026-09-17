@@ -26,6 +26,12 @@ struct CEPIAPI: Sendable {
         try await cliente.post("/api/orgs/switch", json: ["org_id": id])
     }
 
+    /// Borra la cuenta propia (App Store 5.1.1(v)). Sin `confirm: true` en el cuerpo el
+    /// backend no borra nada. Las historias clínicas se conservan (PAPER §24.7).
+    func eliminarCuenta() async throws {
+        let _: Confirmacion = try await cliente.delete("/api/auth/me", json: ["confirm": true])
+    }
+
     // MARK: Pacientes
 
     /// Todos de una vez, como `listPatients` en la web: 500 filas son pocas para una `List`
