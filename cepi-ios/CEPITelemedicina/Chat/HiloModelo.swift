@@ -23,6 +23,9 @@ final class HiloModelo {
     /// Apagado (por defecto): solo el grupo pedido en "Secciones". Es de cada paciente.
     private(set) var autoFormulario: Bool
     var error: String?
+    /// El hilo guardado llegó al menos una vez. Hasta entonces la pantalla dice "Cargando…" y
+    /// no "Sin consultas todavía", que se leía como que el paciente no tenía ficha.
+    private(set) var cargado = false
     @ObservationIgnored private var sesionId: String?
     @ObservationIgnored private var abierto = false
 
@@ -42,14 +45,19 @@ final class HiloModelo {
     func abrir(api: CEPIAPI) async {
         guard !abierto else { return }
         abierto = true
+        // Lo guardado se pide ya, en paralelo con la activación del bot (que en producción
+        // tarda): así se ve lo que hay en cuanto llega, sin esperar al saludo.
+        async let historial: Void = releer(api: api)
         ocupado = true
         defer { ocupado = false }
         do {
             let propia = try? await api.sesionesBot(paciente: pacienteId)
                 .first { $0.pacienteActivo == pacienteId && $0.estado == "abierta" }
             aplicar(try await api.chat("activar paciente \(pacienteId)", sesion: propia?.id))
+            await historial
             await releer(api: api)
         } catch {
+            await historial
             // Salir del paciente cancela la tarea: no es un error y hay que poder reabrirlo.
             if Task.isCancelled { abierto = false; return }
             self.error = error.localizedDescription
@@ -123,6 +131,7 @@ final class HiloModelo {
     func releer(api: CEPIAPI) async {
         do {
             mensajes = try await api.hilo(paciente: pacienteId)
+            cargado = true
         } catch {
             if !Task.isCancelled { self.error = "No se pudo cargar el hilo: \(error.localizedDescription)" }
         }

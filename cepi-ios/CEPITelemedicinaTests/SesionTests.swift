@@ -196,6 +196,8 @@ final class ServidorFalso: @unchecked Sendable {
         case http(Int, String)
         case sinRed
         case conexionPerdida
+        /// Responde igual que `.http`, pero después de `segundos`.
+        case lenta(Double, Int, String)
     }
 
     let host = "prueba-\(UUID().uuidString.lowercased()).local"
@@ -272,6 +274,17 @@ final class ProtocoloFalso: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
         case .conexionPerdida:
             client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+        case let .lenta(segundos, status, cuerpo):
+            let respuesta = HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            nonisolated(unsafe) let protocolo = self
+            DispatchQueue.global().asyncAfter(deadline: .now() + segundos) {
+                protocolo.client?.urlProtocol(protocolo, didReceive: respuesta, cacheStoragePolicy: .notAllowed)
+                protocolo.client?.urlProtocol(protocolo, didLoad: Data(cuerpo.utf8))
+                protocolo.client?.urlProtocolDidFinishLoading(protocolo)
+            }
         case let .http(status, cuerpo):
             let respuesta = HTTPURLResponse(
                 url: url, statusCode: status, httpVersion: "HTTP/1.1",

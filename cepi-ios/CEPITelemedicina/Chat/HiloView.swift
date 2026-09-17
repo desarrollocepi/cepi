@@ -154,7 +154,7 @@ struct HiloView: View {
             .disabled(modelo.ocupado || indice <= 0)
             .accessibilityLabel("Consulta anterior")
 
-            Text(episodios.etiqueta(indice: indice, mensajes: modelo.mensajes))
+            Text(modelo.cargado ? episodios.etiqueta(indice: indice, mensajes: modelo.mensajes) : "Cargando consultas…")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -183,7 +183,11 @@ struct HiloView: View {
                 // (medido con un UI test). Una página es una sola consulta: pocos mensajes, y las
                 // imágenes tienen tamaño fijo.
                 VStack(alignment: .leading, spacing: 10) {
-                    if visibles.isEmpty && !modelo.ocupado {
+                    if !modelo.cargado && modelo.error == nil {
+                        ProgressView("Cargando el hilo…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                    } else if visibles.isEmpty && !modelo.ocupado {
                         Text("Escribe o pega un texto con los datos del paciente y la IA los carga en la ficha. También puedes conversar normalmente; antes de guardar se pide confirmación.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -199,7 +203,7 @@ struct HiloView: View {
                             imagenAbierta = ImagenAbierta(id: id)
                         }
                     }
-                    if modelo.ocupado {
+                    if modelo.ocupado && modelo.cargado {
                         Text("escribiendo…")
                             .italic()
                             .foregroundStyle(.secondary)

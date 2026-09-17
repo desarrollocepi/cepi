@@ -40,7 +40,10 @@
         >🔔 revisar</span>
       </button>
     </div>
-    <p v-else-if="!busy" class="empty">{{ q ? 'Sin coincidencias' : 'No hay pacientes' }}</p>
+    <!-- "No hay pacientes" solo con la lista YA recibida: antes salía al abrir, antes de la
+         primera carga, y se leía como una org vacía. -->
+    <p v-else-if="!cargado && !error" class="empty">Cargando pacientes…</p>
+    <p v-else-if="!busy && cargado" class="empty">{{ q ? 'Sin coincidencias' : 'No hay pacientes' }}</p>
     <p v-if="error" class="error">{{ error }}</p>
   </aside>
 </template>
@@ -69,6 +72,7 @@ function acargoMeta(p) {
 }
 const q = ref('');
 const busy = ref(false);
+const cargado = ref(false);   // la lista llegó al menos una vez
 const error = ref('');
 
 const showCreate = ref(false);
@@ -134,6 +138,7 @@ async function load(silent = false) {
   try {
     const r = await listPatients({});
     all.value = Array.isArray(r?.data) ? r.data : [];
+    cargado.value = true;
     try {
       const rq = await getReviewQueue();
       reviewQueue.value = rq?.by_patient || {};

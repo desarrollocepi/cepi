@@ -89,6 +89,11 @@
         @guardado="trasGuardar"
       />
       <p v-else-if="ajeno" class="cshell-vacio cshell-ajeno">{{ ajeno }}</p>
+      <p v-else-if="abriendoPaciente" class="cshell-vacio"><span class="cshell-spin" />Cargando episodios del paciente…</p>
+      <div v-else-if="errorVisitas" class="cshell-vacio cshell-ajeno">
+        No se pudieron cargar los episodios: {{ errorVisitas }}
+        <br><button class="cshell-reintentar" @click="aplicarRuta">Reintentar</button>
+      </div>
       <p v-else-if="sinEpisodios" class="cshell-vacio">Este paciente no tiene episodios registrados todavía.</p>
       <p v-else class="cshell-vacio">Elige {{ tab === 'casos' ? 'un episodio' : 'un paciente' }} de la lista.</p>
     </div>
@@ -119,6 +124,11 @@ const visitas = ref([]);
 const cargandoVisitas = ref(false);
 const ajeno = ref('');   // registro de una org a la que el usuario no pertenece
 const sinEpisodios = ref(false);   // paciente abierto que no tiene ninguna ficha
+// Mientras llegan los episodios del paciente que se abre, y el error si no llegan. Sin esto
+// un fallo pasajero quedaba como `visitas = []` y se pintaba "no tiene episodios", que es
+// un dato falso: recargar lo "arreglaba".
+const abriendoPaciente = ref(null);
+const errorVisitas = ref('');
 
 /**
  * El acordeón de episodios. Se recuerda plegado o desplegado entre sesiones: es
@@ -177,8 +187,9 @@ watch(formato, (f) => { try { localStorage.setItem(CLAVE_FORMATO, f); } catch { 
 const formatoActual = computed(() => FORMATOS.find(f => f.id === formato.value && f.src) || null);
 // En móvil solo cabe un panel; en escritorio se ven los dos y `panel` no se usa.
 const panel = ref('lista');
-// Evita recargar las visitas al navegar entre hermanas del mismo paciente.
-let ultimoPacienteCargado = null;
+// Paciente cuyas visitas están en `visitas`, de una carga EXITOSA. Evita recargarlas al
+// navegar entre hermanas; un fallo no lo marca, así el próximo intento las vuelve a pedir.
+let visitasDe = null;
 
 // ── La URL es el estado ──────────────────────────────────────────────────────
 // Abrir un caso NAVEGA; la ruta es la que decide qué se ve. Así el enlace se puede
@@ -193,13 +204,20 @@ async function aplicarRuta() {
 
   ajeno.value = '';
   sinEpisodios.value = false;
+  errorVisitas.value = '';
 
   if (pa && !ep) {
     tab.value = 'pacientes';
     if (!(await asegurarOrg(pa, switchOrgToPaciente))) return;
-    sel.value = { episodeId: null, patientId: pa };
     panel.value = 'detalle';
-    if (pa !== ultimoPacienteCargado) await cargarVisitas(pa);
+    if (pa !== visitasDe) {
+      // Nada del paciente anterior en pantalla mientras llegan los episodios de este.
+      sel.value = { episodeId: null, patientId: null };
+      abriendoPaciente.value = pa;
+      const ok = await cargarVisitas(pa);
+      if (abriendoPaciente.value === pa) abriendoPaciente.value = null;
+      if (!ok) return;   // error visible con Reintentar, o ya se abrió otra ruta
+    }
     // Buscar por paciente y buscar por episodio abren LO MISMO: la ficha del
     // episodio más reciente. Lo único que cambia entre las dos pestañas es por
     // qué se busca, no qué se ve. Antes la pestaña de pacientes abría una ficha
@@ -233,7 +251,7 @@ async function aplicarRuta() {
     }
     sel.value = { episodeId: ep, patientId: dueño };
     panel.value = 'detalle';
-    if (dueño && dueño !== ultimoPacienteCargado) await cargarVisitas(dueño);
+    if (dueño && dueño !== visitasDe) await cargarVisitas(dueño);
     return;
   }
   sel.value = { episodeId: null, patientId: null };
@@ -290,15 +308,21 @@ async function trasGuardar() {
   if (sel.value.patientId) await cargarVisitas(sel.value.patientId);
 }
 
+/** true si las visitas de `patientId` quedaron cargadas; false si falló o la superó otra. */
 async function cargarVisitas(patientId) {
-  ultimoPacienteCargado = patientId;
   const mia = ++peticionVisitas;
   cargandoVisitas.value = true;
   try {
     const filas = (await listarCasosDePaciente(patientId)).data || [];
-    if (mia === peticionVisitas) visitas.value = filas;
-  } catch {
-    if (mia === peticionVisitas) visitas.value = [];
+    if (mia !== peticionVisitas) return false;
+    visitas.value = filas;
+    visitasDe = patientId;
+    errorVisitas.value = '';
+    return true;
+  } catch (e) {
+    if (mia !== peticionVisitas) return false;
+    errorVisitas.value = e?.message || 'sin conexión con el servidor';
+    return false;
   } finally {
     if (mia === peticionVisitas) cargandoVisitas.value = false;
   }
@@ -330,6 +354,7 @@ onMounted(aplicarRuta);
 .cshell-formatos button.on { color: #fff; background: #0ea5e9; border-color: #0ea5e9; }
 .cshell-formatos button:disabled { color: #cbd5e1; background: #f8fafc; cursor: default; }
 .cshell-ajeno { color: #b91c1c; }
+.cshell-reintentar { margin-top: 10px; padding: 6px 14px; font-weight: 600; color: #fff; background: #0ea5e9; border: 0; border-radius: 6px; cursor: pointer; }
 .cshell-visitas { padding: 12px 14px 0; }
 .cshell-visitas h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
 .cshell-acordeon { display: flex; align-items: center; gap: 6px; padding: 2px 0; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }

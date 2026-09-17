@@ -23,6 +23,8 @@ final class Sesion {
 
     private(set) var estado: Estado = .cargando
     private(set) var usuario: Usuario?
+    /// Mientras se cambia de org: la lista muestra la espera en vez de la org anterior.
+    private(set) var cambiandoOrganizacion = false
 
     let api: CEPIAPI
     @ObservationIgnored private let credenciales: Credenciales
@@ -100,6 +102,8 @@ final class Sesion {
     /// (la lista de pacientes) se recarga al ver el `orgActiva` nuevo.
     func cambiarOrganizacion(a id: String) async throws {
         guard id != usuario?.orgActiva else { return }
+        cambiandoOrganizacion = true
+        defer { cambiandoOrganizacion = false }
         let respuesta = try await api.cambiarOrganizacion(id)
         if let token = respuesta.token { await credenciales.guardar(token) }
         await renovar()

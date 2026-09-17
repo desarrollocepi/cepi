@@ -43,6 +43,9 @@
     <main>
       <!-- Sin sesión el login se pinta POR ENCIMA de la ruta, no como una ruta más:
            así el enlace a un caso sobrevive al login y se abre al entrar. -->
+      <!-- Cambiar de org recarga la página; hasta que termina, la lista de la org anterior
+           seguía a la vista y se podía tocar como si fuera la nueva. -->
+      <div v-if="orgSwitching" class="org-cambiando" role="status"><span class="org-spin" />Cambiando de organización…</div>
       <VerifyEmail v-if="view === 'verify'" :email="verifyEmailAddr" @done="goLogin" />
       <!-- Con un token guardado NO se pinta el login mientras se valida (recarga, cambio
            de org): verlo invitaba a volver a entrar con Google en cada refresco y eso
@@ -358,6 +361,13 @@ onMounted(refresh);
 }
 .sesion-acciones button.secundario { background: #fff; color: var(--text); border-color: var(--border); }
 
+.org-cambiando {
+  position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  gap: 10px; font-weight: 600; color: var(--text); background: rgba(255,255,255,.82);
+}
+.org-spin { width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: var(--accent); border-radius: 50%; animation: org-giro .7s linear infinite; }
+@keyframes org-giro { to { transform: rotate(360deg); } }
+
 .logo { height: 38px; object-fit: contain; display: block; }
 .brand { color: #fff; letter-spacing: 0.02em; font-size: 1rem; }
 
@@ -390,6 +400,7 @@ onMounted(refresh);
 }
 
 main {
+  position: relative;
   flex: 1;
   min-height: 0;
   padding: 12px;

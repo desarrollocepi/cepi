@@ -31,12 +31,15 @@ struct PacientesView: View {
         // Recarga al volver a primer plano, al cambiar de organización y cada 20 s mientras
         // está visible: una derivación nueva sube con "revisar" sin tocar nada (ChatList.vue).
         .task(id: Recarga(activa: fase == .active, organizacion: sesion.usuario?.orgActiva)) {
+            modelo.usarOrganizacion(sesion.usuario?.orgActiva)
             guard fase == .active else { return }
             while !Task.isCancelled {
                 await modelo.cargar(api: sesion.api)
                 try? await Task.sleep(for: .seconds(20))
             }
         }
+        // El paciente abierto es de la org anterior: se cierra al cambiar.
+        .onChange(of: sesion.usuario?.orgActiva) { seleccion = nil }
         .eliminarCuenta(confirmar: $confirmarBorrado)
         .alert("No se pudo cambiar de organización", isPresented: Binding(
             get: { errorOrganizacion != nil },
@@ -72,7 +75,11 @@ struct PacientesView: View {
             )
         }
         .overlay {
-            if !modelo.cargado {
+            if sesion.cambiandoOrganizacion {
+                ProgressView("Cambiando de organización…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background.opacity(0.85))
+            } else if !modelo.cargado {
                 if let error = modelo.error {
                     ContentUnavailableView {
                         Label("No se pudo cargar la lista", systemImage: "exclamationmark.triangle")
@@ -96,6 +103,7 @@ struct PacientesView: View {
                 }
             }
         }
+        .disabled(sesion.cambiandoOrganizacion)
         .searchable(text: $busqueda, prompt: "Buscar paciente o cédula")
         .refreshable { await modelo.cargar(api: sesion.api) }
         .navigationTitle("Pacientes")

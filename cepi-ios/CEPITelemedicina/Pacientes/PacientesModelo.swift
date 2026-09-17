@@ -36,7 +36,12 @@ final class PacientesModelo {
     private(set) var cargado = false
     private(set) var error: String?
     private var porId: [String: FilaPaciente] = [:]
-    private var cargando = false
+    /// De qué org es lo que hay en `filas`.
+    private var organizacion: String?
+    /// Cada carga lleva un número; al volver solo se aplica la última. Antes una carga en
+    /// curso bloqueaba la siguiente (`guard !cargando`): si se cambiaba de org justo durante
+    /// un refresco, la lista de la org nueva no se pedía y la anterior quedaba hasta 20 s.
+    private var pedido = 0
 
     func fila(_ id: String) -> FilaPaciente? { porId[id] }
 
@@ -44,18 +49,20 @@ final class PacientesModelo {
     /// dos accesorios se conserva lo anterior: un error transitorio no debe borrar los
     /// avisos de "revisar".
     func cargar(api: CEPIAPI) async {
-        guard !cargando else { return }
-        cargando = true
-        defer { cargando = false }
+        pedido += 1
+        let mio = pedido
 
         async let pacientes = api.pacientes()
         async let cola = try? api.colaRevision()
         async let asignados = try? api.asignaciones()
         do {
             let registros = try await pacientes
-            if let nueva = await cola { revision = nueva }
-            if let nuevas = await asignados { asignaciones = nuevas }
-            let nuevasFilas = await Self.preparar(registros, revision: revision)
+            let nuevaCola = await cola
+            let nuevasAsignaciones = await asignados
+            let nuevasFilas = await Self.preparar(registros, revision: nuevaCola ?? revision)
+            guard mio == pedido else { return }   // llegó otra carga más nueva (otra org)
+            if let nuevaCola { revision = nuevaCola }
+            if let nuevasAsignaciones { asignaciones = nuevasAsignaciones }
             filas = nuevasFilas
             porId = Dictionary(nuevasFilas.map { ($0.id, $0) }, uniquingKeysWith: { primera, _ in primera })
             error = nil
@@ -63,8 +70,25 @@ final class PacientesModelo {
         } catch {
             // En los refrescos periódicos un fallo no pisa la lista; solo se muestra si
             // nunca llegó a cargar.
+            guard mio == pedido else { return }
             if !cargado, !Task.isCancelled { self.error = error.localizedDescription }
         }
+    }
+
+    /// Otra org es otra lista: se vacía y vuelve a "Cargando pacientes…" en vez de dejar a
+    /// la vista, y tocable, la lista de la org anterior mientras llega la nueva.
+    func usarOrganizacion(_ org: String?) {
+        guard org != organizacion else { return }
+        let habiaOtra = organizacion != nil
+        organizacion = org
+        guard habiaOtra else { return }
+        pedido += 1   // lo que llegue de la org anterior se descarta
+        filas = []
+        porId = [:]
+        revision = [:]
+        asignaciones = [:]
+        cargado = false
+        error = nil
     }
 
     /// Un paciente recién creado aparece ya, sin esperar a la próxima recarga.
