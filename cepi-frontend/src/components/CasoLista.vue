@@ -38,10 +38,10 @@
 
     <p v-if="error" class="cl-estado cl-error">{{ error }}</p>
     <p v-else-if="cargando" class="cl-estado">Buscando…</p>
-    <p v-else-if="!casos.length" class="cl-estado">Ningún caso con esos criterios.</p>
+    <p v-else-if="!casos.length" class="cl-estado">Ningún episodio con esos criterios.</p>
 
     <p v-if="!cargando && casos.length" class="cl-cuenta">
-      {{ casos.length }}{{ hayMas ? '+' : '' }} casos
+      {{ casos.length }}{{ hayMas ? '+' : '' }} episodios
     </p>
 
     <ul class="cl-items">
@@ -70,7 +70,11 @@
       </li>
     </ul>
 
-    <button v-if="hayMas && !cargando" class="cl-mas" @click="buscar(true)">Ver más</button>
+    <button
+      v-if="casos.length" class="cl-mas" :disabled="!hayMas || cargando"
+      :title="hayMas ? 'Cargar los siguientes resultados' : 'Ya se listaron todos los episodios'"
+      @click="buscar(true)"
+    >{{ cargando ? 'Buscando…' : (hayMas ? 'Ver más' : 'No hay más resultados') }}</button>
   </div>
 </template>
 
@@ -186,4 +190,7 @@ defineExpose({ buscar });
 .cl-falta { font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cl-mas { margin: 10px auto 20px; padding: 7px 16px; font-size: 13px; color: #0369a1; background: none; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
+/* Deshabilitado en vez de oculto: que desaparezca no dice si la lista se acabó
+   o si el botón se rompió. Ver la regla en CLAUDE.md. */
+.cl-mas:disabled { color: #94a3b8; background: none; border-color: #e2e8f0; cursor: default; }
 </style>

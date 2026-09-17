@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<!--
+  MSP HCU form.002 — ANAMNESIS Y EXAMEN FÍSICO
+  ============================================
+  Formato documental de la ficha. Mismo contrato que ficha.html: se abre dentro
+  de un iframe y el contenedor (VisorFormato.vue) llama a `fillFicha(data)` con
+  los campos de patient+episode aplanados. Se imprime a PDF con el diálogo del
+  navegador (A4, márgenes en .hoja y no en @page, para que no recorte).
+
+  ⚠️ MAQUETACIÓN RECONSTRUIDA, NO CALCADA DEL OFICIAL.
+  En el repositorio no hay ningún formulario del MSP, así que las secciones y su
+  orden se reprodujeron a partir de la estructura estándar del formulario 002
+  (A motivo, B antecedentes, C enfermedad actual, D revisión de órganos y
+  sistemas, E signos vitales, F examen físico regional, G diagnósticos con CIE,
+  H planes de tratamiento). ANTES DE USARLO ANTE UNA AUTORIDAD hay que
+  contrastarlo campo por campo con el formulario en blanco del Ministerio.
+
+  Secciones que el sistema NO alimenta y quedan EN BLANCO a propósito:
+    · D. Revisión actual de órganos y sistemas
+    · E. Signos vitales y antropometría
+    · F. Todas las regiones salvo «Piel y anexos»
+  En dermatología no se toman, pero el formulario los lleva y se imprimen para
+  rellenarlos a mano. `camposNoCubiertos()` avisa de lo que quede fuera.
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>MSP form.002 — Anamnesis y examen físico</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { margin: 0; padding: 0; background: #e8e8e8; font-family: Arial, Helvetica, sans-serif; color: #000; }
+  body { padding: 16px; }
+
+  .hoja {
+    width: 210mm; min-height: 297mm; margin: 0 auto 14px;
+    background: #fff; padding: 8mm 8mm 6mm; font-size: 8pt; line-height: 1.2;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15);
+  }
+
+  /* El 002 es una rejilla de casillas con borde: se replica con tablas para que
+     el salto de página no parta una celda por la mitad. */
+  table { width: 100%; border-collapse: collapse; }
+  td, th { border: .6pt solid #000; padding: 2px 3px; vertical-align: top; }
+  th { background: #d9d9d9; font-size: 7pt; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .02em; }
+  .sec { background: #b8b8b8; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; padding: 3px; border: .6pt solid #000; }
+  .rot { font-size: 6.5pt; color: #333; text-transform: uppercase; display: block; }
+
+  .cab { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .cab .msp { font-size: 11pt; font-weight: 700; }
+  .cab .form { margin-left: auto; font-size: 9pt; font-weight: 700; border: 1pt solid #000; padding: 2px 8px; }
+  .subtit { text-align: center; font-size: 10pt; font-weight: 700; text-transform: uppercase; margin: 2px 0 5px; }
+
+  input[type="text"], input[type="date"], input[type="time"] {
+    width: 100%; border: 0; background: transparent; font: inherit; font-size: 8pt; color: #00308f; padding: 0;
+  }
+  textarea {
+    width: 100%; border: 0; background: transparent; font: inherit; font-size: 8pt; color: #00308f;
+    resize: none; overflow: hidden; padding: 0; line-height: 1.25;
+  }
+  input:focus, textarea:focus { outline: 1px dotted #999; }
+
+  /* Casillas SI/NO de la revisión por sistemas y del examen regional. */
+  .marca { width: 9mm; text-align: center; }
+  .marca input { width: 100%; }
+
+  /* Lo que el sistema no alimenta: se ve que es para rellenar a mano. */
+  .amano { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f0f0f0 6px, #f0f0f0 12px); }
+
+  /* Un campo que cambió respecto de la visita anterior (markChanges). */
+  .cambiado { color: #c8102e !important; font-weight: 700; }
+  .lbl-changed { color: #c8102e; font-weight: 700; }
+
+  .pie { margin-top: 5px; font-size: 6.5pt; color: #444; }
+  .aviso-borrador { margin: 0 auto 10px; max-width: 210mm; padding: 6px 10px; font-size: 8pt; background: #fff4d6; border: 1pt solid #e0a800; color: #6b4e00; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .hoja { box-shadow: none; margin: 0; }
+    .aviso-borrador { display: none; }   /* el aviso es para la pantalla, no para el papel */
+    input, textarea { color: #000 !important; background: transparent !important; }
+    .cambiado, .lbl-changed { color: #000 !important; }   /* el diff no va al documento legal */
+    .amano { background: #fff; }
+  }
+</style>
+</head>
+<body>
+
+<p class="aviso-borrador">
+  <strong>Maquetación reconstruida.</strong> Este formato reproduce la estructura del
+  formulario 002 del MSP pero no está calcado del oficial. Contrástalo con el
+  formulario en blanco del Ministerio antes de presentarlo. Las secciones D, E y el
+  examen regional salvo «Piel y anexos» salen en blanco a propósito, para rellenar a mano.
+</p>
+
+<form class="hoja" id="msp002" autocomplete="off" novalidate>
+
+  <div class="cab">
+    <span class="msp">MINISTERIO DE SALUD PÚBLICA</span>
+    <span class="form">form.002 / HCU</span>
+  </div>
+  <div class="subtit">Anamnesis y examen físico</div>
+
+  <table>
+    <tr>
+      <td style="width:30%"><span class="rot">Institución del sistema</span><input type="text" name="institucion"></td>
+      <td style="width:15%"><span class="rot">Unicódigo</span><input type="text" name="unicodigo"></td>
+      <td style="width:35%"><span class="rot">Establecimiento de salud</span><input type="text" name="establecimiento"></td>
+      <td style="width:20%"><span class="rot">N.º historia clínica</span><input type="text" name="hcu"></td>
+    </tr>
+    <tr>
+      <td><span class="rot">Primer apellido</span><input type="text" name="primer_apellido"></td>
+      <td><span class="rot">Segundo apellido</span><input type="text" name="segundo_apellido"></td>
+      <td><span class="rot">Nombres</span><input type="text" name="nombres"></td>
+      <td><span class="rot">Cédula</span><input type="text" name="cedula"></td>
+    </tr>
+    <tr>
+      <td><span class="rot">Sexo</span><input type="text" name="sexo_txt"></td>
+      <td><span class="rot">Edad</span><input type="text" name="edad"></td>
+      <td><span class="rot">Fecha de nacimiento</span><input type="text" name="fecha_nac"></td>
+      <td><span class="rot">Fecha de atención</span><input type="text" name="fecha"></td>
+    </tr>
+  </table>
+
+  <div class="sec">A. Motivo de consulta</div>
+  <table><tr><td><textarea name="motivo_consulta" rows="2"></textarea></td></tr></table>
+
+  <div class="sec">B. Antecedentes</div>
+  <table>
+    <tr>
+      <td style="width:50%"><span class="rot">Personales</span><textarea name="antecedentes_personales" rows="3"></textarea></td>
+      <td style="width:50%"><span class="rot">Familiares</span><textarea name="antecedentes_familiares" rows="3"></textarea></td>
+    </tr>
+    <tr>
+      <td><span class="rot">Alergias</span><textarea name="alergias" rows="1"></textarea></td>
+      <td><span class="rot">Medicación actual</span><textarea name="medicacion_actual" rows="1"></textarea></td>
+    </tr>
+  </table>
+
+  <div class="sec">C. Enfermedad o problema actual</div>
+  <table><tr><td><textarea name="enfermedad_actual" rows="5"></textarea></td></tr></table>
+
+  <div class="sec">D. Revisión actual de órganos y sistemas</div>
+  <table class="amano">
+    <tr>
+      <th style="width:38%">Sistema</th><th class="marca">Sí</th><th class="marca">No</th>
+      <th>Descripción de los hallazgos</th>
+    </tr>
+    <tr><td>1. Órganos de los sentidos</td><td class="marca"><input type="text" name="ros_1_si"></td><td class="marca"><input type="text" name="ros_1_no"></td><td><input type="text" name="ros_1_txt"></td></tr>
+    <tr><td>2. Respiratorio</td><td class="marca"><input type="text" name="ros_2_si"></td><td class="marca"><input type="text" name="ros_2_no"></td><td><input type="text" name="ros_2_txt"></td></tr>
+    <tr><td>3. Cardiovascular</td><td class="marca"><input type="text" name="ros_3_si"></td><td class="marca"><input type="text" name="ros_3_no"></td><td><input type="text" name="ros_3_txt"></td></tr>
+    <tr><td>4. Digestivo</td><td class="marca"><input type="text" name="ros_4_si"></td><td class="marca"><input type="text" name="ros_4_no"></td><td><input type="text" name="ros_4_txt"></td></tr>
+    <tr><td>5. Genital</td><td class="marca"><input type="text" name="ros_5_si"></td><td class="marca"><input type="text" name="ros_5_no"></td><td><input type="text" name="ros_5_txt"></td></tr>
+    <tr><td>6. Urinario</td><td class="marca"><input type="text" name="ros_6_si"></td><td class="marca"><input type="text" name="ros_6_no"></td><td><input type="text" name="ros_6_txt"></td></tr>
+    <tr><td>7. Músculo esquelético</td><td class="marca"><input type="text" name="ros_7_si"></td><td class="marca"><input type="text" name="ros_7_no"></td><td><input type="text" name="ros_7_txt"></td></tr>
+    <tr><td>8. Endocrino</td><td class="marca"><input type="text" name="ros_8_si"></td><td class="marca"><input type="text" name="ros_8_no"></td><td><input type="text" name="ros_8_txt"></td></tr>
+    <tr><td>9. Hemolinfático</td><td class="marca"><input type="text" name="ros_9_si"></td><td class="marca"><input type="text" name="ros_9_no"></td><td><input type="text" name="ros_9_txt"></td></tr>
+    <tr><td>10. Nervioso</td><td class="marca"><input type="text" name="ros_10_si"></td><td class="marca"><input type="text" name="ros_10_no"></td><td><input type="text" name="ros_10_txt"></td></tr>
+  </table>
+
+  <div class="sec">E. Signos vitales y antropometría</div>
+  <table class="amano">
+    <tr>
+      <td><span class="rot">Temperatura °C</span><input type="text" name="temperatura"></td>
+      <td><span class="rot">Presión arterial</span><input type="text" name="presion_arterial"></td>
+      <td><span class="rot">Pulso /min</span><input type="text" name="pulso"></td>
+      <td><span class="rot">Frec. respiratoria</span><input type="text" name="frecuencia_respiratoria"></td>
+      <td><span class="rot">Sat. O₂ %</span><input type="text" name="saturacion"></td>
+    </tr>
+    <tr>
+      <td><span class="rot">Peso kg</span><input type="text" name="peso"></td>
+      <td><span class="rot">Talla cm</span><input type="text" name="talla"></td>
+      <td><span class="rot">IMC</span><input type="text" name="imc"></td>
+      <td><span class="rot">Perímetro abdominal</span><input type="text" name="perimetro_abdominal"></td>
+      <td><span class="rot">Perímetro cefálico</span><input type="text" name="perimetro_cefalico"></td>
+    </tr>
+  </table>
+
+  <div class="sec">F. Examen físico regional <span style="font-weight:400;text-transform:none">(CP = con patología · SP = sin patología)</span></div>
+  <table>
+    <tr><th style="width:30%">Región</th><th class="marca">CP</th><th class="marca">SP</th><th>Hallazgos</th></tr>
+    <tr>
+      <td><strong>Piel y anexos</strong></td>
+      <td class="marca"><input type="text" name="ef_piel_cp"></td>
+      <td class="marca"><input type="text" name="ef_piel_sp"></td>
+      <td><textarea name="ef_piel_txt" rows="6"></textarea></td>
+    </tr>
+    <tr class="amano"><td>Cabeza</td><td class="marca"><input type="text" name="ef_cabeza_cp"></td><td class="marca"><input type="text" name="ef_cabeza_sp"></td><td><input type="text" name="ef_cabeza_txt"></td></tr>
+    <tr class="amano"><td>Cuello</td><td class="marca"><input type="text" name="ef_cuello_cp"></td><td class="marca"><input type="text" name="ef_cuello_sp"></td><td><input type="text" name="ef_cuello_txt"></td></tr>
+    <tr class="amano"><td>Tórax</td><td class="marca"><input type="text" name="ef_torax_cp"></td><td class="marca"><input type="text" name="ef_torax_sp"></td><td><input type="text" name="ef_torax_txt"></td></tr>
+    <tr class="amano"><td>Abdomen</td><td class="marca"><input type="text" name="ef_abdomen_cp"></td><td class="marca"><input type="text" name="ef_abdomen_sp"></td><td><input type="text" name="ef_abdomen_txt"></td></tr>
+    <tr class="amano"><td>Pelvis</td><td class="marca"><input type="text" name="ef_pelvis_cp"></td><td class="marca"><input type="text" name="ef_pelvis_sp"></td><td><input type="text" name="ef_pelvis_txt"></td></tr>
+    <tr class="amano"><td>Extremidades</td><td class="marca"><input type="text" name="ef_extremidades_cp"></td><td class="marca"><input type="text" name="ef_extremidades_sp"></td><td><input type="text" name="ef_extremidades_txt"></td></tr>
+    <tr class="amano"><td>Neurológico</td><td class="marca"><input type="text" name="ef_neuro_cp"></td><td class="marca"><input type="text" name="ef_neuro_sp"></td><td><input type="text" name="ef_neuro_txt"></td></tr>
+  </table>
+
+  <div class="sec">G. Diagnósticos</div>
+  <table>
+    <tr><th style="width:62%">Descripción</th><th style="width:14%">CIE</th><th class="marca">Pre</th><th class="marca">Def</th></tr>
+    <tr>
+      <td><textarea name="diagnostico" rows="2"></textarea></td>
+      <td><input type="text" name="codigo_cie10"></td>
+      <td class="marca"><input type="text" name="dx_pre"></td>
+      <td class="marca"><input type="text" name="dx_def"></td>
+    </tr>
+    <tr class="amano">
+      <td><input type="text" name="diagnostico_2"></td>
+      <td><input type="text" name="codigo_cie10_2"></td>
+      <td class="marca"><input type="text" name="dx_pre_2"></td>
+      <td class="marca"><input type="text" name="dx_def_2"></td>
+    </tr>
+  </table>
+
+  <div class="sec">H. Planes de tratamiento</div>
+  <table><tr><td><textarea name="plan_tratamiento" rows="4"></textarea></td></tr></table>
+
+  <table style="margin-top:4px">
+    <tr>
+      <td style="width:25%"><span class="rot">Fecha</span><input type="text" name="fecha_pie"></td>
+      <td style="width:15%"><span class="rot">Hora</span><input type="text" name="hora"></td>
+      <td style="width:35%"><span class="rot">Profesional (nombre y apellido)</span><input type="text" name="medico"></td>
+      <td style="width:25%"><span class="rot">Código / firma</span><input type="text" name="codigo_medico"></td>
+    </tr>
+  </table>
+
+  <p class="pie">form.002 · Anamnesis y examen físico — impreso desde CEPI</p>
+</form>
+
+<script>
+/* ── Contrato con VisorFormato.vue ──────────────────────────────────────────
+   fillFicha(data)         rellena a partir de patient+episode aplanados
+   markChanges(cambios)    resalta lo que cambió respecto de la visita previa
+   camposNoCubiertos(data) qué campos con dato NO tienen sitio en este formato
+   Los tres van en `window` al final.
+*/
+(function () {
+  var form = document.getElementById('msp002');
+
+  function set(name, val) {
+    var el = form.elements[name];
+    if (!el) return false;
+    el.value = (val === null || val === undefined || val === false) ? '' : String(val);
+    autoAlto(el);
+    return true;
+  }
+  /* Los textarea crecen con su contenido: en papel no hay scroll, y un texto
+     recortado en una historia clínica es un dato perdido, no un detalle visual. */
+  function autoAlto(el) {
+    if (!el || el.tagName !== 'TEXTAREA') return;
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 2) + 'px';
+  }
+
+  var SI_NO = function (v) { return v === true ? 'Sí' : v === false ? 'No' : ''; };
+  function trozo(etiqueta, valor) {
+    if (valor === null || valor === undefined || valor === '' || valor === false) return '';
+    return etiqueta + ': ' + (valor === true ? 'Sí' : valor);
+  }
+  function juntar(partes) { return partes.filter(Boolean).join('\n'); }
+
+  /* §4 de la ficha dermatológica → el bloque «Piel y anexos» del examen físico.
+     El 002 no tiene casillas para lesión elemental ni topografía, así que se
+     redactan como hallazgos, que es donde el formulario los espera. */
+  function piel(d) {
+    var lesiones = [];
+    [['lesion_macula','Mácula'],['lesion_papula','Pápula'],['lesion_placa','Placa'],
+     ['lesion_vesicula','Vesícula'],['lesion_ampolla','Ampolla'],['lesion_tumor','Tumor'],
+     ['lesion_nodulo','Nódulo'],['lesion_ulcera','Úlcera']].forEach(function (p) {
+      if (d[p[0]] === true) lesiones.push(p[1]);
+    });
+    if (d.lesion_otra) lesiones.push(String(d.lesion_otra));
+
+    var caract = [];
+    [['caract_eritema','Eritema'],['caract_descamacion','Descamación'],['caract_exudacion','Exudación'],
+     ['caract_liquenificacion','Liquenificación'],['caract_otra','Otra']].forEach(function (p) {
+      if (d[p[0]]) caract.push(p[1] + (typeof d[p[0]] === 'string' ? ' (' + d[p[0]] + ')' : ''));
+    });
+
+    var topo = [];
+    [['topo_unica','única'],['topo_multiples','múltiples'],['topo_bilateral','bilateral'],
+     ['topo_simetrico','simétrica'],['topo_confluente','confluente'],['topo_agrupadas','agrupadas'],
+     ['topo_circular','circular'],['topo_lineal','lineal'],['topo_borde','de borde']].forEach(function (p) {
+      if (d[p[0]] === true) topo.push(p[1]);
+    });
+    if (d.topo_otra) topo.push(String(d.topo_otra));
+
+    var regiones = d.regiones_afectadas;
+    if (Array.isArray(regiones)) regiones = regiones.join(', ');
+    else if (regiones && typeof regiones === 'object') regiones = Object.keys(regiones).join(', ');
+
+    var grav = [];
+    if (d.gravedad_extension !== undefined && d.gravedad_extension !== null && d.gravedad_extension !== '') grav.push('extensión ' + d.gravedad_extension);
+    if (d.gravedad_intensidad !== undefined && d.gravedad_intensidad !== null && d.gravedad_intensidad !== '') grav.push('intensidad ' + d.gravedad_intensidad);
+    if (d.gravedad_funcionalidad !== undefined && d.gravedad_funcionalidad !== null && d.gravedad_funcionalidad !== '') grav.push('funcionalidad ' + d.gravedad_funcionalidad);
+
+    return juntar([
+      lesiones.length ? 'Lesión elemental: ' + lesiones.join(', ') : '',
+      caract.length ? 'Características: ' + caract.join(', ') : '',
+      topo.length ? 'Topografía: ' + topo.join(', ') : '',
+      regiones ? 'Regiones afectadas: ' + regiones : '',
+      grav.length ? 'Gravedad (0-3): ' + grav.join(', ') : '',
+      trozo('Patrón — inflamación epidérmica', d.patron_inflam_epidermica),
+      trozo('Patrón — inflamación dérmica', d.patron_inflam_dermica),
+      trozo('Patrón — necrosis', d.patron_necrosis),
+      trozo('Patrón — tumor', d.patron_tumor),
+      trozo('Patrón — color', d.patron_color),
+      d.notas_examen ? 'Notas: ' + d.notas_examen : '',
+      /* Las fichas importadas de DrPro no traen las casillas §4: traen el examen
+         físico redactado en un solo campo. Sin esto el bloque salía vacío justo
+         en los episodios reales. */
+      d.examen_fisico ? String(d.examen_fisico) : '',
+    ]);
+  }
+
+  /* §3 de la ficha → «C. Enfermedad o problema actual», que en el 002 es un
+     texto libre y no una lista de campos. */
+  function enfermedadActual(d) {
+    return juntar([
+      d.anamnesis ? String(d.anamnesis) : '',
+      trozo('Tiempo de evolución', d.tiempo_evolucion),
+      trozo('Curso', d.curso),
+      d.sintomas_presente === true ? juntar([
+        trozo('Picor', d.picor), trozo('Dolor', d.dolor),
+      ]) || 'Síntomas: sí' : (d.sintomas_presente === false ? 'Síntomas: no' : ''),
+      trozo('Causa aparente', d.causa_aparente || (d.causa_aparente_presente === false ? 'no referida' : '')),
+      trozo('Patología asociada / RAS', d.patologia_asociada || (d.patologia_asociada_presente === false ? 'no' : '')),
+      trozo('Tratamientos previos', d.tratamientos_previos || (d.tratamientos_previos_presente === false ? 'ninguno' : '')),
+    ]);
+  }
+
+  function nombreEnPartes(d) {
+    var ap = String(d.apellidos || '').trim().split(/\s+/);
+    return {
+      primer: ap[0] || '',
+      segundo: ap.slice(1).join(' '),
+      nombres: String(d.nombre_solo || d.nombres || '').trim(),
+    };
+  }
+
+  function fillFicha(d) {
+    d = d || {};
+    /* `nombre` llega ya compuesto (nombre + apellidos) desde el visor; para el
+       002 hace falta partido, así que se prefiere el par original si viene. */
+    var n = nombreEnPartes(d);
+    if (!n.nombres && d.nombre) {
+      var ap = String(d.apellidos || '');
+      n.nombres = String(d.nombre).replace(ap, '').trim() || String(d.nombre);
+    }
+    set('primer_apellido', n.primer);
+    set('segundo_apellido', n.segundo);
+    set('nombres', n.nombres);
+    set('cedula', d.cedula);
+    set('sexo_txt', d.sexo === 'M' ? 'M' : d.sexo === 'F' ? 'F' : (d.sexo || ''));
+    set('edad', d.edad);
+    set('fecha_nac', String(d.fecha_nac || '').slice(0, 10));
+    var f = String(d.fecha || '').slice(0, 10);
+    set('fecha', f);
+    set('fecha_pie', f);
+
+    set('motivo_consulta', d.motivo_consulta);
+    set('antecedentes_personales', d.antecedentes_personales || (d.antecedentes_personales_presente === false ? 'No refiere' : ''));
+    set('antecedentes_familiares', d.antecedentes_familiares || (d.antecedentes_familiares_presente === false ? 'No refiere' : ''));
+    set('alergias', d.alergias);
+    set('medicacion_actual', d.medicacion_actual);
+
+    set('enfermedad_actual', enfermedadActual(d));
+
+    var textoPiel = piel(d);
+    set('ef_piel_txt', textoPiel);
+    set('ef_piel_cp', textoPiel ? 'X' : '');
+
+    set('diagnostico', d.diagnostico);
+    set('codigo_cie10', d.codigo_cie10);
+    /* El origen del diagnóstico decide si es presuntivo o definitivo: lo puesto
+       por el médico es definitivo; una sugerencia sin firmar, presuntivo. */
+    var firmado = d.diagnostico_fuente && !/ia|modelo|sugerid/i.test(String(d.diagnostico_fuente));
+    if (d.diagnostico) { set(firmado ? 'dx_def' : 'dx_pre', 'X'); }
+
+    set('plan_tratamiento', juntar([
+      d.tratamiento_resumen ? String(d.tratamiento_resumen) : '',
+      d.plan ? String(d.plan) : '',
+      trozo('Estudios complementarios', d.estudios_complementarios_resumen ||
+        (d.estudios_complementarios_presente === false ? 'no se solicitan' : '')),
+      d.proximo_control_fecha ? 'Próximo control: ' + String(d.proximo_control_fecha).slice(0, 10) +
+        (d.proximo_control_motivo ? ' — ' + d.proximo_control_motivo : '') : '',
+    ]));
+
+    set('medico', d.examinador_nombre || d.medico || '');
+  }
+
+  /* Campos del episodio que este formato no representa. Se declaran para que el
+     visor avise en pantalla: si un dato no cabe, hay que verlo, no descubrirlo. */
+  var CUBIERTOS = null;
+  function camposNoCubiertos(d) {
+    if (!CUBIERTOS) {
+      CUBIERTOS = {};
+      ['nombre','apellidos','cedula','sexo','edad','fecha_nac','fecha','motivo_consulta',
+       'antecedentes_personales','antecedentes_personales_presente','antecedentes_familiares',
+       'antecedentes_familiares_presente','alergias','medicacion_actual','anamnesis',
+       'tiempo_evolucion','curso','sintomas_presente','picor','dolor','causa_aparente',
+       'causa_aparente_presente','patologia_asociada','patologia_asociada_presente',
+       'tratamientos_previos','tratamientos_previos_presente','diagnostico','codigo_cie10',
+       'diagnostico_fuente','diagnostico_letra','tratamiento_resumen','plan',
+       'estudios_complementarios_resumen','estudios_complementarios_presente',
+       'proximo_control_fecha','proximo_control_motivo','examinador_nombre','medico',
+       'notas_examen','regiones_afectadas','gravedad_extension','gravedad_intensidad',
+       'gravedad_funcionalidad','gravedad_total','examen_fisico'].forEach(function (k) { CUBIERTOS[k] = 1; });
+      ['lesion_','caract_','topo_','patron_'].forEach(function (p) { CUBIERTOS['__pref_' + p] = 1; });
+    }
+    var IGNORAR = /^(id|patient_id|medico_id|org_id|created_at|updated_at|estado|tipo|location|ficha_|drpro_|_)/;  /* drpro_* y _relations son fontanería del espejo, no dato clínico:
+       contarlos como "no cabe" convertía el aviso en ruido. */
+    var fuera = [];
+    Object.keys(d || {}).forEach(function (k) {
+      var v = d[k];
+      if (v === null || v === undefined || v === '' || v === false) return;
+      if (IGNORAR.test(k) || k.indexOf(':') >= 0) return;
+      if (CUBIERTOS[k]) return;
+      if (/^(lesion_|caract_|topo_|patron_)/.test(k)) return;
+      fuera.push(k);
+    });
+    return fuera;
+  }
+
+  /* Resalta en rojo lo que cambió respecto de la visita anterior. En papel el
+     rojo se apaga (ver @media print): el documento legal no lleva el diff. */
+  var MAPA_CAMBIO = {
+    motivo_consulta: 'motivo_consulta', diagnostico: 'diagnostico', codigo_cie10: 'codigo_cie10',
+    anamnesis: 'enfermedad_actual', tiempo_evolucion: 'enfermedad_actual', curso: 'enfermedad_actual',
+    tratamiento_resumen: 'plan_tratamiento', plan: 'plan_tratamiento',
+    antecedentes_personales: 'antecedentes_personales', antecedentes_familiares: 'antecedentes_familiares',
+  };
+  function markChanges(cambios) {
+    form.querySelectorAll('.cambiado').forEach(function (e) { e.classList.remove('cambiado'); e.removeAttribute('title'); });
+    if (!cambios) return;
+    var claves = Array.isArray(cambios) ? cambios : Object.keys(cambios);
+    claves.forEach(function (k) {
+      var destino = MAPA_CAMBIO[k] || (/^(lesion_|caract_|topo_|patron_|gravedad_|regiones_)/.test(k) ? 'ef_piel_txt' : null);
+      var el = destino && form.elements[destino];
+      if (!el) return;
+      el.classList.add('cambiado');
+      var antes = Array.isArray(cambios) ? null : cambios[k];
+      if (antes !== null && antes !== undefined) el.title = 'Antes: ' + (antes === '' ? '(vacío)' : antes);
+    });
+  }
+
+  window.fillFicha = fillFicha;
+  window.markChanges = markChanges;
+  window.camposNoCubiertos = camposNoCubiertos;
+})();
+</script>
+</body>
+</html>

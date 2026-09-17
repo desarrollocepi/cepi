@@ -1,0 +1,162 @@
+# Deploy a producción (EC2 3.23.236.49). Detalle en docs/DEPLOY.md.
+#
+#   push a master          → tests → build → deploy
+#   push a ci/**           → tests → build → dry-run (ensaya contra prod sin tocar nada vivo)
+#   Run workflow (manual)  → dry-run por defecto; deploy solo desde master y con dry_run desmarcado
+#
+# TodoERP es un repo aparte (desarrollocepi/TodoERP), no un submódulo: se despliega la
+# punta de su rama main en el momento del run. Un push a TodoERP no dispara nada; hace
+# falta un push a master de cepi o un Run workflow.
+#
+# El repo es público y estos logs también. Nada de logs de PM2 ni salida de psql
+# de prod acá: remote-deploy.sh los deja en el servidor.
+name: Deploy a producción
+
+on:
+  push:
+    branches: [master, 'ci/**']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Solo ensayar (no toca nada vivo)
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  TODOERP_REF: main
+  MODO: ${{ github.ref == 'refs/heads/master' && (github.event_name == 'push' || !inputs.dry_run) && 'deploy' || 'dry-run' }}
+  GITHUB_ED25519: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      todoerp_sha: ${{ steps.todoerp.outputs.sha }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: cerebro
+          POSTGRES_DB: cepi
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    env:
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASSWORD: cerebro
+      DB_NAME: cepi
+      STAGE: DEVELOP
+      CEPI_MEDICAL: '1'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: TodoERP (${{ env.TODOERP_REF }})
+        id: todoerp
+        env:
+          TODOERP_DEPLOY_KEY: ${{ secrets.TODOERP_DEPLOY_KEY }}
+        run: bash scripts/deploy/ci-todoerp.sh "$TODOERP_REF"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            TodoERP/backend/package-lock.json
+            TodoERP/mcp/package-lock.json
+            cepi-bot/package-lock.json
+
+      - name: Dependencias
+        run: |
+          (cd TodoERP/backend && npm ci --no-audit --no-fund)
+          (cd TodoERP/mcp && npm ci --no-audit --no-fund)   # mcp_generality.test.ts importa ../mcp/src
+          (cd cepi-bot && npm ci --no-audit --no-fund)
+
+      - name: Base de tests
+        run: bash scripts/deploy/ci-test-db.sh
+
+      - name: Tests TodoERP
+        working-directory: TodoERP/backend
+        run: npx vitest run
+
+      - name: Tests cepi-bot
+        working-directory: cepi-bot
+        run: npx vitest run
+
+  deploy:
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: TodoERP (el mismo commit que pasó los tests)
+        env:
+          TODOERP_DEPLOY_KEY: ${{ secrets.TODOERP_DEPLOY_KEY }}
+        run: bash scripts/deploy/ci-todoerp.sh "${{ needs.tests.outputs.todoerp_sha }}"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            cepi-frontend/package-lock.json
+            TodoERP/mcp/package-lock.json
+
+      # En el EC2 (t3.micro) vite build se queda sin memoria: se compila acá.
+      - name: Build cepi-frontend
+        working-directory: cepi-frontend
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          test -n "$VITE_GOOGLE_CLIENT_ID" || { echo "Falta la variable VITE_GOOGLE_CLIENT_ID"; exit 1; }
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build TodoERP/mcp
+        working-directory: TodoERP/mcp
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Armar el release
+        run: |
+          mkdir release
+          rsync -a --relative \
+            TodoERP/backend/src TodoERP/backend/package.json TodoERP/backend/package-lock.json TodoERP/backend/tsconfig.json \
+            TodoERP/database \
+            TodoERP/mcp/dist TodoERP/mcp/package.json TodoERP/mcp/package-lock.json \
+            cepi-bot/src cepi-bot/package.json cepi-bot/package-lock.json cepi-bot/tsconfig.json \
+            cepi-frontend/dist \
+            scripts/deploy \
+            release/
+          du -sh release
+
+      - name: SSH a prod
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_SSH_KNOWN_HOSTS: ${{ vars.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/prod && chmod 600 ~/.ssh/prod
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          printf 'Host prod\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/prod\n  IdentitiesOnly yes\n  ServerAliveInterval 30\n' \
+            "${{ vars.PROD_HOST }}" "${{ vars.PROD_USER }}" > ~/.ssh/config
+
+      - name: Subir el release
+        run: |
+          ssh prod 'sudo install -d -o "$USER" -g "$USER" /opt/cepi-deploy /opt/cepi-deploy/incoming'
+          rsync -az --delete release/ prod:/opt/cepi-deploy/incoming/
+
+      - name: ${{ env.MODO }}
+        run: ssh prod "bash /opt/cepi-deploy/incoming/scripts/deploy/remote-deploy.sh $MODO $GITHUB_SHA ${{ needs.tests.outputs.todoerp_sha }}"

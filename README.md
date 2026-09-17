@@ -4,7 +4,7 @@ Repositorio mono que agrupa cuatro componentes que trabajan juntos:
 
 | Carpeta | Qué es | Puerto |
 |---|---|---|
-| `TodoERP/` (submódulo) | ERP polimórfico genérico — datos, permisos, MCP server | backend `:3001`, frontend admin `:5173` |
+| `TodoERP/` (repo aparte) | ERP polimórfico genérico — datos, permisos, MCP server | backend `:3001`, frontend admin `:5173` |
 | `cepi-bot/` | Agente conversacional médico que consume TodoERP vía MCP | `:3002` |
 | `cepi-frontend/` | UI de chat para médicos / pacientes / guests | `:5174` |
 | `backend/` (legacy) | Chatbot CEPI original (DeepSeek + tree.js). Sin PM2; será reemplazado | — |
@@ -25,12 +25,15 @@ Requisitos:
 - Extensión `pgvector` instalada (`apt install postgresql-16-pgvector`).
 - PM2 global en Windows (`npm i -g pm2`).
 
-### 1. Clonar (con submódulo)
+### 1. Clonar
+
+TodoERP es un repo privado e independiente que vive dentro de la carpeta de cepi
+(cepi lo ignora en `.gitignore`). Se clonan los dos:
 
 ```powershell
-git clone --recurse-submodules git@github.com:seyacat/cepi.git
+git clone git@github.com:desarrollocepi/cepi.git
 cd cepi
-git submodule update --init
+git clone git@github.com:desarrollocepi/TodoERP.git TodoERP
 ```
 
 ### 2. Bases de datos
@@ -99,7 +102,7 @@ URLs:
 
 ## Mapa de capacidades (estado actual)
 
-### TodoERP (submódulo, branch `feat/generic-fase1`)
+### TodoERP (repo aparte, `desarrollocepi/TodoERP`)
 
 - ✅ Polymórfico `entities` + `entity_<slug>` con sync trigger (R1).
 - ✅ FK cross-type sobre `entities(id)` (R2).
@@ -142,7 +145,7 @@ cepi/
 ├── ecosystem.config.cjs      ← PM2 (todoerp-backend, todoerp-frontend, cepi-bot, cepi-frontend)
 ├── scripts/
 │   └── reset-cepi.sh         ← reset DB + base + medical seeds (+--with-fake-data)
-├── TodoERP/                  ← submódulo: ERP genérico + MCP + plan de refactor
+├── TodoERP/                  ← repo aparte (ignorado por cepi): ERP genérico + MCP + plan de refactor
 ├── cepi-bot/                 ← agente conversacional (Express + MCP client)
 ├── cepi-frontend/            ← UI de chat (Vue 3 + Vite)
 ├── backend/                  ← legacy CEPI chatbot (no PM2)

@@ -1,21 +1,47 @@
 <template>
-  <div class="ficha">
-    <div v-if="cargando" class="ficha-estado">Cargando ficha…</div>
+  <div class="ficha" ref="raiz" :class="{ 'ficha--cargando': recargando }">
+    <!-- Recargar NO vacía la ficha: el uso es comparar dos episodios, y quedarse en
+         blanco entre uno y otro perdía la posición del scroll y el hilo de lo que
+         se estaba mirando. Solo la PRIMERA carga muestra el cartel; a partir de ahí
+         se atenúa el contenido y se pone una barra pegada arriba. -->
+    <div v-if="recargando" class="ficha-cargando"><span class="ficha-spin" />Cargando…</div>
+
+    <div v-if="cargando && !grupos.length" class="ficha-estado">Cargando ficha…</div>
     <div v-else-if="error" class="ficha-estado ficha-error">{{ error }}</div>
 
     <template v-else-if="grupos.length">
       <!-- Cabecera: cuánto de la ficha tiene dato. Es la primera pregunta del
            portal ("¿qué falta?"), así que va arriba y no escondida. -->
       <!-- Que existan fichas anteriores tiene que verse ANTES de leer la actual:
-           un dato aislado dice poco si no se sabe que hay con qué compararlo. -->
-      <nav v-if="episodeId && visitas.length > 1" class="ficha-nav">
-        <button :disabled="!haySiguiente" @click="paso(-1)" title="Visita más reciente">‹</button>
+           un dato aislado dice poco si no se sabe que hay con qué compararlo.
+           La barra sale SIEMPRE, aunque haya una sola visita. Escondiéndola con
+           `visitas.length > 1` desaparecía en el 69% de los casos —los pacientes
+           de una sola consulta— y sin decir nada: parecía que la navegación no
+           existía en vez de que no hubiera a dónde ir. -->
+      <nav v-if="episodeId" class="ficha-nav">
+        <button
+          class="ficha-nav-btn" :disabled="!hayAnterior" @click="paso(1)"
+          :title="hayAnterior ? 'Ver el episodio anterior de este paciente' : 'Es el primer episodio'"
+        >‹ Anterior</button>
+
         <span class="ficha-nav-pos">
-          Visita {{ visitas.length - idx }} de {{ visitas.length }}
-          <em v-if="anterior">· comparando con la del {{ String(anterior.fecha || '').slice(0, 10) }}</em>
-          <em v-else>· es la primera</em>
+          <strong v-if="visitas.length">Episodio {{ visitas.length - idx }} de {{ visitas.length }}</strong>
+          <strong v-else>Episodio</strong>
+          <span v-if="fechaVisita" class="ficha-nav-fecha">{{ fechaVisita }}</span>
+          <em v-if="cargandoVisitas && !visitas.length">buscando los otros episodios…</em>
+          <em v-else-if="!visitas.length">no se pudieron listar los otros episodios — revisa la organización activa arriba</em>
+          <em v-else-if="visitas.length === 1">único episodio registrado de este paciente</em>
+          <em v-else-if="anterior && nCambios" class="ficha-nav-dif">
+            {{ nCambios }} {{ nCambios === 1 ? 'campo cambió' : 'campos cambiaron' }} desde el del {{ fechaAnterior }}
+          </em>
+          <em v-else-if="anterior">sin cambios respecto del {{ fechaAnterior }}</em>
+          <em v-else>es el primer episodio del paciente</em>
         </span>
-        <button :disabled="!hayAnterior" @click="paso(1)" title="Visita anterior">›</button>
+
+        <button
+          class="ficha-nav-btn" :disabled="!haySiguiente" @click="paso(-1)"
+          :title="haySiguiente ? 'Ver el episodio siguiente de este paciente' : 'Es el episodio más reciente'"
+        >Siguiente ›</button>
       </nav>
 
       <header class="ficha-head">
@@ -76,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { fichaCompleta, guardarGrupoFicha } from '../api.js';
 import BotForm from './BotForm.vue';
 
@@ -85,6 +111,8 @@ const props = defineProps({
   patientId: { type: String, default: null },
   /** Las visitas del paciente, más nuevas primero. Sirven para navegar y comparar. */
   visitas: { type: Array, default: () => [] },
+  /** El contenedor está trayendo la lista: no es lo mismo que no haya ninguna. */
+  cargandoVisitas: { type: Boolean, default: false },
 });
 const emit = defineEmits(['navegar']);
 
@@ -151,6 +179,25 @@ function paso(dir) {
   if (n >= 0 && n < props.visitas.length) emit('navegar', props.visitas[n].id);
 }
 
+const soloFecha = (v) => String(v?.fecha || '').slice(0, 10);
+const fechaVisita = computed(() => (idx.value >= 0 ? soloFecha(props.visitas[idx.value]) : ''));
+const fechaAnterior = computed(() => soloFecha(anterior.value));
+
+/**
+ * Cuántos campos difieren de la visita anterior. El rojo por sí solo no se ve: los
+ * campos que cambian suelen caer bajo el pliegue (§3 en adelante), así que la ficha
+ * parecía idéntica a la anterior. El número va arriba y dice que hay algo que mirar.
+ *
+ * Cuenta el MISMO conjunto que se pinta —los campos con valor que se renderizan—,
+ * para que el número y los rojos de abajo no se contradigan.
+ */
+const nCambios = computed(() => {
+  if (!anterior.value) return 0;
+  let n = 0;
+  for (const g of grupos.value) for (const v of valores(g)) if (v.cambio) n++;
+  return n;
+});
+
 /**
  * Campos que NO se comparan entre visitas. Misma lista que el visor de telemedicina:
  * son datos de la propia cita (fecha, estado, médico) o derivados, y marcarlos en rojo
@@ -159,7 +206,7 @@ function paso(dir) {
 const SIN_COMPARAR = new Set(['id', 'fecha', 'medico_id', 'patient_id', 'estado', 'tipo',
   'created_at', 'updated_at', 'ficha_num', 'examinador_nombre', 'gravedad_total', 'location',
   'drpro_cita_id', 'tipo_cita', 'ficha_completitud', 'ficha_faltantes', 'ficha_calculada_at',
-  'ficha_grupos_con_dato', 'diagnostico_fuente']);
+  'ficha_grupos_con_dato', 'diagnostico_fuente', 'drpro_raw', 'drpro_raw_hash']);
 
 /** Vacío, falso y ausente son lo mismo al comparar. Igual que en telemedicina. */
 const norm = (v) => (v === null || v === undefined || v === false || v === '') ? '' : String(v);
@@ -222,14 +269,44 @@ function aTexto(v, f) {
   return String(v);
 }
 
+const raiz = ref(null);
+/** Hay contenido en pantalla y se está trayendo otro: atenuar, no vaciar. */
+const recargando = computed(() => cargando.value && grupos.value.length > 0);
+
+/**
+ * El contenedor que realmente scrollea. Puede ser la propia ficha o un ancestro
+ * (el panel de detalle), según cuánto mida el contenido; se busca en vez de
+ * asumirlo para no restaurar el scroll del elemento equivocado.
+ */
+function contenedorScroll() {
+  let el = raiz.value;
+  while (el && el !== document.body) {
+    const ov = getComputedStyle(el).overflowY;
+    if ((ov === 'auto' || ov === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 async function cargar() {
   if (!props.episodeId && !props.patientId) { grupos.value = []; return; }
+  // Se guarda ANTES de tocar los datos: al reemplazar los grupos el contenedor se
+  // encoge un instante y el navegador recorta el scrollTop por su cuenta.
+  const cont = contenedorScroll();
+  const scroll = cont ? cont.scrollTop : 0;
+
   cargando.value = true; error.value = '';
   try {
     const r = await fichaCompleta({ episodeId: props.episodeId, patientId: props.patientId });
     grupos.value = r.grupos || [];
     completos.value = r.completos ?? 0;
     total.value = r.total ?? grupos.value.length;
+    if (cont && scroll) {
+      // Dos tics: en el primero Vue aplica el parche, en el segundo el layout ya
+      // tiene la altura definitiva y el scrollTop no se recorta.
+      await nextTick(); await nextTick();
+      cont.scrollTop = Math.min(scroll, cont.scrollHeight - cont.clientHeight);
+    }
   } catch (e) {
     error.value = e?.message || 'No se pudo cargar la ficha';
     grupos.value = [];
@@ -243,7 +320,14 @@ defineExpose({ recargar: cargar });
 </script>
 
 <style scoped>
-.ficha { padding: 12px 14px 40px; overflow-y: auto; }
+.ficha { padding: 12px 14px 40px; overflow-y: auto; position: relative; }
+/* Atenuado y sin clics mientras llega la ficha nueva, pero VISIBLE: se sigue viendo
+   dónde estabas. Bloquear el puntero evita editar un grupo del episodio anterior. */
+.ficha--cargando > *:not(.ficha-cargando) { opacity: .45; pointer-events: none; }
+.ficha-cargando { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; margin: -12px -14px 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; color: #0369a1; background: #e0f2fe; border-bottom: 1px solid #bae6fd; }
+.ficha-spin { width: 12px; height: 12px; border: 2px solid #7dd3fc; border-top-color: #0369a1; border-radius: 50%; animation: ficha-giro .7s linear infinite; }
+@keyframes ficha-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ficha-spin { animation-duration: 2.4s; } }
 .ficha-estado { padding: 24px; color: #64748b; font-size: 14px; }
 .ficha-error { color: #b91c1c; }
 
@@ -288,11 +372,19 @@ defineExpose({ recargar: cargar });
    signifique lo mismo en los dos sitios. */
 .ficha-campos dt.dt-cambiado { color: #c8102e; font-weight: 800; cursor: help; }
 
-.ficha-nav { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #f1f5f9; }
-.ficha-nav button { padding: 2px 11px; font-size: 17px; line-height: 1.2; color: #0369a1; background: none; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
-.ficha-nav button:disabled { color: #cbd5e1; border-color: #e2e8f0; cursor: default; }
-.ficha-nav-pos { font-size: 12px; color: #475569; }
-.ficha-nav-pos em { color: #94a3b8; font-style: normal; }
+/* La versión anterior eran dos chevrones pálidos de 20 px sin etiqueta: nadie
+   encontraba cómo pasar de una ficha a otra. Botones con texto, con relleno y
+   centrados en su propia barra. */
+.ficha-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding: 9px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
+.ficha-nav-btn { flex-shrink: 0; padding: 7px 14px; font-size: 13px; font-weight: 600; color: #fff; background: #0ea5e9; border: 0; border-radius: 6px; cursor: pointer; }
+.ficha-nav-btn:hover:not(:disabled) { background: #0284c7; }
+.ficha-nav-btn:disabled { color: #94a3b8; background: #e2e8f0; cursor: default; }
+.ficha-nav-pos { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
+.ficha-nav-pos strong { font-size: 13px; font-weight: 700; color: #0f172a; }
+.ficha-nav-fecha { font-size: 12px; color: #64748b; }
+.ficha-nav-pos em { font-size: 12px; font-style: normal; color: #94a3b8; }
+/* En rojo y con el mismo peso que los campos marcados abajo: es la misma señal. */
+.ficha-nav-pos em.ficha-nav-dif { font-weight: 700; color: #c8102e; }
 .ficha-campos dd { margin: 0; font-size: 14px; color: #0f172a; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ficha-vacio { margin: 0; font-size: 13px; color: #94a3b8; font-style: italic; }
 
