@@ -91,6 +91,11 @@ final class PacientesModelo {
         error = nil
     }
 
+    /// Un error de una acción de la lista (borrar), que se muestra donde el resto.
+    func mostrarError(_ texto: String) {
+        error = texto
+    }
+
     /// Un paciente recién creado aparece ya, sin esperar a la próxima recarga.
     func insertar(_ registro: Registro) {
         guard porId[registro.id] == nil else { return }

@@ -45,10 +45,25 @@ enum StackLocal {
     static func escribir(_ campo: XCUIElement, _ texto: String) {
         XCTAssertTrue(campo.waitForExistence(timeout: 30), "No existe el campo \(campo)")
         let limite = Date.now.addingTimeInterval(15)
+        var intentos = 0
         repeat {
-            campo.tap()
+            // Alternar el toque normal con uno por coordenada: si algo invisible se interpone,
+            // el primero no llega y el segundo sí.
+            if intentos % 2 == 0 {
+                campo.tap()
+            } else {
+                campo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+            intentos += 1
             RunLoop.current.run(until: .now.addingTimeInterval(0.7))
         } while !((campo.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) && Date.now < limite
+        // Sin foco no hay teclado: escribir igual aborta el test con "Failed to synthesize
+        // event". Se dice qué pasó, que es lo que hace falta para diagnosticarlo.
+        XCTAssertTrue(
+            (campo.value(forKey: "hasKeyboardFocus") as? Bool) ?? false,
+            "El campo \(campo.identifier.isEmpty ? campo.label : campo.identifier) nunca tomó el teclado"
+        )
+        // El autorrelleno de iOS puede haberlo dejado escrito: se limpia antes de escribir.
         if let actual = campo.value as? String, !actual.isEmpty, actual != campo.placeholderValue {
             campo.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: actual.count))
         }

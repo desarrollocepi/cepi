@@ -59,6 +59,11 @@ final class APIClient: Sendable {
         return try decodificar(try await ejecutar("DELETE", ruta, cuerpo: cuerpo, tipo: "application/json"))
     }
 
+    /// DELETE sin cuerpo (borrado de un registro).
+    func delete<Respuesta: Decodable & Sendable>(_ ruta: String) async throws -> Respuesta {
+        try decodificar(try await ejecutar("DELETE", ruta))
+    }
+
     /// Un binario autenticado (`/api/attachments/:id/file`). Las imágenes clínicas no se
     /// pueden pedir con `AsyncImage`: no manda el header `Authorization`.
     func datos(_ ruta: String) async throws -> Data {

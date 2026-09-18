@@ -33,6 +33,7 @@
           <button v-if="showNotifOptin && !isPending" class="notif-optin" @click="enableNotifs(); showTopMenu = false" title="Activar notificaciones push">🔔 Activar</button>
           <button v-if="!isPending && !showProfile" @click="openProfile">👤 Perfil</button>
           <button v-if="!isPending && !showCasos" @click="abrirCasos">🗂️ Casos</button>
+          <button v-if="!isPending && !showGaleria" @click="abrirGaleria">🖼️ Galería</button>
           <button v-if="showCasos" @click="goChat">💬 Telemedicina</button>
           <button v-if="isAdmin && !showAdmin" @click="showTopMenu = false; $router.push('/admin')">Admin</button>
           <button v-if="showAdmin || showProfile" @click="goChat">Volver</button>
@@ -99,12 +100,14 @@ const router = useRouter();
 const showAdmin = computed(() => route.name === 'admin');
 const showProfile = computed(() => route.name === 'perfil');
 const showCasos = computed(() => String(route.name || '').startsWith('caso') || route.name === 'paciente');
+const showGaleria = computed(() => route.name === 'galeria');
 
 // Portal de casos (PAPER §22): misma app, misma sesión, otra superficie. Se sirve en
 // casos.cepi.ec, así que el host decide con qué vista arranca; el menú deja saltar de
 // una a la otra sin volver a entrar.
 const marca = computed(() => route.meta?.marca || 'Telemedicina');
 function abrirCasos() { showTopMenu.value = false; router.push('/casos'); }
+function abrirGaleria() { showTopMenu.value = false; router.push('/galeria'); }
 const showTopMenu = ref(false);          // burger de acciones del topbar (mobile)
 const chatHeadActive = ref(false);       // el chat muestra su propio burger (paciente abierto)
 // Si el chat toma el header, cierra el menú del topbar (su burger desaparece).

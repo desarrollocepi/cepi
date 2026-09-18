@@ -17,7 +17,7 @@ struct RaizView: View {
             case .pendiente:
                 PendienteView()
             case .activa:
-                PacientesView()
+                PrincipalView()
             case .sinValidar(let motivo):
                 ContentUnavailableView {
                     Label("No se pudo abrir la sesión", systemImage: "wifi.exclamationmark")

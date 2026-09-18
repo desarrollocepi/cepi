@@ -10,6 +10,7 @@ struct PacientesView: View {
     @State private var busqueda = ""
     @State private var creando = false
     @State private var confirmarBorrado = false
+    @State private var aBorrar: FilaPaciente?
     @State private var errorOrganizacion: String?
 
     var body: some View {
@@ -18,7 +19,7 @@ struct PacientesView: View {
         } detail: {
             if let id = seleccion, let fila = modelo.fila(id) {
                 // `.id`: otro paciente es otro hilo, con su estado desde cero.
-                HiloView(fila: fila) { seleccion = nil }
+                PacienteView(fila: fila) { seleccion = nil }
                     .id(fila.id)
             } else {
                 ContentUnavailableView(
@@ -41,6 +42,17 @@ struct PacientesView: View {
         // El paciente abierto es de la org anterior: se cierra al cambiar.
         .onChange(of: sesion.usuario?.orgActiva) { seleccion = nil }
         .eliminarCuenta(confirmar: $confirmarBorrado)
+        .alert("¿Eliminar a \(aBorrar?.nombre ?? "")?", isPresented: Binding(
+            get: { aBorrar != nil },
+            set: { if !$0 { aBorrar = nil } }
+        )) {
+            Button("Eliminar", role: .destructive) {
+                if let fila = aBorrar { Task { await borrar(fila) } }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("El paciente deja de aparecer en las listas. Su historia clínica se conserva, y si se lo crea de nuevo con la misma cédula vuelve con lo que tenía.")
+        }
         .alert("No se pudo cambiar de organización", isPresented: Binding(
             get: { errorOrganizacion != nil },
             set: { if !$0 { errorOrganizacion = nil } }
@@ -73,6 +85,13 @@ struct PacientesView: View {
                 revision: modelo.revision[fila.id],
                 asignacion: modelo.asignaciones[fila.id]
             )
+            // Borrar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve: es
+            // la excepción por permisos de la regla de no ocultar botones.
+            .swipeActions(edge: .trailing) {
+                if puedeBorrarPacientes {
+                    Button("Eliminar", systemImage: "trash", role: .destructive) { aBorrar = fila }
+                }
+            }
         }
         .overlay {
             if sesion.cambiandoOrganizacion {
@@ -114,6 +133,26 @@ struct PacientesView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Nuevo paciente", systemImage: "person.badge.plus") { creando = true }
             }
+        }
+    }
+}
+
+private extension PacientesView {
+    /// El backend es quien manda; esto solo decide si se ofrece la acción.
+    var puedeBorrarPacientes: Bool {
+        let permisos = sesion.usuario?.permissions ?? []
+        return permisos.contains("*:*:*:*")
+            || permisos.contains("entity:\(CEPIAPI.definicionPaciente):record:delete")
+    }
+
+    func borrar(_ fila: FilaPaciente) async {
+        aBorrar = nil
+        if seleccion == fila.id { seleccion = nil }
+        do {
+            try await sesion.api.eliminarPaciente(fila.id)
+            await modelo.cargar(api: sesion.api)
+        } catch {
+            modelo.mostrarError("No se pudo eliminar a \(fila.nombre): \(error.localizedDescription)")
         }
     }
 }

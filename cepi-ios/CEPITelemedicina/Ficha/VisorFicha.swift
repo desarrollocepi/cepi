@@ -54,6 +54,9 @@ struct VisorFicha: View {
     let pacienteId: String
     let nombre: String
     let episodioActivo: String?
+    /// Como sección del paciente (PAPER §24.2.1) va sin barra propia ni botón Cerrar: eso lo
+    /// pone quien la contiene. Fuera de ahí sigue abriéndose como pantalla completa.
+    var embebido = false
     /// Guarda lo editado (`ficha_save`); devuelve si el bot lo procesó.
     let alGuardar: ([String: JSONValor], String?) async -> Bool
 
@@ -70,45 +73,69 @@ struct VisorFicha: View {
     @State private var error: String?
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                barraDeConsultas
-                WebFicha(controlador: controlador)
-                    .overlay {
-                        if cargando { ProgressView() }
+        if embebido {
+            contenido
+                .safeAreaInset(edge: .bottom) { barraEmbebida }
+                .task { await cargar() }
+                .onChange(of: episodioActivo) { _, _ in Task { await cargar() } }
+        } else {
+            NavigationStack {
+                contenido
+                    .navigationTitle("Ficha — \(nombre)")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cerrar") { Task { await intentarCerrar() } }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Guardar") { Task { await guardar() } }
+                                .disabled(cargando || guardando || episodios.isEmpty)
+                        }
+                        ToolbarItem(placement: .bottomBar) {
+                            Button("Imprimir", systemImage: "printer", action: imprimir)
+                                .disabled(cargando)
+                        }
                     }
-                if let error {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .padding(8)
-                }
-            }
-            .navigationTitle("Ficha — \(nombre)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { Task { await intentarCerrar() } }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") { Task { await guardar() } }
-                        .disabled(cargando || guardando || episodios.isEmpty)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Imprimir", systemImage: "printer", action: imprimir)
-                        .disabled(cargando)
-                }
-            }
-            .confirmationDialog("Hay cambios sin guardar en la ficha.", isPresented: $confirmarCierre, titleVisibility: .visible) {
-                Button("Descartar cambios", role: .destructive) { cerrar() }
-                Button("Seguir editando", role: .cancel) {}
+                    .confirmationDialog("Hay cambios sin guardar en la ficha.", isPresented: $confirmarCierre, titleVisibility: .visible) {
+                        Button("Descartar cambios", role: .destructive) { cerrar() }
+                        Button("Seguir editando", role: .cancel) {}
+                    }
+                    .task { await cargar() }
             }
         }
-        .task { await cargar() }
-        .onChange(of: indice) { recargarPagina() }
     }
 
-    /// Siempre visible: con una sola consulta las flechas quedan grises y la etiqueta lo dice.
+    /// Guardar e imprimir donde se ven siempre, sin robarle la barra al paciente.
+    private var barraEmbebida: some View {
+        HStack {
+            Button("Imprimir", systemImage: "printer", action: imprimir)
+                .disabled(cargando)
+            Spacer()
+            Button("Guardar") { Task { await guardar() } }
+                .buttonStyle(.borderedProminent)
+                .disabled(cargando || guardando || episodios.isEmpty)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var contenido: some View {
+        VStack(spacing: 0) {
+            barraDeConsultas
+            WebFicha(controlador: controlador)
+                .overlay {
+                    if cargando { ProgressView() }
+                }
+            if let error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .padding(8)
+            }
+        }
+    }
+
     private var barraDeConsultas: some View {
         HStack {
             Button("Anterior", systemImage: "chevron.left") { indice += 1 }

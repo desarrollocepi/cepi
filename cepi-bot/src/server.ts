@@ -33,6 +33,8 @@ import { extraerEpisodio } from './extraerFicha.js';
 import { icdSearch } from './icdWho.js';
 import { extractPendingQuestions, pendingQuestionsNote } from './pendingQuestions.js';
 import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_ICD } from './episodeImages.js';
+import { erpClient } from './erp.js';
+import { listarGaleria } from './galeria.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
 
@@ -279,6 +281,42 @@ app.get('/api/bot/episode-images', async (req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
   finally {
     if (mcp) await mcp.close().catch(() => {});
+  }
+});
+
+/**
+ * /api/bot/galeria?q=&patient_id=&limit=&offset= — las imágenes clínicas de la
+ * organización activa (PAPER §24.2.1, D-Aux-22): la galería general con buscador y
+ * las de un paciente, de todas sus consultas.
+ *
+ * `q` busca por nombre del paciente, cédula, diagnóstico, CIE-10 y fecha; sin `q`
+ * ni `patient_id`, las más recientes primero. Paginado real: `limit` (60 por
+ * defecto, tope 200), `offset` y `total`. Read-only, con el JWT del caller — el
+ * alcance por organización lo pone TodoERP (D-Aux-21), no esta capa.
+ */
+app.get('/api/bot/galeria', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt    = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    // Sin el respaldo de CEPI_GUEST_API_KEY, a diferencia del chat: la clave de invitado
+    // no tiene org activa, y con ella la galería listaría imágenes de cualquier
+    // organización. Acá se entra con la identidad de quien pregunta o no se entra.
+    const apiKey = req.header('x-api-key') || '';
+    if (!jwt && !apiKey) return res.status(401).json({ ok: false, error: 'Auth required' });
+
+    const r = await listarGaleria(erpClient({ jwt, apiKey }), {
+      q: String(req.query.q || ''),
+      patientId: String(req.query.patient_id || '').trim() || undefined,
+      limit: req.query.limit !== undefined ? Number(req.query.limit) : undefined,
+      offset: req.query.offset !== undefined ? Number(req.query.offset) : undefined,
+    });
+    res.json({ ok: true, data: r.data, total: r.total });
+  } catch (err: any) {
+    // Un 401/403 del ERP es del caller, no del bot: se reenvía tal cual.
+    if (err?.status === 401 || err?.status === 403) {
+      return res.status(err.status).json({ ok: false, error: err.message });
+    }
+    next(err);
   }
 });
 

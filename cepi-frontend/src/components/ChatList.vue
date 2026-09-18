@@ -33,6 +33,12 @@
             {{ acargoMeta(p).icon }} {{ assignments[p.id].assignee_name }}
           </span>
         </span>
+        <!-- Borrar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve:
+             es la excepción por permisos de la regla de no ocultar botones. -->
+        <span
+          v-if="puedeBorrar" class="borrar" role="button" tabindex="0"
+          title="Eliminar paciente" @click.stop="pedirBorrado(p)" @keydown.enter.stop="pedirBorrado(p)"
+        >🗑</span>
         <span
           v-if="reviewQueue[p.id]"
           class="rev-badge"
@@ -50,13 +56,38 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { listPatients, createPatient, getReviewQueue, getPatientAssignments } from '../api.js';
+import { listPatients, createPatient, getReviewQueue, getPatientAssignments, eliminarPaciente } from '../api.js';
 
-defineProps({
+const props = defineProps({
   activeId: { type: String, default: null },
   generalActive: { type: Boolean, default: false },
+  /** La sesión, para saber si esta cuenta puede borrar pacientes. */
+  user: { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'general']);
+
+const DEF_PACIENTE = '11000000-0000-0000-0000-000000000000';
+const puedeBorrar = computed(() => {
+  const permisos = props.user?.permissions || [];
+  return permisos.includes('*:*:*:*') || permisos.includes(`entity:${DEF_PACIENTE}:record:delete`);
+});
+const borrando = ref('');
+
+/** Confirmar antes: el paciente desaparece de las listas (la historia clínica se conserva). */
+async function pedirBorrado(p) {
+  const nombre = fullName(p);
+  const texto = `¿Eliminar a ${nombre}?\n\nDeja de aparecer en las listas. Su historia clínica se conserva, y si se lo crea de nuevo con la misma cédula vuelve con lo que tenía.`;
+  if (!window.confirm(texto)) return;
+  borrando.value = p.id;
+  try {
+    await eliminarPaciente(p.id);
+    all.value = all.value.filter((x) => x.id !== p.id);
+  } catch (e) {
+    error.value = `No se pudo eliminar a ${nombre}: ${e?.message || e}`;
+  } finally {
+    borrando.value = '';
+  }
+}
 
 const all = ref([]);
 const reviewQueue = ref({});   // { patientId: { pending, earliest_due } } — derived to me
@@ -191,6 +222,11 @@ defineExpose({ reload: load });
 .row.active, .general.active { background: var(--accent-band, #e8f3f8); }
 .row.to-review { background: #fff7ed; box-shadow: inset 3px 0 0 #f97316; }
 .row.to-review.active { background: var(--accent-band, #e8f3f8); }
+.borrar {
+  flex-shrink: 0; padding: 2px 6px; font-size: 13px; line-height: 1.2; color: #b91c1c;
+  background: #fee2e2; border-radius: 6px; cursor: pointer; opacity: .65;
+}
+.borrar:hover { opacity: 1; }
 .rev-badge {
   flex-shrink: 0; margin-left: auto; align-self: center;
   background: #f97316; color: #fff; border-radius: 12px;

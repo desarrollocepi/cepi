@@ -1571,7 +1571,22 @@ consultas muestreadas, 0 tenían fotos, exámenes ni recetas. Todo lo importado 
 La búsqueda visual solo alcanza a lo capturado en CEPI hasta que entre la importación de
 fotos por iCloud (pendiente).
 
-### 22.4 El bot llega después
+### 22.4 Galería y borrado, también acá
+
+Las dos cosas que §24.2.1 define para el iPhone son de las dos superficies, no de la app:
+
+- **Galería** (imágenes de todos los casos de la org, con buscador) e **Imágenes del
+  paciente** salen del mismo endpoint, `GET /api/bot/galeria?q=&patient_id=&limit=&offset=`
+  (§24.4). El buscador es el de la fila de arriba de §22.3 —campos de la ficha— reducido a
+  las cinco cosas con las que un médico reconoce un caso sin abrirlo: nombre, cédula,
+  diagnóstico, CIE-10 y fecha. No es la búsqueda por imagen parecida: esa es la segunda
+  fila y sigue pendiente.
+- **Borrar un paciente** (D-Aux-23) es el mismo `DELETE /api/entities/:id` del ERP, con el
+  permiso `entity:<patient>:record:delete` que solo tiene el supermédico. El botón se
+  oculta a quien no lo tiene: es la excepción de "nunca ocultes un botón", porque un botón
+  muerto por falta de permiso es ruido.
+
+### 22.5 El bot llega después
 
 El portal v1 **no lleva chat**. Cuando llegue, es un **analista sobre el corpus**, no un
 llenador: agrupa, compara y responde sobre casos ya registrados. El flujo de slot-filling
@@ -1772,6 +1787,43 @@ El visor editable de la ficha (`public/ficha.html`) entra **como documento dentr
 WKWebView**: es una hoja imprimible con su propia API (`fillFicha`/`readFicha`), no una
 pantalla de uso continuo, y reescribirla no mejora nada que se note.
 
+### 24.2.1 Estructura de la app (D-Aux-22, feedback del cliente)
+
+Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
+
+| nivel | secciones |
+|---|---|
+| fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) |
+| dentro del paciente | **Chat** · **Ficha** · **Imágenes** (las del paciente) |
+
+- **Chat** es el hilo de siempre, con su composer y sus acciones.
+- **Ficha** es el visor documental (`ficha.html` en `WKWebView`), que hasta ahora se abría
+  desde "Acciones → Ver ficha": se lee completa, marca en rojo lo que cambió respecto de la
+  consulta anterior y se imprime. Editar sigue siendo por el chat y por "Secciones", para que
+  no haya dos formas distintas de escribir lo mismo.
+- **Imágenes** son las fotos clínicas del paciente, de todas sus consultas.
+- **Galería** busca por texto: nombre del paciente, cédula, diagnóstico, CIE-10 y fecha. No
+  busca por imagen parecida; los embeddings del servicio ISIC quedan para después.
+
+La misma estructura se lleva a la web (§22): mismas secciones, sin gesto de deslizar.
+
+**Borrado de paciente (D-Aux-23).** Un `supermedico` puede borrar un paciente. Es un borrado
+**suave** (el registro queda inactivo, como el resto del ERP): la historia clínica no se
+pierde y nada que la referencie queda colgando. Si después se crea un paciente con la misma
+cédula en la misma organización, **reaparece el registro anterior** en vez de duplicarse. El
+botón solo lo ve quien tiene el permiso: es la excepción de la regla de no ocultar botones.
+
+Las dos reglas viven en TodoERP como capacidades **genéricas** que la definición del
+paciente enciende (`TodoERP/CLAUDE.md`), no como un caso especial del paciente:
+`config.delete_permission` hace que borrar deje de ser parte de editar y exija
+`entity:<def>:record:delete` (que solo lleva el bundle `supermedico_perms`), y
+`config.natural_key` — la cédula, normalizada a sus dígitos — es la que reencuentra el
+registro borrado al volver a darlo de alta: se reactiva, se le completan los campos vacíos
+con los nuevos y no se pisa ninguno que ya tuviera dato. Entre orgs no aplica: la misma
+cédula en otra organización es otra persona (D-Aux-21), y ahí se crea un registro nuevo.
+Mientras está borrado, el paciente no aparece en la lista, la búsqueda, la cola de revisión,
+"a cargo", su hilo ni la galería.
+
 ### 24.3 Arquitectura
 
 ```
@@ -1835,6 +1887,8 @@ varios client IDs y el borrado de cuenta, abajo), ya existía:
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
 | turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
 | sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |
+| galería e imágenes del paciente | `GET /api/bot/galeria?q=&patient_id=&limit=&offset=` → `{ok, data:[{id, attachment_id, patient_id, paciente, cedula, episode_id, fecha, diagnostico, codigo_cie10, body_region, privada}], total}` | cepi-bot |
+| borrar un paciente | `DELETE /api/entities/:id` → 403 sin `entity:<patient>:record:delete` | TodoERP |
 | destinos de derivación | `GET /api/groups`, `GET /api/groups/:slug/members` | TodoERP |
 | adjuntos | `POST /api/attachments` (multipart), `GET /api/attachments/:id/file` | TodoERP |
 | CIE-10 | `GET /api/icd10/search?q=` | TodoERP |

@@ -2,13 +2,41 @@
   <div class="shell" :class="`shell--${view}`">
     <ChatList
       class="shell-list"
+      :user="user"
       :active-id="selectedId"
       :general-active="generalActive"
       @select="onSelect"
       @general="onGeneral"
     />
     <div class="shell-detail">
-      <IntakeChat ref="chatRef" :user="user" class="shell-chat" @closed="onChatClosed" @back="view = 'list'" @head="patientActive = $event" />
+      <!-- Dentro del paciente hay tres secciones (PAPER §24.2.1, D-Aux-22): las mismas que
+           en la app iOS, donde además se pasan deslizando. -->
+      <nav v-if="selectedId" class="shell-secciones" role="tablist">
+        <button
+          v-for="s in SECCIONES" :key="s.id" role="tab"
+          :aria-selected="seccion === s.id" :class="{ on: seccion === s.id }"
+          @click="seccion = s.id"
+        >{{ s.label }}</button>
+      </nav>
+
+      <!-- El chat queda montado: cambiar de sección no debe perder lo escrito. -->
+      <IntakeChat
+        v-show="seccion === 'chat'"
+        ref="chatRef" :user="user" class="shell-chat"
+        @closed="onChatClosed" @back="view = 'list'" @head="patientActive = $event"
+      />
+      <FichaCompleta
+        v-if="selectedId && seccion === 'ficha'"
+        :patient-id="selectedId" :episode-id="episodioDeLaFicha"
+        :visitas="visitas" :cargando-visitas="cargandoVisitas"
+        class="shell-chat"
+      />
+      <RejillaImagenes
+        v-if="selectedId && seccion === 'imagenes'"
+        :patient-id="selectedId" :mostrar-paciente="false"
+        vacio="Este paciente todavía no tiene imágenes"
+        class="shell-chat"
+      />
     </div>
   </div>
 </template>
@@ -17,6 +45,9 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import ChatList from './ChatList.vue';
 import IntakeChat from './IntakeChat.vue';
+import FichaCompleta from './FichaCompleta.vue';
+import RejillaImagenes from './RejillaImagenes.vue';
+import { listarCasosDePaciente } from '../api.js';
 import { bindBackState } from '../useBackStack.js';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -32,6 +63,38 @@ watch(headActive, (v) => emit('head', v), { immediate: true });
 const selectedId = ref(null);
 const selectedName = ref('');
 const generalActive = ref(false);
+
+const SECCIONES = [
+  { id: 'chat', label: '💬 Chat' },
+  { id: 'ficha', label: '📋 Ficha' },
+  { id: 'imagenes', label: '🖼️ Imágenes' },
+];
+const seccion = ref('chat');
+const visitas = ref([]);
+const cargandoVisitas = ref(false);
+let visitasDe = null;
+/** La ficha abre en la consulta más reciente; dentro se navega entre visitas. */
+const episodioDeLaFicha = computed(() => visitas.value[0]?.id || null);
+
+/** Las visitas del paciente, para la sección Ficha. Un fallo no se muestra como "sin fichas". */
+async function cargarVisitas(patientId) {
+  if (!patientId || visitasDe === patientId) return;
+  cargandoVisitas.value = true;
+  try {
+    visitas.value = (await listarCasosDePaciente(patientId)).data || [];
+    visitasDe = patientId;
+  } catch {
+    visitas.value = [];
+    visitasDe = null;
+  } finally {
+    cargandoVisitas.value = false;
+  }
+}
+
+watch([selectedId, seccion], ([id, s]) => {
+  if (id && s === 'ficha') cargarVisitas(id);
+});
+
 const chatRef = ref(null);
 
 const mq = window.matchMedia('(max-width: 768px)');
@@ -43,6 +106,7 @@ function fullName(p) {
 }
 
 function onSelect(p) {
+  seccion.value = 'chat';
   selectedId.value = p.id;
   selectedName.value = fullName(p);
   generalActive.value = false;
@@ -69,6 +133,7 @@ function onChatClosed() {
 
 // Abrir un paciente por id (p.ej. desde una notificación del topbar).
 function openPatientById(id, name) {
+  seccion.value = 'chat';
   selectedId.value = id;
   selectedName.value = name || '';
   generalActive.value = false;

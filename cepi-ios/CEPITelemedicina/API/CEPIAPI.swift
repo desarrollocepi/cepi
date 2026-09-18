@@ -145,6 +145,29 @@ struct CEPIAPI: Sendable {
         return respuesta.results
     }
 
+    // MARK: Galería
+
+    /// Imágenes clínicas de la organización activa, con búsqueda por texto (paciente, cédula,
+    /// diagnóstico, CIE-10 o fecha) y, opcionalmente, de un solo paciente (PAPER §24.2.1).
+    func galeria(
+        texto: String = "", paciente: String? = nil, limite: Int = 60, desde: Int = 0
+    ) async throws -> RespuestaGaleria {
+        var query = [
+            URLQueryItem(name: "limit", value: String(limite)),
+            URLQueryItem(name: "offset", value: String(desde)),
+        ]
+        let buscado = texto.trimmingCharacters(in: .whitespaces)
+        if !buscado.isEmpty { query.append(URLQueryItem(name: "q", value: buscado)) }
+        if let paciente { query.append(URLQueryItem(name: "patient_id", value: paciente)) }
+        return try await cliente.get("/api/bot/galeria", query: query)
+    }
+
+    /// Borrado suave del paciente (D-Aux-23): solo lo permite el backend a quien tiene el
+    /// permiso. La historia clínica no se pierde y el registro reaparece si se crea de nuevo.
+    func eliminarPaciente(_ id: String) async throws {
+        let _: Confirmacion = try await cliente.delete("/api/entities/\(id)")
+    }
+
     func subirImagen(_ jpeg: Data, nombre: String) async throws -> Adjunto {
         try await cliente.subir("/api/attachments", archivo: jpeg, nombre: nombre, mime: "image/jpeg")
     }

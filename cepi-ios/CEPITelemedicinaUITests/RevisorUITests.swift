@@ -57,10 +57,10 @@ final class RevisorUITests: XCTestCase {
         escribir(app.textFields["Nombre"], "Revisión")
         escribir(app.textFields["Apellidos"], "Apple \(sufijo)")
         escribir(app.textFields["Cédula"], "09\(Int.random(in: 10_000_000...99_999_999))")
-        app.buttons["Crear"].tap()
-
         let caja = app.descendants(matching: .any)["composer.texto"]
-        XCTAssertTrue(caja.waitForExistence(timeout: 60), "No se abrió el hilo del paciente nuevo")
+        // El toque sobre la barra flotante de la hoja se pierde cada tanto en el simulador
+        // (la hoja se queda abierta, sin error): se insiste hasta que el hilo abra.
+        tocarHasta(app.buttons["Crear"], "No se creó el paciente nuevo") { caja.exists }
         let aviso = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Paciente activo:")).firstMatch
         XCTAssertTrue(aviso.waitForExistence(timeout: 90), "El bot no activó al paciente nuevo")
         let nuevo = try await esperarValor(60, "El paciente nuevo no está en la lista de la sandbox") {
@@ -107,15 +107,20 @@ final class RevisorUITests: XCTestCase {
         }
         XCTAssertTrue(derivado)
 
-        // Reabrir el paciente, ver la ficha y cerrarla.
+        // Reabrir el paciente y pasar a la sección Ficha (PAPER §24.2.1).
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Apple \(sufijo)")).firstMatch.tap()
         XCTAssertTrue(caja.waitForExistence(timeout: 60), "No se reabrió el hilo del paciente")
-        acciones(app, "Ver ficha")
-        let cerrarFicha = app.buttons["Cerrar"]
-        XCTAssertTrue(cerrarFicha.waitForExistence(timeout: 60), "No se abrió el visor de la ficha")
-        XCTAssertTrue(app.navigationBars.containing(NSPredicate(format: "identifier CONTAINS %@", "Ficha")).firstMatch.exists
-            || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Ficha")).firstMatch.exists)
-        cerrarFicha.tap()
+        app.buttons["Ficha"].tap()
+        XCTAssertTrue(app.buttons["Guardar"].waitForExistence(timeout: 60), "No se abrió la ficha del paciente")
+
+        // Y a Imágenes, la tercera sección.
+        app.buttons["Imágenes"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Este paciente todavía no tiene imágenes"].waitForExistence(timeout: 60)
+                || app.images.firstMatch.waitForExistence(timeout: 5),
+            "No se abrió la sección de imágenes"
+        )
+        app.buttons["Chat"].tap()
 
         // Cerrar sesión vuelve al login.
         volverALaLista(app)
@@ -162,6 +167,8 @@ final class RevisorUITests: XCTestCase {
             "CEPI_WEB_BASE": "http://127.0.0.1:5174",
         ]
         app.launch()
+        // Puede quedar el diálogo del sistema de la corrida anterior tapando el login.
+        StackLocal.descartarGuardarContrasena(en: app, espera: 3)
         let email = app.textFields["Email"]
         let lista = app.searchFields.firstMatch
         let pendiente = app.buttons["Volver a comprobar"]
@@ -186,20 +193,33 @@ final class RevisorUITests: XCTestCase {
         StackLocal.descartarGuardarContrasena(en: app)
     }
 
+    /// Toca `boton` hasta que `listo` se cumpla. Un toque perdido no debería tumbar el test:
+    /// lo que importa es que la acción ocurra, no cuántos intentos hicieron falta.
+    @MainActor
+    private func tocarHasta(
+        _ boton: XCUIElement, _ queFalta: String, intentos: Int = 3, espera: TimeInterval = 25,
+        listo: () -> Bool
+    ) {
+        for intento in 1...intentos {
+            if listo() { return }
+            XCTAssertTrue(boton.waitForExistence(timeout: 15), "No está el botón \(boton)")
+            if intento % 2 == 1 {
+                boton.tap()
+            } else {
+                boton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+            let limite = Date.now.addingTimeInterval(espera)
+            while !listo(), Date.now < limite {
+                RunLoop.current.run(until: .now.addingTimeInterval(0.5))
+            }
+        }
+        XCTAssertTrue(listo(), queFalta)
+    }
+
+    /// Una sola forma de escribir en toda la suite: la de `StackLocal` (reintenta el foco).
     @MainActor
     private func escribir(_ campo: XCUIElement, _ texto: String) {
-        XCTAssertTrue(campo.waitForExistence(timeout: 30), "No existe el campo \(campo)")
-        // En el primer lanzamiento de un simulador el toque puede llegar antes de que la
-        // pantalla acepte el foco: se reintenta hasta que el campo tenga el teclado.
-        let limite = Date.now.addingTimeInterval(15)
-        repeat {
-            campo.tap()
-            RunLoop.current.run(until: .now.addingTimeInterval(0.7))
-        } while !((campo.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) && Date.now < limite
-        if let actual = campo.value as? String, !actual.isEmpty, actual != campo.placeholderValue {
-            campo.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: actual.count))
-        }
-        campo.typeText(texto)
+        StackLocal.escribir(campo, texto)
     }
 
     /// Abre el menú Cuenta y elige `opcion`. Reintenta si el menú se cerró antes de tiempo o
@@ -240,14 +260,21 @@ final class RevisorUITests: XCTestCase {
     @MainActor
     private func confirmarBorrado(_ app: XCUIApplication) {
         let alerta = app.alerts["¿Eliminar tu cuenta?"]
-        XCTAssertTrue(alerta.waitForExistence(timeout: 10), "No apareció la confirmación del borrado")
-        // La alerta llega animada: el botón existe antes de poder tocarse.
+        XCTAssertTrue(alerta.waitForExistence(timeout: 15), "No apareció la confirmación del borrado")
+        // La alerta llega animada, y encima puede tener delante el diálogo del sistema que
+        // ofrece guardar la contraseña: el botón existe antes de poder tocarse.
         let eliminar = alerta.buttons["Eliminar cuenta"]
-        let limite = Date.now.addingTimeInterval(10)
+        let limite = Date.now.addingTimeInterval(20)
         while !eliminar.isHittable, Date.now < limite {
+            StackLocal.descartarGuardarContrasena(en: app, espera: 0.5)
             RunLoop.current.run(until: .now.addingTimeInterval(0.3))
         }
-        eliminar.tap()
+        if eliminar.isHittable {
+            eliminar.tap()
+        } else {
+            // Último recurso: tocar donde está, sin pedirle permiso a la capa de accesibilidad.
+            eliminar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     @MainActor

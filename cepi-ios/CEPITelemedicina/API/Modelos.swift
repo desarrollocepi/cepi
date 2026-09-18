@@ -134,6 +134,36 @@ struct Confirmacion: Decodable, Sendable {
     let ok: Bool
 }
 
+/// Una imagen clínica en la galería: la foto más lo que hace falta para reconocer el caso
+/// sin abrirlo (`GET /api/bot/galeria`, PAPER §24.2.1).
+struct ImagenGaleria: Decodable, Sendable, Identifiable, Hashable {
+    let id: String
+    let adjunto: String
+    let pacienteId: String?
+    let paciente: String?
+    let cedula: String?
+    let episodioId: String?
+    let fecha: String?
+    let diagnostico: String?
+    let codigoCIE10: String?
+    let region: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, paciente, cedula, fecha, diagnostico
+        case adjunto = "attachment_id"
+        case pacienteId = "patient_id"
+        case episodioId = "episode_id"
+        case codigoCIE10 = "codigo_cie10"
+        case region = "body_region"
+    }
+}
+
+/// `GET /api/bot/galeria`: la página pedida y cuántas hay en total.
+struct RespuestaGaleria: Decodable, Sendable {
+    let data: [ImagenGaleria]
+    let total: Int?
+}
+
 /// `{ ok, data: [...] }`
 struct Lista<Elemento: Decodable & Sendable>: Decodable, Sendable {
     let data: [Elemento]

@@ -367,6 +367,22 @@ export async function getPatientThread(patientId) {
  * Fetch the clinical images of an episode plus their AI classifications.
  * Read-only; backed by cepi-bot's /api/bot/episode-images endpoint.
  */
+/**
+ * Galería de imágenes clínicas de la organización activa (PAPER §24.2.1): todas, o las de
+ * un paciente. `q` busca por paciente, cédula, diagnóstico, CIE-10 o fecha.
+ */
+export async function galeria({ q = '', patientId = '', limit = 60, offset = 0 } = {}) {
+  const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (q.trim()) p.set('q', q.trim());
+  if (patientId) p.set('patient_id', patientId);
+  return call(`/api/bot/galeria?${p.toString()}`, { method: 'GET' });
+}
+
+/** Borrado suave de un paciente (D-Aux-23). Solo lo permite el backend a quien tiene el permiso. */
+export async function eliminarPaciente(id) {
+  return call(`/api/entities/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export async function getEpisodeImages(episodeId) {
   return call(`/api/bot/episode-images?episode_id=${encodeURIComponent(episodeId)}`, { method: 'GET' });
 }

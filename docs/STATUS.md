@@ -4,6 +4,31 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-18 — Galería, secciones del paciente y borrado por el supermédico
+
+- **Estructura nueva (PAPER §24.2.1, D-Aux-22), en iOS y en la web:** fuera del paciente,
+  **Pacientes** y **Galería** (todas las imágenes de la org, con buscador por nombre, cédula,
+  diagnóstico, CIE-10 y fecha); dentro del paciente, **Chat · Ficha · Imágenes**, que en el
+  iPhone se pasan deslizando. La ficha dejó de abrirse desde "Acciones": es una sección.
+- **Borrado de paciente (D-Aux-23):** suave, solo para `supermedico`, y al volver a dar de
+  alta la misma cédula en la misma org reaparece el registro anterior en vez de duplicarse.
+  Son dos capacidades genéricas de TodoERP que la definición del paciente enciende:
+  `config.delete_permission` (borrar deja de ser parte de editar) y `config.natural_key`.
+- **TodoERP genérico:** `q_fields` para acotar la búsqueda por columnas, `filter[x][in]`,
+  `filter[x][active]` (no arrastrar hijos de un padre borrado), `filter_or[...]` y
+  `with_total`; `DELETE /api/entities/:id` ya no exige `record_type` si el id es un registro.
+- **Galería sin N+1:** `cepi-bot/src/galeria.ts` resuelve la página en 3 consultas fijas
+  (imágenes + pacientes + episodios de esa página) y 2 más cuando hay búsqueda.
+  Medido en local: 135 ms una página de 60, 15–40 ms filtrada.
+
+Tests:
+- TodoERP: **432 passed**. cepi-bot: **121 passed**.
+- cepi-ios: **56 de unidad** y **7 de UI** contra el stack local, en verde.
+- Web (Playwright): galería con 60 fotos, búsqueda por cédula, las tres secciones del
+  paciente y el botón de borrar visible solo para el supermédico.
+
+---
+
 ## Sesión 2026-09-17 — Orgs por registro, DrPro aparte, sandbox para Apple y E2E del revisor
 
 - **Git:** TodoERP dejó de ser submódulo (lo hizo la otra máquina) y ya es un repo aparte en

@@ -73,6 +73,12 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 4. Si tiene relaciones, no olvides los inversos.
 5. Idempotencia: usar `ON CONFLICT (id) DO UPDATE`.
 
+### una pantalla en la app iOS o en la web
+La app tiene dos niveles (PAPER §24.2.1, D-Aux-22): fuera del paciente **Pacientes** y
+**Galería**; dentro, **Chat**, **Ficha** e **Imágenes**, que en iOS se pasan deslizando
+(`PacienteView`) y en la web son pestañas (`ChatShell.vue`). Una pantalla nueva entra en uno
+de esos lugares o se justifica en el paper antes.
+
 ### una pantalla o un endpoint en la app iOS
 1. El `.swift` va en la carpeta de su dominio (`App/`, `API/`, `Pacientes/`, `Chat/`…). Las carpetas del proyecto están sincronizadas: **no se edita el `project.pbxproj`** para agregar archivos.
 2. Endpoint nuevo: función en `API/CEPIAPI.swift`, modelo en `API/Modelos*.swift` (`ModelosFicha.swift` para formularios, derivación y CIE-10) y un test de contrato con el JSON real del backend en `CEPITelemedicinaTests/`.
