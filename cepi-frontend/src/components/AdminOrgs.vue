@@ -13,7 +13,12 @@
       <div class="ao-head">
         <strong>{{ o.name }}</strong> <span class="ao-slug">{{ o.slug }}</span>
         <span class="ao-spacer"></span>
-        <button class="ao-link" @click="toggleMembers(o)">{{ openId === o.id ? 'Ocultar' : 'Miembros' }}</button>
+        <button
+          class="ao-link"
+          :disabled="!puedeAdministrar(o)"
+          :title="puedeAdministrar(o) ? 'Ver y editar los miembros' : 'Solo el admin de esta organización edita sus miembros'"
+          @click="toggleMembers(o)"
+        >{{ openId === o.id ? 'Ocultar' : 'Miembros' }}</button>
         <button v-if="isSuper" class="ao-link" @click="onToggleActive(o)">{{ o.active === false ? 'Activar' : 'Desactivar' }}</button>
       </div>
 
@@ -46,6 +51,10 @@ import { listOrgs, createOrg, updateOrg, listOrgMembers, addOrgMember, removeOrg
 
 const orgs = ref([]);
 const isSuper = ref(false);
+
+// Administrar miembros es del superadmin y del admin de esa org (canAdminOrg en el
+// backend). En una org donde solo es miembro, el botón se ve deshabilitado.
+function puedeAdministrar(o) { return isSuper.value || o.role_in_org === 'admin'; }
 const error = ref('');
 const busy = ref(false);
 const newSlug = ref(''); const newName = ref('');

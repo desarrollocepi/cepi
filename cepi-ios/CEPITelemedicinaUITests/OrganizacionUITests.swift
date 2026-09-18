@@ -26,12 +26,12 @@ final class OrganizacionUITests: XCTestCase {
         let deCepi = primera.label
         XCTAssertNotEqual(deCepi, deDrpro, "cepi muestra un paciente de cepi-drpro")
 
-        elegirOrganizacion(app, contiene: "DrPro")
+        elegirOrganizacion(app, contiene: "Consultorio")
         XCTAssertTrue(app.staticTexts[deDrpro].waitForExistence(timeout: 60), "La lista de cepi-drpro no cargó")
         XCTAssertFalse(app.staticTexts[deCepi].exists, "Quedó a la vista un paciente de la org anterior (\(deCepi))")
 
         // Y de vuelta, para dejar la cuenta en su org de siempre.
-        elegirOrganizacion(app, contiene: "Centro de la Piel")
+        elegirOrganizacion(app, contiene: "Telemedicina")
         XCTAssertTrue(app.staticTexts[deCepi].waitForExistence(timeout: 60), "No volvió a la lista de cepi")
         XCTAssertFalse(app.staticTexts[deDrpro].exists, "Quedó a la vista un paciente de cepi-drpro")
     }
