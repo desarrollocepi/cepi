@@ -23,9 +23,26 @@ Estado del proyecto al cierre de la sesión actual.
 
 Tests:
 - TodoERP: **443 passed**. cepi-bot: **121 passed**.
-- cepi-ios: **56 de unidad** y **7 de UI** contra el stack local, en verde.
+- cepi-ios: **57 de unidad** y **8 de UI** contra el stack local, las ocho en una sola corrida.
 - Web (Playwright): galería con 60 fotos, búsqueda por cédula, las tres secciones del
   paciente y el botón de borrar visible solo para el supermédico.
+
+Dos cosas que costó ver, por si vuelven a aparecer:
+- Los UI tests fallaban en la ficha y en el cambio de org por un **backend local viejo**
+  todavía en marcha: ordenaba las organizaciones por nombre, así que tras renombrarlas
+  (`medical-seed/019`) la sesión entraba al consultorio y el paciente de prueba, que vive en
+  `cepi`, no se veía. Reiniciar el proceso lo arregló; el orden real es por antigüedad.
+- `OrganizacionUITests` comparaba filas por la primera etiqueta de la celda, que es el círculo
+  de iniciales, y "FS" sale igual en las dos orgs. El nombre lleva ahora
+  `accessibilityIdentifier("paciente.nombre")`.
+
+Pendiente de decisión (no lo toqué):
+- Con el admin de organización, otorgar un rol exige tener sus permisos (`assertCanGrant`), y
+  **ningún rol posee `medico_primario_perms`**: solo el comodín del superadmin puede conceder
+  el rol, y en `STAGE=DEVELOP` ese comodín no cuenta a propósito. En producción funciona, pero
+  un admin de organización nunca podrá aprobar a un médico. Si la idea era que sí, hay que
+  darle al rol `admin` los paquetes clínicos que va a conceder. En local, por eso,
+  `scripts/cuenta-revisor.mjs` asigna el rol en la base.
 
 ---
 

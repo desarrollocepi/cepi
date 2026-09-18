@@ -21,7 +21,9 @@ final class OrganizacionUITests: XCTestCase {
         StackLocal.descartarGuardarContrasena(en: app)
 
         // La lista es perezosa: se compara con la primera fila, que siempre está en pantalla.
-        let primera = app.cells.firstMatch.staticTexts.firstMatch
+        // Por el nombre, no por lo primero que haya en la fila: el círculo de iniciales también
+        // es texto y "FS" sale igual en las dos orgs, así que la comparación nunca fallaba.
+        let primera = app.staticTexts.matching(identifier: "paciente.nombre").firstMatch
         XCTAssertTrue(primera.waitForExistence(timeout: 60), "La lista de cepi no cargó")
         let deCepi = primera.label
         XCTAssertNotEqual(deCepi, deDrpro, "cepi muestra un paciente de cepi-drpro")

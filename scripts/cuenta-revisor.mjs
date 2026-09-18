@@ -68,10 +68,13 @@ async function crear(email, { aprobar }) {
   const { rows: [org] } = await db.query('SELECT id FROM organizations WHERE slug = $1', [ORG_PRUEBAS]);
   if (!org) throw new Error(`no existe la org ${ORG_PRUEBAS}`);
   const admin = await llamar('POST', '/auth/login', { email: 'admin@erp.com', password: 'Admin123!' });
-  const { roles } = await llamar('GET', '/admin/roles', null, admin.token);
-  const rol = roles.find((r) => r.name === ROL);
+  // El rol se asigna en la base, no por `PATCH /admin/users/:id`: otorgar un rol exige tener
+  // sus permisos (`assertCanGrant`) y en STAGE=DEVELOP el comodín del superadmin no cuenta a
+  // propósito, así que en local nadie puede conceder `medico_primario`. Es el mismo atajo que
+  // el código de verificación de arriba: lo que no pasa por la API en local, y solo eso.
+  const { rows: [rol] } = await db.query('SELECT id FROM roles WHERE name = $1', [ROL]);
   if (!rol) throw new Error(`no existe el rol ${ROL}`);
-  await llamar('PATCH', `/admin/users/${usuario.id}`, { role_id: rol.id }, admin.token);
+  await db.query('UPDATE users SET role_id = $2 WHERE id = $1', [usuario.id, rol.id]);
   await llamar('PUT', `/admin/users/${usuario.id}/orgs`, { org_ids: [org.id] }, admin.token);
 
   const sesion = await llamar('POST', '/auth/login', { email, password: CLAVE });

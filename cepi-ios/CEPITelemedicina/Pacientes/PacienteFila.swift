@@ -18,6 +18,9 @@ struct PacienteFila: View {
                 Text(fila.nombre)
                     .font(.body.weight(.semibold))
                     .lineLimit(1)
+                    // El círculo de iniciales también es texto: sin esto, quien lea la fila de
+                    // afuera (los UI tests) se queda con "FS" en lugar del nombre.
+                    .accessibilityIdentifier("paciente.nombre")
                 Text("CC: \(fila.cedula ?? "—")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
