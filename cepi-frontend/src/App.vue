@@ -129,7 +129,11 @@ function onNotifOpen({ id, name }) {
   // La notificación NAVEGA; ChatShell lee el paciente de la query al montar.
   router.push({ path: '/chat', query: { paciente: id, ...(name ? { nombre: name } : {}) } });
 }
-const isAdmin = computed(() => !!user.value?.permissions?.includes('*:*:*:*'));
+// Superadmin, o admin de alguna organización: administra a la gente de sus orgs
+// (`/api/admin/*` acota el alcance). El botón vive en el menú de la cuenta.
+const isAdmin = computed(() =>
+  !!user.value?.permissions?.includes('*:*:*:*') ||
+  (user.value?.orgs || []).some(o => o.role_in_org === 'admin'));
 const isPending = computed(() => authed.value && user.value?.role === 'pendiente');
 
 // ── Notificaciones push (opt-in) ────────────────────────────────────────────

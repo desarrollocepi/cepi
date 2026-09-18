@@ -35,7 +35,7 @@
             <td class="email">{{ u.email }}<span v-if="u.email_verified === 'true'" title="email verificado"> ✅</span></td>
             <td class="muted">{{ u.phone || '—' }} / {{ u.cedula || '—' }}</td>
             <td>
-              <select v-model="u.role_id">
+              <select v-model="u.role_id" :disabled="!puedeEditar(u)" :title="motivoBloqueo(u)">
                 <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
               </select>
             </td>
@@ -47,7 +47,8 @@
                   type="button"
                   class="chip org"
                   :class="{ on: u.orgs.includes(o.id) }"
-                  :title="o.name"
+                  :disabled="!puedeEditar(u)"
+                  :title="motivoBloqueo(u) || o.name"
                   @click="toggleOrg(u, o.id)"
                 >{{ u.orgs.includes(o.id) ? '✓ ' : '' }}{{ o.name }}</button>
               </div>
@@ -61,13 +62,14 @@
                   type="button"
                   class="chip"
                   :class="{ on: u.circles.includes(c.slug) }"
-                  :title="c.name + (c.kind === 'specialty' ? ' (especialidad)' : ' (círculo)')"
+                  :disabled="!puedeEditar(u)"
+                  :title="motivoBloqueo(u) || (c.name + (c.kind === 'specialty' ? ' (especialidad)' : ' (círculo)'))"
                   @click="toggleCircle(u, c.slug)"
                 >{{ u.circles.includes(c.slug) ? '✓ ' : '' }}{{ c.name }}</button>
               </div>
               <span v-else class="muted">—</span>
             </td>
-            <td class="center"><input type="checkbox" v-model="u.active" /></td>
+            <td class="center"><input type="checkbox" v-model="u.active" :disabled="!puedeEditar(u)" :title="motivoBloqueo(u)" /></td>
             <td class="center"><span v-if="isDirty(u)" class="dirty-dot" title="Cambios sin guardar">●</span></td>
           </tr>
         </tbody>
@@ -86,6 +88,7 @@ const rows = ref([]);
 const roles = ref([]);
 const circles = ref([]);
 const orgs = ref([]);
+const esSuper = ref(false);
 const filter = ref('pendiente');
 const search = ref('');
 const busy = ref(false);
@@ -120,8 +123,17 @@ async function loadCircles() {
 async function loadOrgs() {
   try {
     const r = await listOrgs();
-    orgs.value = r?.orgs || [];
+    esSuper.value = !!r?.super;
+    // El admin de una org solo reparte ESA org; el backend tampoco le deja otras.
+    orgs.value = (r?.orgs || []).filter(o => esSuper.value || o.role_in_org === 'admin');
   } catch (e) { error.value = e.message || String(e); }
+}
+
+// `editable` lo decide el backend: un admin de org no toca a un superadmin aunque
+// sea miembro de su organización. El control se deshabilita con el motivo a la vista.
+function puedeEditar(u) { return u.editable !== false; }
+function motivoBloqueo(u) {
+  return puedeEditar(u) ? '' : 'Cuenta de superadministrador: solo otro superadministrador puede editarla';
 }
 
 async function loadUsers() {
