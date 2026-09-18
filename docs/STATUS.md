@@ -22,7 +22,7 @@ Estado del proyecto al cierre de la sesión actual.
   Medido en local: 135 ms una página de 60, 15–40 ms filtrada.
 
 Tests:
-- TodoERP: **432 passed**. cepi-bot: **121 passed**.
+- TodoERP: **443 passed**. cepi-bot: **121 passed**.
 - cepi-ios: **56 de unidad** y **7 de UI** contra el stack local, en verde.
 - Web (Playwright): galería con 60 fotos, búsqueda por cédula, las tres secciones del
   paciente y el botón de borrar visible solo para el supermédico.
