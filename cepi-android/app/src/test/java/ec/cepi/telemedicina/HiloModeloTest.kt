@@ -126,6 +126,86 @@ class HiloModeloTest {
         assertEquals("leve", formulario["data"]!!.jsonObject["picor"]?.jsonPrimitive?.content)
     }
 
+    private val conFormulario = Respuesta.Http(
+        200,
+        """{"ok":true,"session_id":"s1","active_episode_id":"e1",
+            "form":{"id":"ficha_grp_g_1_4","title":"1.4 Etnia","submit_mode":"structured",
+                    "fields":[{"key":"etnia","label":"Etnia","type":"radio","options":["mestiza"]}]},
+            "bookmarks":[{"id":"g_1_1","label":"1.1","category":"Filiación","done":true},
+                         {"id":"g_1_4","label":"1.4 Etnia","category":"Filiación","done":false}]}""",
+    )
+
+    /** Con el auto-form apagado (por defecto) el grupo que propone el bot no se abre solo. */
+    @Test
+    fun sinAutoFormElFormularioNoSeAbreSolo() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("POST /api/bot/chat", conFormulario)
+        val modelo = HiloModelo("p1", servidor.api(), this)
+
+        modelo.abrir()
+
+        assertNull(modelo.formulario)
+        assertEquals(2, modelo.marcadores.size)
+    }
+
+    @Test
+    fun loPedidoEnSeccionesSeAbreSiempre() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("POST /api/bot/chat", conFormulario)
+        val modelo = HiloModelo("p1", servidor.api(), this)
+        modelo.abrir()
+
+        modelo.abrirSeccion(modelo.marcadores[1])
+
+        assertEquals("ficha_grp_g_1_4", modelo.formulario?.id)
+        val envio = cuerpo(servidor, "POST /api/bot/chat")["form_submission"]!!.jsonObject
+        assertEquals("ficha_goto", envio["form_id"]?.jsonPrimitive?.content)
+        assertEquals("g_1_4", envio["data"]!!.jsonObject["group"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun encenderElAutoFormAbreLaPrimeraPendienteYSeGuarda() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("POST /api/bot/chat", conFormulario)
+        val guardado = mutableListOf<Boolean>()
+        val modelo = HiloModelo("p1", servidor.api(), this) { guardado += it }
+        modelo.abrir()
+
+        modelo.alternarAutoFormulario()
+
+        assertTrue(modelo.autoFormulario)
+        assertEquals(listOf(true), guardado)
+        assertEquals("ficha_grp_g_1_4", modelo.formulario?.id)
+        // La primera sin completar es la 1.4, no la 1.1 ya hecha.
+        assertEquals("g_1_4", cuerpo(servidor, "POST /api/bot/chat")["form_submission"]!!.jsonObject["data"]!!.jsonObject["group"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun conAutoFormEncendidoElGrupoSeAbreAlActivar() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("POST /api/bot/chat", conFormulario)
+        val modelo = HiloModelo("p1", servidor.api(), this, autoFormularioInicial = true)
+
+        modelo.abrir()
+
+        assertEquals("ficha_grp_g_1_4", modelo.formulario?.id)
+    }
+
+    @Test
+    fun elResponsableDelCasoOQuienLoCreo() = runBlocking {
+        val servidor = servidor()
+        val modelo = HiloModelo("p1", servidor.api(), this)
+        modelo.abrir()
+        servidor.fijar(
+            "GET /api/entities/e1",
+            Respuesta.Http(200, """{"ok":true,"data":{"id":"e1","data":{"medico_id":"u-creador"}}}"""),
+            Respuesta.Http(200, """{"ok":true,"data":{"id":"e1","data":{"medico_id":"u-creador","responsable_actual_id":"u-resp"}}}"""),
+        )
+
+        assertEquals("u-creador", modelo.responsableDelCaso())
+        assertEquals("u-resp", modelo.responsableDelCaso())
+    }
+
     @Test
     fun laGaleriaPaginaYDescartaUnaBusquedaVieja() = runBlocking {
         val servidor = ServidorFalso()

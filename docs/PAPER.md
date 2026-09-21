@@ -2099,7 +2099,7 @@ cepi-android/
     │   ├── api/          cliente HTTP, modelos del contrato, credenciales cifradas
     │   ├── pacientes/    lista, alta, borrado y el paciente abierto (Chat · Ficha · Imágenes)
     │   ├── chat/         hilo, composer, fotos, imágenes autenticadas y visor con zoom
-    │   ├── ficha/        visor ficha.html (fase 2) y formularios nativos (fase 3)
+    │   ├── ficha/        visor ficha.html, formularios del bot, secciones y derivar
     │   ├── galeria/      galería de la org e imágenes del paciente
     │   └── notificaciones/ bandeja y push                          (fase 5)
     ├── release/generated/baselineProfiles/   el perfil generado, versionado
@@ -2146,7 +2146,9 @@ baselineprofile/          recorrido UiAutomator que genera el Baseline Profile (
   `URLProtocol`): sin sockets ni dependencias de test. Nunca contra producción: hay PII real.
 - **"Nunca ocultes un botón"** vale igual: `enabled = false` más un texto que diga por qué.
 - Los formularios de la ficha vienen del servidor, con los mismos 10 tipos de campo y el
-  mismo criterio para un tipo desconocido (§24.3).
+  mismo criterio para un tipo desconocido (§24.3). Se abren en una hoja inferior con el
+  botón de guardar en su barra: el teclado no lo tapa. El auto-form es de cada paciente y se
+  guarda en las preferencias de la app, que tampoco viajan en backups (`data_extraction_rules`).
 
 ### 25.4 Contrato con el backend
 

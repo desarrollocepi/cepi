@@ -63,6 +63,11 @@ class RespuestaChat(
     val pendiente: AccionPendiente?,
     val traeEpisodioActivo: Boolean,
     val episodioActivo: String?,
+    /** `form` presente (objeto o `null`) cambia el formulario activo; ausente, lo deja. */
+    val traeFormulario: Boolean = false,
+    val formulario: FormularioBot? = null,
+    /** Secciones de la ficha; `null` si no vinieron. */
+    val marcadores: List<Marcador>? = null,
 ) {
     companion object {
         fun desde(objeto: JsonObject): RespuestaChat {
@@ -78,6 +83,9 @@ class RespuestaChat(
                     ?.let { jsonCepi.decodeFromJsonElement<AccionPendiente>(it) },
                 traeEpisodioActivo = "active_episode_id" in objeto,
                 episodioActivo = texto("active_episode_id"),
+                traeFormulario = "form" in objeto,
+                formulario = (objeto["form"] as? JsonObject)?.let { jsonCepi.decodeFromJsonElement<FormularioBot>(it) },
+                marcadores = (objeto["bookmarks"] as? JsonArray)?.let { jsonCepi.decodeFromJsonElement<List<Marcador>>(it) },
             )
         }
     }

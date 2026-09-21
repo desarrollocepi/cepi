@@ -34,6 +34,15 @@ object FotoClinica {
 
     fun nombreNuevo(): String = "foto-${System.currentTimeMillis() / 1000}.jpg"
 
+    /** Una miniatura del JPEG ya preparado, decodificada chica: la lista de subidas no guarda originales. */
+    fun miniatura(jpeg: ByteArray, lado: Int = 120): Bitmap? {
+        val limites = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, limites)
+        if (limites.outWidth <= 0) return null
+        val opciones = BitmapFactory.Options().apply { inSampleSize = muestreo(limites.outWidth, limites.outHeight, lado) }
+        return BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opciones)
+    }
+
     /** El tamaño final: el lado mayor en `ladoMaximo`, sin agrandar. */
     fun medidas(ancho: Int, alto: Int, ladoMaximo: Int): Pair<Int, Int> {
         val mayor = max(ancho, alto)

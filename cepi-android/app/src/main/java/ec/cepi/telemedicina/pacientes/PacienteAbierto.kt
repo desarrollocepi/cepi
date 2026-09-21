@@ -1,5 +1,7 @@
 package ec.cepi.telemedicina.pacientes
 
+import android.content.Context
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,7 +11,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,12 +33,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.app.Entorno
 import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
 import ec.cepi.telemedicina.chat.VisorImagen
+import ec.cepi.telemedicina.ficha.DerivarPantalla
+import ec.cepi.telemedicina.ficha.FormularioHoja
+import ec.cepi.telemedicina.ficha.SeccionesHoja
 import ec.cepi.telemedicina.ficha.VisorFicha
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.galeria.ImagenesPaciente
@@ -53,11 +64,21 @@ private val secciones = listOf("Chat", "Ficha", "Imágenes")
 fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, alVolver: () -> Unit) {
     val api = entorno.sesion.api
     val alcance = rememberCoroutineScope()
-    val modelo = remember(pacienteId) { HiloModelo(pacienteId, api, alcance) }
+    val contexto = LocalContext.current
+    // El auto-form es de cada paciente, como en iOS y en la web.
+    val preferencias = remember { contexto.getSharedPreferences("cepi", Context.MODE_PRIVATE) }
+    val modelo = remember(pacienteId) {
+        HiloModelo(pacienteId, api, alcance, preferencias.getBoolean("autoform.$pacienteId", false)) {
+            preferencias.edit().putBoolean("autoform.$pacienteId", it).apply()
+        }
+    }
     val imagenes = remember(pacienteId) { GaleriaModelo(api, paciente = pacienteId) }
     val paginas = rememberPagerState { secciones.size }
     var fichaMostrada by rememberSaveable { mutableStateOf(false) }
     var imagenAbierta by remember { mutableStateOf<String?>(null) }
+    var menu by remember { mutableStateOf(false) }
+    var mostrarSecciones by remember { mutableStateOf(false) }
+    var derivar by remember { mutableStateOf(false) }
     // Abierto sin pasar por la lista (CEPI_DEV_PACIENTE, una notificación): el nombre se pide.
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
 
@@ -85,6 +106,30 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
                 navigationIcon = {
                     IconButton(onClick = alVolver) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Acciones")
+                        }
+                        Acciones(
+                            abierto = menu,
+                            modelo = modelo,
+                            alCerrar = { menu = false },
+                            alNuevaConsulta = {
+                                alcance.launch {
+                                    paginas.animateScrollToPage(0)
+                                    modelo.enviar("nuevo episodio")
+                                }
+                            },
+                            alSecciones = {
+                                alcance.launch { paginas.animateScrollToPage(0) }
+                                mostrarSecciones = true
+                            },
+                            alAutoFormulario = { alcance.launch { modelo.alternarAutoFormulario() } },
+                            alDerivar = { derivar = true },
+                        )
                     }
                 },
             )
@@ -130,4 +175,127 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
     }
 
     imagenAbierta?.let { VisorImagen(it) { imagenAbierta = null } }
+
+    modelo.formulario?.let { formulario ->
+        FormularioHoja(
+            formulario = formulario,
+            ocupado = modelo.ocupado,
+            api = api,
+            alEnviar = { datos -> alcance.launch { modelo.enviarFormulario(formulario.id, datos) } },
+            alMandar = { mensaje -> alcance.launch { modelo.enviar(mensaje) } },
+            alCerrar = { modelo.cerrarFormulario() },
+        )
+    }
+    if (mostrarSecciones) {
+        SeccionesHoja(
+            marcadores = modelo.marcadores,
+            alElegir = { marcador -> alcance.launch { modelo.abrirSeccion(marcador) } },
+            alCerrar = { mostrarSecciones = false },
+        )
+    }
+    if (derivar) {
+        DerivarPantalla(
+            api = api,
+            alDerivar = { comando ->
+                if (modelo.enviar(comando)) {
+                    // Derivado: el médico pasa al siguiente paciente.
+                    derivar = false
+                    alVolver()
+                    null
+                } else {
+                    modelo.error ?: "No se pudo derivar."
+                }
+            },
+            responsable = { modelo.responsableDelCaso() },
+            alCerrar = { derivar = false },
+        )
+    }
+}
+
+/**
+ * Las acciones del paciente. Lo que todavía no aplica se ve, gris y con la razón (CLAUDE.md:
+ * nunca ocultes un botón).
+ */
+@Composable
+private fun Acciones(
+    abierto: Boolean,
+    modelo: HiloModelo,
+    alCerrar: () -> Unit,
+    alNuevaConsulta: () -> Unit,
+    alSecciones: () -> Unit,
+    alAutoFormulario: () -> Unit,
+    alDerivar: () -> Unit,
+) {
+    val episodios = modelo.episodios
+    val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
+    val libre = !modelo.ocupado
+
+    DropdownMenu(expanded = abierto, onDismissRequest = alCerrar) {
+        DropdownMenuItem(
+            text = { Text("Nueva consulta") },
+            enabled = libre,
+            onClick = {
+                alCerrar()
+                alNuevaConsulta()
+            },
+        )
+        HorizontalDivider()
+        Text(
+            "Ficha",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        DropdownMenuItem(
+            text = {
+                Explicado(
+                    "Secciones de la ficha",
+                    when {
+                        modelo.marcadores.isEmpty() -> "Disponibles al abrir la consulta"
+                        !enLaActual -> "Solo en la consulta actual"
+                        else -> null
+                    },
+                )
+            },
+            enabled = libre && modelo.marcadores.isNotEmpty() && enLaActual,
+            onClick = {
+                alCerrar()
+                alSecciones()
+            },
+        )
+        DropdownMenuItem(
+            text = {
+                Explicado(
+                    if (modelo.autoFormulario) "Auto-form encendido" else "Auto-form apagado",
+                    when {
+                        !enLaActual -> "Solo en la consulta actual"
+                        modelo.autoFormulario -> "Pide la siguiente sección faltante"
+                        else -> "Solo muestra la sección que abras"
+                    },
+                )
+            },
+            enabled = libre && enLaActual,
+            onClick = {
+                alCerrar()
+                alAutoFormulario()
+            },
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Derivar") },
+            enabled = libre,
+            onClick = {
+                alCerrar()
+                alDerivar()
+            },
+        )
+    }
+}
+
+@Composable
+private fun Explicado(titulo: String, detalle: String?) {
+    Column {
+        Text(titulo)
+        detalle?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    }
 }

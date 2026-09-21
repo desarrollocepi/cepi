@@ -4,6 +4,30 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-21 (noche) — App nativa Android, fase 3
+
+- **Ficha por formularios:** los 10 tipos de campo de `BotForm.vue` en una hoja inferior
+  (opción única que se envía al elegir, grupos con Guardar, texto, área, fecha, CIE-10,
+  mapa corporal de 38 regiones, subida de imágenes, búsqueda de registros), Secciones con lo
+  completo marcado, auto-form por paciente, Nueva consulta y Derivar (círculo, persona o
+  responsable del caso).
+- **Probado en emulador contra el stack local:** con el auto-form se recorrió la ficha de un
+  paciente de 1.4 a 8 hasta "Ficha completa"; el episodio guardó CIE-10, semáforo, gravedad,
+  regiones, próximo control y BLINK. Secciones abre un grupo ya lleno con su valor. Derivar a
+  Dermatología creó el aviso de revisión para derma1 y volvió a la lista. Nueva consulta creó
+  el episodio. La variante minificada (R8) abre formularios sin errores.
+- Tests: **71 JVM** en cepi-android.
+
+Pendiente fuera de la app (backend):
+- **Nadie puede registrar el consentimiento de la sección 8.** Ningún rol tiene
+  `entity:18000000-…:record:create` (Consentimiento) en `002_medical_roles_perms.sql`, tampoco
+  en `main`: la foto se sube, pero el bot responde 403 al ligarla. Pasa igual en web, iOS y
+  Android.
+- La derivación a un círculo crea el aviso, pero `review-queue` de derma1 no lista al
+  paciente (el episodio del seed figura `cerrado`). No lo investigué.
+
+---
+
 ## Sesión 2026-09-21 (tarde) — App nativa Android, fase 2
 
 - **Paciente abierto** con Chat · Ficha · Imágenes deslizando (`HorizontalPager`). Hilo por

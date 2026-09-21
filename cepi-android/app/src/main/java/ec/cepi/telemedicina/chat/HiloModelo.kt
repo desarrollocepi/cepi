@@ -7,6 +7,8 @@ import ec.cepi.telemedicina.api.AccionPendiente
 import ec.cepi.telemedicina.api.Adjunto
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.FormularioBot
+import ec.cepi.telemedicina.api.Marcador
 import ec.cepi.telemedicina.api.MensajeHilo
 import ec.cepi.telemedicina.api.RespuestaChat
 import ec.cepi.telemedicina.api.RespuestaRapida
@@ -16,18 +18,22 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Un paciente: su hilo con los mensajes de todos y lo que se le manda al asistente. Espejo de
  * `HiloModelo.swift` e IntakeChat.vue: se escribe en la sesión propia y, tras cada turno, se
  * relee el hilo para que Android, iOS y la web muestren lo mismo (PAPER §24.4).
  *
- * `alcance` es el de la pantalla del paciente: la apertura vive lo que vive esa pantalla.
+ * `alcance` es el de la pantalla del paciente: la apertura vive lo que vive esa pantalla. El
+ * auto-form es de cada paciente y lo guarda quien crea el modelo (`alCambiarAutoFormulario`).
  */
 class HiloModelo(
     val pacienteId: String,
     private val api: CepiApi,
     private val alcance: CoroutineScope,
+    autoFormularioInicial: Boolean = false,
+    private val alCambiarAutoFormulario: (Boolean) -> Unit = {},
 ) {
     var mensajes: List<MensajeHilo> by mutableStateOf(emptyList())
         private set
@@ -46,6 +52,18 @@ class HiloModelo(
     var adjunto: Adjunto? by mutableStateOf(null)
         private set
     var error: String? by mutableStateOf(null)
+    /** El grupo de la ficha que se está llenando, o nada. */
+    var formulario: FormularioBot? by mutableStateOf(null)
+        private set
+    var marcadores: List<Marcador> by mutableStateOf(emptyList())
+        private set
+
+    /**
+     * Encendido: tras abrir y tras cada guardado se muestra el siguiente grupo sin completar.
+     * Apagado (por defecto): solo el grupo pedido en "Secciones".
+     */
+    var autoFormulario: Boolean by mutableStateOf(autoFormularioInicial)
+        private set
 
     /**
      * El hilo guardado llegó al menos una vez. Hasta entonces la pantalla dice "Cargando…" y no
@@ -101,12 +119,43 @@ class HiloModelo(
         }
         if (mensaje.isEmpty() || ocupado) return false
         adjunto = null
-        return turno(eco = mensaje) { sesion -> api.chat(mensaje, sesion) }
+        return turno(eco = mensaje, explicito = false) { sesion -> api.chat(mensaje, sesion) }
     }
 
-    /** Un envío estructurado: guardar el visor de la ficha (y en la fase 3, los grupos). */
-    suspend fun enviarFormulario(id: String, datos: JsonObject, episodio: String? = null): Boolean =
-        turno(eco = null) { sesion -> api.enviarFormulario(id, datos, sesion, episodio) }
+    /** Un envío estructurado: un grupo de la ficha, "ir a sección" o guardar el visor. */
+    suspend fun enviarFormulario(
+        id: String,
+        datos: JsonObject,
+        episodio: String? = null,
+        explicito: Boolean = false,
+    ): Boolean = turno(eco = null, explicito = explicito) { sesion -> api.enviarFormulario(id, datos, sesion, episodio) }
+
+    /** Lo pedido en "Secciones" se muestra siempre, aunque el auto-form esté apagado. */
+    suspend fun abrirSeccion(marcador: Marcador) {
+        enviarFormulario("ficha_goto", JsonObject(mapOf("group" to JsonPrimitive(marcador.id))), explicito = true)
+    }
+
+    fun cerrarFormulario() {
+        formulario = null
+    }
+
+    suspend fun alternarAutoFormulario() {
+        autoFormulario = !autoFormulario
+        alCambiarAutoFormulario(autoFormulario)
+        // Encenderlo arranca por la primera sección pendiente.
+        if (autoFormulario) marcadores.firstOrNull { !it.hecho }?.let { abrirSeccion(it) }
+    }
+
+    /** Quien tiene el caso: el responsable (lo reclamó o se le asignó) o, si no hay, quien lo creó. */
+    suspend fun responsableDelCaso(): String? {
+        val episodio = episodioActivo ?: return null
+        val registro = try {
+            api.entidad(episodio)
+        } catch (_: ApiError) {
+            return null
+        }
+        return registro["responsable_actual_id"] ?: registro["medico_id"]
+    }
 
     suspend fun subir(jpeg: ByteArray, nombre: String) {
         subiendo = true
@@ -141,7 +190,7 @@ class HiloModelo(
         pagina = PaginaHilo.Consulta(episodioActivo)
     }
 
-    private suspend fun turno(eco: String?, ejecutar: suspend (String?) -> RespuestaChat): Boolean {
+    private suspend fun turno(eco: String?, explicito: Boolean, ejecutar: suspend (String?) -> RespuestaChat): Boolean {
         if (ocupado) return false
         error = null
         respuestasRapidas = emptyList()
@@ -151,7 +200,7 @@ class HiloModelo(
             val procesado = try {
                 // La sesión propia se crea recién al primer envío: mirar un paciente no la crea.
                 if (sesionId == null) aplicar(api.chat("activar paciente $pacienteId", null))
-                aplicar(ejecutar(sesionId))
+                aplicar(ejecutar(sesionId), explicito)
                 true
             } catch (e: ApiError) {
                 error = e.mensaje
@@ -173,10 +222,12 @@ class HiloModelo(
         pagina = PaginaHilo.Consulta(actuales.orden[destino])
     }
 
-    private fun aplicar(respuesta: RespuestaChat) {
+    private fun aplicar(respuesta: RespuestaChat, explicito: Boolean = false) {
         respuesta.sessionId?.let { sesionId = it }
         if (respuesta.traePendiente) pendiente = respuesta.pendiente
         respuestasRapidas = respuesta.respuestasRapidas
+        if (respuesta.traeFormulario) formulario = if (explicito || autoFormulario) respuesta.formulario else null
+        respuesta.marcadores?.let { marcadores = it }
         if (respuesta.traeEpisodioActivo) {
             episodioActivo = respuesta.episodioActivo
             // Abrir, enviar o abrir consulta nueva lleva a mirar la consulta activa.

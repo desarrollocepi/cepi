@@ -120,6 +120,27 @@ class CepiApi(val cliente: ApiClient) {
             "filter[patient_id]" to paciente,
         ).data.sortedByDescending { it["fecha"].orEmpty() }
 
+    /** Búsqueda de texto en una definición, paginada (campo `entity_search`). */
+    suspend fun buscar(definicion: String, texto: String, desde: Int, limite: Int): List<Registro> =
+        cliente.get<Lista<Registro>>(
+            "/api/entities",
+            "type" to "business",
+            "entity_id" to definicion,
+            "q" to texto,
+            "limit" to limite.toString(),
+            "offset" to desde.toString(),
+        ).data
+
+    suspend fun buscarCIE10(texto: String): List<ResultadoCIE> =
+        cliente.get<BusquedaCIE>("/api/icd10/search", "q" to texto).results
+
+    // Derivar
+
+    suspend fun grupos(): List<GrupoDerivacion> = cliente.get<Lista<GrupoDerivacion>>("/api/groups").data
+
+    suspend fun miembros(grupo: String): List<MiembroGrupo> =
+        cliente.get<Lista<MiembroGrupo>>("/api/groups/$grupo/members").data
+
     // Galería y adjuntos
 
     /**
