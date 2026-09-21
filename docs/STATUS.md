@@ -4,6 +4,30 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-21 — App nativa Android, fases 0 y 1
+
+- **Decisión (PAPER §25, D-Aux-24):** Android deja el WebView de Capacitor y pasa a
+  **Kotlin + Jetpack Compose**, con el alcance de iOS. Sin framework multiplataforma: iOS ya
+  está en SwiftUI, así que lo que se comparte es el contrato, no el código.
+- **`cepi-android/`:** AGP 9.4, Kotlin 2.4, Compose BOM 2026.09, `minSdk 24`, `compileSdk 37`.
+  Dependencias: AndroidX, kotlinx.serialization, coroutines y OkHttp. Login con email,
+  sesión deslizante con el JWT cifrado por el Android Keystore, cambio de org, lista con
+  "revisar" y a cargo, búsqueda sin tildes, alta, borrado (supermédico), eliminar la cuenta
+  y cuenta pendiente. Galería y paciente abierto son pantallas que dicen que llegan en la fase 2.
+- **Probado en emulador (Android 16) contra TodoERP local:** el usuario demo entra solo con
+  los extras de debug, ve su lista, cambia a CEPI Consultorio, busca, da de alta un paciente
+  (quedó "Prueba Android Nativa", CC 9990001112, en la base local) y, tras matar el proceso,
+  vuelve sin login.
+- Release con R8: **1,8 MB** (la APK Capacitor sale sin minificar).
+
+Tests:
+- cepi-android: **29 JVM** (contrato, sesión, lista y carga con cambio de org), los de iOS
+  portados más 401/403 de otras llamadas y fallos parciales de la carga.
+
+Pendiente de la fase 2: paciente (Chat · Ficha · Imágenes), Galería, Coil y Baseline Profile.
+
+---
+
 ## Sesión 2026-09-18 — Galería, secciones del paciente y borrado por el supermédico
 
 - **Estructura nueva (PAPER §24.2.1, D-Aux-22), en iOS y en la web:** fuera del paciente,

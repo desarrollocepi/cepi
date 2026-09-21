@@ -1749,7 +1749,7 @@ Lo que sí queda en bandeja, sin tocar la ficha:
 La telemedicina se usa con el paciente delante: el médico dicta, fotografía la lesión y
 llena la ficha desde el teléfono. En Android eso corre hoy como WebView (Capacitor,
 `cepi-frontend/NATIVE.md`); en iOS nunca se empaquetó. Para iPhone y iPad se construye
-una app **nativa en SwiftUI** contra el mismo backend. Android sigue en Capacitor.
+una app **nativa en SwiftUI** contra el mismo backend. Android sigue el mismo camino en §25.
 
 ### 24.1 Por qué SwiftUI (D-Aux-19)
 
@@ -1774,7 +1774,7 @@ arranque y memoria. §24.5 lo convierte en números.
 
 ### 24.2 Alcance v1
 
-| entra | queda en web / Android por ahora |
+| entra | queda en la web por ahora (también en Android, §25.2) |
 |---|---|
 | Login con email y con Google; sesión deslizante; cambio de org activa; eliminar la cuenta | registro y verificación de email |
 | Lista de pacientes: búsqueda, alta, "revisar" primero, a cargo | portal de casos (§22) |
@@ -2043,6 +2043,171 @@ manda el header `Authorization`).
 | 4 | dictado en el dispositivo + Google Sign-In | se dicta en español en modo avión |
 | 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al iPhone y tocarla abre el paciente |
 | 6 | cola offline, borrado de cuenta (hecho, §24.7), TestFlight | la build se distribuye por TestFlight |
+
+
+## 25. App nativa Android (`cepi-android/`)
+
+La APK de hoy (`cepi-frontend/android`, Capacitor) es el WebView del que iOS ya salió
+(§24). Android pasa a una app **nativa en Kotlin con Jetpack Compose**, contra el mismo
+backend y con el alcance de la app iOS. La APK Capacitor sigue publicada hasta que la
+nativa la reemplace en Play (§25.7).
+
+### 25.1 Por qué Kotlin + Compose (D-Aux-24)
+
+| opción | qué comparte con iOS | cómo corre en Android | costo |
+|---|---|---|---|
+| Capacitor (la APK actual) | — | WebView: scroll, teclado y transiciones de página web; plugins para lo nativo | ya existe |
+| Flutter | nada | motor propio que pinta sus widgets; teclado, texto y accesibilidad no son los del sistema | reescritura + Dart, un tercer stack |
+| React Native | nada | runtime JS de por medio | reescritura + un tercer stack |
+| Kotlin Multiplatform | ~1.100 líneas (`API/`, `LogicaFormulario`) | nativo | iOS tendría que consumir un framework Kotlin/Native en lugar de su capa de red ya probada, y la Mac Intel de build sumaría el toolchain de Kotlin |
+| **Kotlin + Compose** | nada de código; sí el contrato | nativo: sin runtime intermedio, APIs del sistema directas | reescritura del alcance v1 |
+
+La ventaja de un framework multiplataforma es escribir las dos apps una vez. iOS ya está
+escrita y probada en SwiftUI (D-Aux-19), así que esa ventaja ya no existe. Lo que se
+comparte es el **contrato**: los tests de Android decodifican los mismos JSON que
+`ContratoTests` y fijan las mismas reglas que `SesionTests` y `PacientesTests`. Si el
+backend cambia una clave, fallan las dos suites.
+
+Compose en lugar de Views: en release, con R8 y Baseline Profile, rinde igual, y su costo
+(el JIT del primer arranque) es justo lo que el Baseline Profile resuelve. Además se
+traduce casi 1:1 desde SwiftUI: `@Observable` → `mutableStateOf`, `async let` → `async`,
+`Codable` → `kotlinx.serialization`.
+
+Como en iOS, los plugins se reemplazan por APIs del sistema: dictado con
+`android.speech.SpeechRecognizer` (el plugin actual tumba la app con un método,
+`native/speech.js`), Google con Credential Manager, fotos con Photo Picker y
+`TakePicture`, push con Firebase Messaging directo.
+
+### 25.2 Alcance v1
+
+El de iOS (§24.2 y §24.2.1): Pacientes · Galería afuera; Chat · Ficha · Imágenes dentro del
+paciente, deslizando. Registro y verificación de email, portal de casos, admin, perfil y
+DoctoPro **quedan en la web**. La APK Capacitor los tiene porque carga todo el frontend;
+al reemplazarla salen de la app Android. Aceptado el 2026-09-21.
+
+También se pierde el OTA de `@capgo/capacitor-updater`: la app nativa se actualiza por
+Play. Lo que cambia seguido (los formularios de la ficha) ya viene del servidor (§24.3).
+
+### 25.3 Arquitectura
+
+```
+cepi-android/
+├── settings.gradle.kts, build.gradle.kts, gradle/libs.versions.toml
+└── app/src/
+    ├── main/java/ec/cepi/telemedicina/
+    │   ├── app/          entrada, sesión, raíz, login, cuenta pendiente, menú de cuenta
+    │   ├── api/          cliente HTTP, modelos del contrato, credenciales cifradas
+    │   ├── pacientes/    lista, alta y borrado
+    │   ├── chat/         hilo, composer, dictado, adjuntos          (fase 2)
+    │   ├── ficha/        formularios nativos y visor ficha.html     (fase 3)
+    │   ├── galeria/      galería de la org e imágenes del paciente  (fase 2)
+    │   └── notificaciones/ bandeja y push                          (fase 5)
+    ├── debug/            red en claro solo hacia el stack local
+    └── test/             contrato JSON y lógica pura (JUnit en la JVM, sin emulador)
+```
+
+- **Toolchain:** AGP 9, Kotlin 2.4, Compose BOM 2026.09, JDK 21. `minSdk 24` (el mismo de la
+  APK, para no dejar afuera a nadie que ya la tiene) con desugaring de `java.time`;
+  `targetSdk 36`; `compileSdk 37`, que exigen las versiones actuales de AndroidX y OkHttp.
+- **Dependencias mínimas:** AndroidX (Compose, Material 3, Activity, Lifecycle),
+  `kotlinx.serialization`, `kotlinx.coroutines` y OkHttp. Después, una por fase: Coil
+  (imágenes, fase 2), Credential Manager (fase 4), Firebase Messaging (fase 5). Sin
+  Retrofit, sin Hilt, sin librería de navegación: son dos niveles de pantallas y un
+  `Sesion` compartido. Igual que en iOS, cada dependencia es un plugin más que puede romperse.
+- **Red y parseo fuera del hilo principal** (`Dispatchers.IO` y `Default`): la UI recibe el
+  resultado ya armado. OkHttp ya reintenta sobre una conexión reusada que el servidor
+  cerró por inactividad; en iOS eso hubo que hacerlo a mano (`pedirConReintento`).
+- **JWT cifrado** con una llave AES-GCM del Android Keystore, que no sale del hardware. El
+  texto cifrado vive en `noBackupFilesDir` y la app declara `allowBackup="false"`: ni backup
+  ni restauración en otro teléfono, igual que `ThisDeviceOnly` en el Keychain.
+  `EncryptedSharedPreferences` no se usa: está deprecada.
+- Backend: `https://telemedicina.cepi.ec`. En **debug** se cambia sin recompilar con extras
+  del intent, los mismos nombres que en iOS: `CEPI_API_BASE`, `CEPI_BOT_BASE`,
+  `CEPI_WEB_BASE`, `CEPI_DEV_EMAIL`/`CEPI_DEV_PASSWORD` (entra solo) y `CEPI_DEV_PACIENTE`.
+  Desde el emulador, el stack local es `10.0.2.2`; desde un teléfono, `adb reverse` y
+  `127.0.0.1`. La red en claro solo se permite hacia esos hosts y solo en debug
+  (`src/debug/res/xml/network_security_config.xml`). En release los extras se ignoran.
+- **Pruebas:** tests JVM de contrato y de lógica (`./gradlew testDebugUnitTest`). El
+  servidor falso es un interceptor de OkHttp (`ServidorFalso`, igual que el de iOS sobre
+  `URLProtocol`): sin sockets ni dependencias de test. Nunca contra producción: hay PII real.
+- **"Nunca ocultes un botón"** vale igual: `enabled = false` más un texto que diga por qué.
+- Los formularios de la ficha vienen del servidor, con los mismos 10 tipos de campo y el
+  mismo criterio para un tipo desconocido (§24.3).
+
+### 25.4 Contrato con el backend
+
+El de §24.4, sin endpoints nuevos. Dos diferencias:
+
+- **Push:** `POST/DELETE /api/push/device-token {platform: 'android', token}`, lo mismo
+  que manda hoy la APK.
+- **Google:** Credential Manager pide el ID token con `serverClientId` = el client ID
+  **web**, así que `aud` es el web y el backend no cambia. Es lo que ya hace la APK con
+  el plugin de capgo. No hace falta un client ID Android en `GOOGLE_CLIENT_ID`. Sí hace
+  falta el client ID Android en Google Cloud (paquete + SHA-1 de la firma) para que
+  Credential Manager responda.
+
+### 25.5 Rendimiento: qué se mide
+
+Mismos objetivos que §24.5, medidos con **Macrobenchmark** en un **teléfono real de gama
+media** (el Xiaomi del equipo), sobre la build `benchmark` (release sin firmar). Compose en
+debug es varias veces más lento que en release: una medición en debug no vale.
+
+| métrica | cómo | objetivo inicial |
+|---|---|---|
+| arranque en frío con sesión → lista visible | `StartupTimingMetric` (`reportFullyDrawn` al pintar la lista) | < 1 s |
+| scroll de la lista (500 pacientes) y de un hilo largo | `FrameTimingMetric` | `frameOverrunMs` P95 ≤ 0 |
+| enviar mensaje → eco en pantalla | eco optimista | inmediato |
+| hilo con 50 imágenes | `dumpsys meminfo` | < 150 MB |
+
+Decisiones que salen de acá, además de las de iOS (carga en paralelo, texto de búsqueda
+normalizado una vez por carga, imágenes autenticadas con caché):
+
+- R8 con `isMinifyEnabled` e `isShrinkResources` en release. La APK Capacitor sale sin
+  minificar.
+- **Baseline Profile** generado desde el recorrido login → lista → hilo, instalado con
+  `profileinstaller` (fase 2).
+- `LazyColumn` con `key = id` y filas precalculadas: una recomposición no recalcula
+  iniciales ni la clave de búsqueda.
+- Coil sobre el mismo `OkHttpClient`: manda `Authorization` y decodifica al tamaño del
+  composable, no al de la foto.
+
+### 25.6 Push
+
+Mismo criterio que §24.6: Firebase Messaging registra el token con `platform: 'android'`;
+tocar la notificación abre el paciente (`data.entity_id` →
+`GET /api/review-queue/patient/:entityId`); con la app abierta, vibración sin sonido (se
+usa en consulta); al cerrar sesión se borra el token. En Android 13+ el permiso de
+notificaciones se pide en tiempo de ejecución. `google-services.json` es el mismo de la APK
+(mismo paquete) y sigue fuera de git.
+
+### 25.7 Distribución en Play
+
+- Paquete **`ec.cepi.telemedicina`**, la misma ficha de Play Console que la APK (cuenta
+  Cempiel). La app nativa sube como **una versión nueva de la misma app**: quien tiene la
+  APK la recibe como actualización, sin desinstalar. `versionCode` 3 o más (la APK va en 2).
+- Se firma con la misma clave de subida (`cepi-release.keystore`, fuera de git). Si la
+  clave se pierde, Play App Signing permite resetear la clave de subida; sin la clave no
+  se publica.
+- Pista de prueba interna → producción. La cuenta demo para la revisión es la de la
+  sandbox `cepi-testing` (§24.7). El borrado de cuenta desde la app, que Play también
+  exige, entra en la fase 1.
+- Data safety y la declaración de app de salud se revisan antes de subir: la app nativa
+  maneja los mismos datos que la APK.
+- `cepi-frontend/android/` y el OTA (`/api/ota/latest`) se retiran cuando la nativa esté en
+  producción con las fases 1–5 completas. Hasta entonces la APK Capacitor es la que se
+  publica.
+
+### 25.8 Fases
+
+| fase | entrega | se da por hecha cuando |
+|---|---|---|
+| 0 | esta sección + esqueleto `cepi-android/` | `assembleDebug` compila y `testDebugUnitTest` pasa |
+| 1 | login con email, sesión cifrada, cambio de org, lista de pacientes, alta, borrado (supermédico), eliminar la cuenta, cuenta pendiente | un usuario demo entra y ve su lista contra el stack local |
+| 2 | paciente (Chat · Ficha · Imágenes), hilo por consulta, composer, pendiente sí/no, respuestas rápidas, fotos, imágenes con zoom, Galería; Baseline Profile | un turno enviado desde Android aparece igual en la web |
+| 3 | ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar, visor | se llena una ficha completa desde Android |
+| 4 | dictado en el dispositivo + Google Sign-In | se dicta en español en modo avión (Android 12+ con el idioma descargado) |
+| 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al teléfono y tocarla abre el paciente |
+| 6 | Macrobenchmark contra §25.5, release firmado, pista interna de Play | la app nativa reemplaza a la APK Capacitor en la pista interna |
 
 
 ---

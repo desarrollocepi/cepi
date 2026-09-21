@@ -14,8 +14,9 @@ cepi/
 ├── scripts/              reset, dev-token, dev-chat, backup
 ├── TodoERP/              repo aparte, ignorado por cepi: ERP genérico + MCP server
 ├── cepi-bot/             agente conversacional (HTTP + MCP client)
-├── cepi-frontend/        UI de chat (Vue 3 + Vite) — web + APK Android (Capacitor)
+├── cepi-frontend/        UI de chat (Vue 3 + Vite) — web + APK Android (Capacitor, hasta que la nativa la reemplace)
 ├── cepi-ios/             app nativa iPhone/iPad (SwiftUI) — PAPER §24
+├── cepi-android/         app nativa Android (Kotlin + Compose) — PAPER §25
 ├── cepi-isic/            servicio Python de embeddings/clasificación
 ├── backend/              chatbot legacy (DeepSeek + tree.js) — sin PM2
 └── frontend/             site público legacy CEPI — sin PM2
@@ -39,7 +40,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
   permisos** — lo que el usuario nunca podrá hacer sí se oculta, porque un botón muerto por
   falta de permiso es ruido.
 - **PII**: campos con `pii: true` en `entity_definitions.config.fields` se redactan al cruzar dos fronteras: `cepi-bot → LLM` (PAPER §13.3.1) y `TodoERP → role sin pii:read:<slug>` (R4 de REFACTOR_PLAN). Ambas implementadas.
-- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend` y `cepi-bot`. Total actual ~202 tests. Si tocaste `cepi-ios/`, también `xcodebuild test` (ver Atajos).
+- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend` y `cepi-bot`. Total actual ~202 tests. Si tocaste `cepi-ios/`, también `xcodebuild test`; si tocaste `cepi-android/`, `./gradlew testDebugUnitTest` (ver Atajos).
 - **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).
   Nada de rsync ni scp a mano. Todo SQL tiene que ser idempotente y transaccional, y un seed
   médico nuevo se agrega a `medical-seed/apply.sh` o el deploy no lo aplica.
@@ -73,9 +74,9 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 4. Si tiene relaciones, no olvides los inversos.
 5. Idempotencia: usar `ON CONFLICT (id) DO UPDATE`.
 
-### una pantalla en la app iOS o en la web
+### una pantalla en las apps o en la web
 La app tiene dos niveles (PAPER §24.2.1, D-Aux-22): fuera del paciente **Pacientes** y
-**Galería**; dentro, **Chat**, **Ficha** e **Imágenes**, que en iOS se pasan deslizando
+**Galería**; dentro, **Chat**, **Ficha** e **Imágenes**, que en iOS y Android se pasan deslizando
 (`PacienteView`) y en la web son pestañas (`ChatShell.vue`). Una pantalla nueva entra en uno
 de esos lugares o se justifica en el paper antes.
 
@@ -84,6 +85,13 @@ de esos lugares o se justifica en el paper antes.
 2. Endpoint nuevo: función en `API/CEPIAPI.swift`, modelo en `API/Modelos*.swift` (`ModelosFicha.swift` para formularios, derivación y CIE-10) y un test de contrato con el JSON real del backend en `CEPITelemedicinaTests/`.
 3. El backend no se toca por la app: si hace falta un endpoint, primero PAPER §24.4.
 4. "Nunca ocultes un botón" vale igual: `.disabled(…)` más un texto que diga por qué.
+
+### una pantalla o un endpoint en la app Android
+1. El `.kt` va en el paquete de su dominio (`app/`, `api/`, `pacientes/`, `chat/`…), igual que en iOS.
+2. Endpoint nuevo: función en `api/CepiApi.kt`, modelo `@Serializable` en `api/Modelos*.kt` y un test de contrato en `app/src/test/` con el mismo JSON que el de iOS.
+3. El backend no se toca por la app: si hace falta un endpoint, primero PAPER §24.4.
+4. Una dependencia nueva se justifica en PAPER §25.3: cada una es un plugin más que puede romperse.
+5. "Nunca ocultes un botón": `enabled = false` más un texto que diga por qué.
 
 ### un hook de ciclo de vida
 1. Handler en `TodoERP/backend/src/hooks/medical.ts` (o `domain.ts`).
@@ -115,6 +123,17 @@ xcodebuild test -project cepi-ios/CEPITelemedicina.xcodeproj -scheme CEPITelemed
 SIMCTL_CHILD_CEPI_API_BASE=http://127.0.0.1:3001 SIMCTL_CHILD_CEPI_BOT_BASE=http://127.0.0.1:3002 \
 SIMCTL_CHILD_CEPI_DEV_EMAIL=primario@cepi.local SIMCTL_CHILD_CEPI_DEV_PASSWORD='Admin123!' \
 SIMCTL_CHILD_CEPI_DEV_PACIENTE=<uuid> xcrun simctl launch booted ec.cepi.telemedicina
+
+# App Android: tests JVM + APK debug (JDK 21; ANDROID_HOME=~/Android/Sdk)
+cd cepi-android && JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew testDebugUnitTest assembleDebug
+
+# App Android contra el stack local desde el emulador (10.0.2.2 = esta máquina; en un
+# teléfono, `adb reverse tcp:3001 tcp:3001` y 127.0.0.1). -S reinicia el proceso: la
+# config se lee al arrancar. Los extras solo valen en debug.
+adb install -r cepi-android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -S -n ec.cepi.telemedicina/.app.MainActivity \
+  --es CEPI_API_BASE http://10.0.2.2:3001 --es CEPI_BOT_BASE http://10.0.2.2:3002 \
+  --es CEPI_DEV_EMAIL primario@cepi.local --es CEPI_DEV_PASSWORD 'Admin123!'
 ```
 
 ⚠️ **cepi-bot local nunca con su `.env` tal cual.** Si `TELEGRAM_PUBLIC_URL` tiene valor,

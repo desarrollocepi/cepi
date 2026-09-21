@@ -3,6 +3,9 @@
 > **iOS no se empaqueta desde acá.** iPhone/iPad es una app nativa en SwiftUI,
 > `cepi-ios/` (decisión y plan en PAPER §24). Este documento es para Android; lo de
 > Firebase, APNs y cuentas del final vale para las dos.
+>
+> **Android también pasa a nativo:** `cepi-android/` (Kotlin + Compose, PAPER §25). Esta APK
+> Capacitor sigue publicada hasta que la nativa la reemplace en Play (§25.7).
 
 La app web (`cepi-frontend`, Vue 3 + Vite, PWA) se empaqueta como **app Android**
 con **Capacitor 8**. Estrategia: **híbrido** — el build web viaja dentro de la app
