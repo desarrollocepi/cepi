@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "cepi-android"
 include(":app")
+include(":baselineprofile")

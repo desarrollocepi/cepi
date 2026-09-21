@@ -1,5 +1,6 @@
 package ec.cepi.telemedicina.api
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -69,6 +70,76 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun eliminarPaciente(id: String) {
         cliente.delete<Confirmacion>("/api/entities/$id")
     }
+
+    // Hilo y chat
+
+    /** El hilo del paciente: los mensajes de todos los profesionales y del bot, en orden. */
+    suspend fun hilo(paciente: String): List<MensajeHilo> =
+        cliente.get<HiloRespuesta>("/api/patient-thread", "patient_id" to paciente).mensajes
+
+    suspend fun sesionesBot(paciente: String): List<SesionBot> =
+        cliente.get<SesionesBot>("/api/bot/sessions", "patient_id" to paciente).sesiones
+
+    suspend fun chat(mensaje: String, sesion: String?): RespuestaChat =
+        RespuestaChat.desde(cliente.post<JsonObject>("/api/bot/chat", buildJsonObject {
+            put("message", mensaje)
+            if (sesion != null) put("session_id", sesion)
+        }))
+
+    /**
+     * Un envío estructurado (`ficha_grp_*`, `ficha_goto`, `ficha_save`): no lleva texto, es la
+     * acción explícita del usuario y el bot la guarda sin pedir sí/no.
+     */
+    suspend fun enviarFormulario(
+        formId: String,
+        datos: JsonObject,
+        sesion: String?,
+        episodio: String? = null,
+    ): RespuestaChat =
+        RespuestaChat.desde(cliente.post<JsonObject>("/api/bot/chat", buildJsonObject {
+            put("message", "")
+            if (sesion != null) put("session_id", sesion)
+            putJsonObject("form_submission") {
+                put("form_id", formId)
+                put("data", datos)
+                if (episodio != null) put("episode_id", episodio)
+            }
+        }))
+
+    // Registros
+
+    suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
+
+    /** Las consultas del paciente, de la más nueva a la más vieja. */
+    suspend fun episodios(paciente: String): List<Registro> =
+        cliente.get<Lista<Registro>>(
+            "/api/entities",
+            "type" to "business",
+            "entity_id" to DEFINICION_EPISODIO,
+            "limit" to "100",
+            "filter[patient_id]" to paciente,
+        ).data.sortedByDescending { it["fecha"].orEmpty() }
+
+    // Galería y adjuntos
+
+    /**
+     * Imágenes clínicas de la organización activa, con búsqueda por texto (paciente, cédula,
+     * diagnóstico, CIE-10 o fecha) y, opcionalmente, de un solo paciente (PAPER §24.2.1).
+     */
+    suspend fun galeria(texto: String = "", paciente: String? = null, limite: Int = 60, desde: Int = 0): RespuestaGaleria =
+        cliente.get(
+            "/api/bot/galeria",
+            "limit" to limite.toString(),
+            "offset" to desde.toString(),
+            "q" to texto.trim().ifEmpty { null },
+            "patient_id" to paciente,
+        )
+
+    suspend fun subirImagen(jpeg: ByteArray, nombre: String): Adjunto =
+        cliente.subir("/api/attachments", jpeg, nombre, "image/jpeg")
+
+    /** Dónde está el archivo de un adjunto; lo pide el cargador de imágenes con el token. */
+    fun urlAdjunto(id: String): String = cliente.url("/api/attachments/$id/file").toString()
 
     companion object {
         const val DEFINICION_PACIENTE = "11000000-0000-0000-0000-000000000000"

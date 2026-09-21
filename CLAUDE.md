@@ -134,6 +134,11 @@ adb install -r cepi-android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -S -n ec.cepi.telemedicina/.app.MainActivity \
   --es CEPI_API_BASE http://10.0.2.2:3001 --es CEPI_BOT_BASE http://10.0.2.2:3002 \
   --es CEPI_DEV_EMAIL primario@cepi.local --es CEPI_DEV_PASSWORD 'Admin123!'
+# (+ --es CEPI_WEB_BASE http://10.0.2.2:8088 con `python3 -m http.server 8088 -d cepi-frontend/public`
+#  para la Ficha, y --es CEPI_DEV_PACIENTE <uuid> para abrir un paciente)
+
+# Regenerar el Baseline Profile (emulador Android 13+ y el stack local arriba)
+cd cepi-android && ./gradlew :app:generateBaselineProfile
 ```
 
 ⚠️ **cepi-bot local nunca con su `.env` tal cual.** Si `TELEGRAM_PUBLIC_URL` tiene valor,

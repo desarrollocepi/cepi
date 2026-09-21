@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -21,7 +22,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Extras CEPI_* del intent (Config.kt): backend local, ingreso automático.
+            buildConfigField("boolean", "ENTORNO_CONFIGURABLE", "true")
+        }
         release {
+            // La que va a Play: nadie la apunta a otro servidor.
+            buildConfigField("boolean", "ENTORNO_CONFIGURABLE", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -47,6 +54,22 @@ android {
     }
 }
 
+// Las variantes de medición (Baseline Profile y Macrobenchmark) son release sin minificar o
+// sin firmar, y corren contra el stack local con datos ficticios: aceptan los extras y la red en
+// claro de debug. Nunca se publican; `release` sigue cerrada.
+androidComponents {
+    onVariants(selector().withBuildType("nonMinifiedRelease")) { variante -> paraMedir(variante) }
+    onVariants(selector().withBuildType("benchmarkRelease")) { variante -> paraMedir(variante) }
+}
+
+fun paraMedir(variante: com.android.build.api.variant.ApplicationVariant) {
+    variante.buildConfigFields?.put(
+        "ENTORNO_CONFIGURABLE",
+        com.android.build.api.variant.BuildConfigField("boolean", "true", "variante de medición"),
+    )
+    variante.sources.res?.addStaticSourceDirectory("src/debug/res")
+}
+
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -58,8 +81,11 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.okhttp)
     implementation(libs.profileinstaller)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+    baselineProfile(project(":baselineprofile"))
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

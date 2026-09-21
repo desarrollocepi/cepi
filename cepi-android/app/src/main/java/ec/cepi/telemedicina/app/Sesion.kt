@@ -1,17 +1,12 @@
 package ec.cepi.telemedicina.app
 
-import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import ec.cepi.telemedicina.api.AlmacenKeystore
-import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
-import ec.cepi.telemedicina.api.Config
 import ec.cepi.telemedicina.api.Credenciales
 import ec.cepi.telemedicina.api.Usuario
-import okhttp3.OkHttpClient
 
 /**
  * Estado de la sesión y única puerta de entrada y salida. Espejo de `Sesion.swift` y de
@@ -134,13 +129,5 @@ class Sesion(
     private fun cerrarLocal() {
         usuario = null
         estado = Estado.SinSesion
-    }
-
-    companion object {
-        fun crear(contexto: Context, config: Config): Sesion {
-            val credenciales = Credenciales(AlmacenKeystore(contexto))
-            val cliente = ApiClient(config.apiBase, config.botBase, credenciales, OkHttpClient())
-            return Sesion(credenciales, CepiApi(cliente))
-        }
     }
 }

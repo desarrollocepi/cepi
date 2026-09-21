@@ -13,6 +13,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -60,6 +61,13 @@ class ApiClient(
     /** DELETE con cuerpo JSON: el borrado de cuenta viaja con su confirmación explícita. */
     suspend inline fun <reified T> delete(ruta: String, cuerpo: JsonElement? = null): T =
         decodificar(serializer(), ejecutar("DELETE", ruta, cuerpo = cuerpo?.comoCuerpo()))
+
+    /**
+     * Sube un archivo como `multipart/form-data` en el campo `file`, igual que
+     * `uploadAttachment` en la web.
+     */
+    suspend inline fun <reified T> subir(ruta: String, archivo: ByteArray, nombre: String, mime: String): T =
+        decodificar(serializer(), ejecutar("POST", ruta, cuerpo = multipart(archivo, nombre, mime)))
 
     /** La URL final de una ruta: las de cepi-bot van a su host. */
     fun url(ruta: String, query: List<Pair<String, String?>> = emptyList()): HttpUrl =
@@ -118,6 +126,13 @@ class ApiClient(
 
         @PublishedApi
         internal fun JsonElement.comoCuerpo(): RequestBody = toString().toRequestBody(TIPO_JSON)
+
+        @PublishedApi
+        internal fun multipart(archivo: ByteArray, nombre: String, mime: String): RequestBody =
+            MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", nombre.replace("\"", "'"), archivo.toRequestBody(mime.toMediaType()))
+                .build()
 
         /**
          * Arma la URL. `addQueryParameter` codifica el `+` como `%2B`: Express lee un `+`

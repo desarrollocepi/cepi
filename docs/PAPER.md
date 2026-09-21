@@ -2097,13 +2097,15 @@ cepi-android/
     ├── main/java/ec/cepi/telemedicina/
     │   ├── app/          entrada, sesión, raíz, login, cuenta pendiente, menú de cuenta
     │   ├── api/          cliente HTTP, modelos del contrato, credenciales cifradas
-    │   ├── pacientes/    lista, alta y borrado
-    │   ├── chat/         hilo, composer, dictado, adjuntos          (fase 2)
-    │   ├── ficha/        formularios nativos y visor ficha.html     (fase 3)
-    │   ├── galeria/      galería de la org e imágenes del paciente  (fase 2)
+    │   ├── pacientes/    lista, alta, borrado y el paciente abierto (Chat · Ficha · Imágenes)
+    │   ├── chat/         hilo, composer, fotos, imágenes autenticadas y visor con zoom
+    │   ├── ficha/        visor ficha.html (fase 2) y formularios nativos (fase 3)
+    │   ├── galeria/      galería de la org e imágenes del paciente
     │   └── notificaciones/ bandeja y push                          (fase 5)
+    ├── release/generated/baselineProfiles/   el perfil generado, versionado
     ├── debug/            red en claro solo hacia el stack local
     └── test/             contrato JSON y lógica pura (JUnit en la JVM, sin emulador)
+baselineprofile/          recorrido UiAutomator que genera el Baseline Profile (§25.5)
 ```
 
 - **Toolchain:** AGP 9, Kotlin 2.4, Compose BOM 2026.09, JDK 21. `minSdk 24` (el mismo de la
@@ -2121,12 +2123,24 @@ cepi-android/
   texto cifrado vive en `noBackupFilesDir` y la app declara `allowBackup="false"`: ni backup
   ni restauración en otro teléfono, igual que `ThisDeviceOnly` en el Keychain.
   `EncryptedSharedPreferences` no se usa: está deprecada.
+- **Imágenes clínicas** con Coil sobre el mismo `OkHttpClient` de la API. Un interceptor pone
+  el Bearer solo si el pedido va al host del backend. Caché **solo en memoria**, como en iOS:
+  ninguna foto clínica queda en el disco. Al subir, la foto se decodifica al tamaño final
+  (`ImageDecoder` en Android 9+, `inSampleSize` antes), sale enderezada y se reescribe como
+  JPEG sin EXIF: sin GPS ni modelo de cámara. La cámara es la del sistema (`TakePicture` +
+  `FileProvider` en la caché, se borra al subir); la app no pide permiso de cámara.
 - Backend: `https://telemedicina.cepi.ec`. En **debug** se cambia sin recompilar con extras
   del intent, los mismos nombres que en iOS: `CEPI_API_BASE`, `CEPI_BOT_BASE`,
   `CEPI_WEB_BASE`, `CEPI_DEV_EMAIL`/`CEPI_DEV_PASSWORD` (entra solo) y `CEPI_DEV_PACIENTE`.
   Desde el emulador, el stack local es `10.0.2.2`; desde un teléfono, `adb reverse` y
   `127.0.0.1`. La red en claro solo se permite hacia esos hosts y solo en debug
-  (`src/debug/res/xml/network_security_config.xml`). En release los extras se ignoran.
+  (`src/debug/res/xml/network_security_config.xml`). En release los extras se ignoran
+  (`BuildConfig.ENTORNO_CONFIGURABLE`). Las variantes de medición (`nonMinifiedRelease`,
+  `benchmarkRelease`) los aceptan porque corren contra el stack local; no se publican.
+- **Ficha** en un `WebView` que solo navega dentro del host de la web. La hoja mide 210 mm
+  sin viewport: se diagrama ancha y se muestra entera (`useWideViewPort` +
+  `loadWithOverviewMode`), con zoom. Fuera de su pestaña el `WebView` queda invisible: dentro
+  del pager se dibujaba encima del chat aunque su página estuviera corrida.
 - **Pruebas:** tests JVM de contrato y de lógica (`./gradlew testDebugUnitTest`). El
   servidor falso es un interceptor de OkHttp (`ServidorFalso`, igual que el de iOS sobre
   `URLProtocol`): sin sockets ni dependencias de test. Nunca contra producción: hay PII real.
@@ -2164,8 +2178,12 @@ normalizado una vez por carga, imágenes autenticadas con caché):
 
 - R8 con `isMinifyEnabled` e `isShrinkResources` en release. La APK Capacitor sale sin
   minificar.
-- **Baseline Profile** generado desde el recorrido login → lista → hilo, instalado con
-  `profileinstaller` (fase 2).
+- **Baseline Profile** generado desde el recorrido login → lista → paciente → galería
+  (`baselineprofile/GeneradorPerfil.kt`) contra el stack local, versionado en
+  `app/src/release/generated/baselineProfiles/` e instalado con `profileinstaller`. Se
+  regenera con `./gradlew :app:generateBaselineProfile` cuando cambia una pantalla del recorrido.
+- El hilo es una `LazyColumn` invertida: arranca en el último mensaje. Ante un turno nuevo baja
+  al final, porque la lista conserva el ítem que estaba a la vista y lo nuevo quedaba debajo.
 - `LazyColumn` con `key = id` y filas precalculadas: una recomposición no recalcula
   iniciales ni la clave de búsqueda.
 - Coil sobre el mismo `OkHttpClient`: manda `Authorization` y decodifica al tamaño del

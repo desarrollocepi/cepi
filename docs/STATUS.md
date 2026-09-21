@@ -4,6 +4,29 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-21 (tarde) — App nativa Android, fase 2
+
+- **Paciente abierto** con Chat · Ficha · Imágenes deslizando (`HorizontalPager`). Hilo por
+  consulta, composer, pendiente sí/no, respuestas rápidas, fotos de galería y cámara, imágenes
+  inline con visor y zoom. Ficha: `ficha.html` en `WebView`, con consultas, cambios en rojo,
+  guardar (`ficha_save`) e imprimir. **Galería** de la org con buscador y paginado.
+- **Baseline Profile** generado en emulador contra el stack local (1.511 reglas de la app);
+  release con R8: 2,2 MB.
+- **Probado en emulador** con TodoERP + cepi-bot (LLM `stub`, sin Telegram): un turno enviado
+  desde Android aparece igual para otro profesional (`patient-thread` como derma1, autor "Dr.
+  Primario Demo"). Una foto de 6000×4000 con GPS llega al backend como JPEG 4096×2731 sin EXIF.
+- Tests: **53 JVM** en cepi-android.
+
+Dos cosas del entorno local, no de la app:
+- El TodoERP local está en `fix/orgs-superadmin-nombres`, sin `filter_or`: la galería de
+  cepi-bot devuelve todo para cualquier búsqueda que encuentre algo. En `main` (lo que despliega
+  el CI) sí está. Las imágenes de los seeds dan 404: no hay archivos.
+- El emulador (SwiftShader) se cayó tres veces al pintar la Ficha: el proceso del emulador, sin
+  crash de la app en logcat. Abriendo el paciente desde la lista no pasó. Causa no aislada; a
+  confirmar en un teléfono real.
+
+---
+
 ## Sesión 2026-09-21 — App nativa Android, fases 0 y 1
 
 - **Decisión (PAPER §25, D-Aux-24):** Android deja el WebView de Capacitor y pasa a

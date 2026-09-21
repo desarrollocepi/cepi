@@ -16,7 +16,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  *   --es CEPI_DEV_EMAIL primario@cepi.local --es CEPI_DEV_PASSWORD 'Admin123!'
  * ```
  *
- * En release los extras se ignoran: nadie puede apuntar la app de producción a otro servidor.
+ * En release los extras se ignoran (`ENTORNO_CONFIGURABLE`): nadie puede apuntar la app de
+ * producción a otro servidor. Solo las aceptan debug y las variantes de medición.
  */
 data class Config(
     /** TodoERP. */
@@ -35,7 +36,7 @@ data class Config(
         val PRODUCCION = "https://telemedicina.cepi.ec".toHttpUrl()
 
         fun desde(intent: Intent?): Config {
-            if (!BuildConfig.DEBUG || intent == null) return Config()
+            if (!BuildConfig.ENTORNO_CONFIGURABLE || intent == null) return Config()
             fun texto(clave: String) = intent.getStringExtra(clave)?.takeIf { it.isNotBlank() }
             fun url(clave: String) = texto(clave)?.toHttpUrlOrNull()
             val api = url("CEPI_API_BASE") ?: PRODUCCION

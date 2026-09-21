@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import ec.cepi.telemedicina.R
+import ec.cepi.telemedicina.galeria.Galeria
+import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.pacientes.ListaPacientes
 import ec.cepi.telemedicina.pacientes.NuevoPaciente
 import ec.cepi.telemedicina.pacientes.PacienteAbierto
@@ -38,7 +40,7 @@ private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria
 
 /**
  * Lo que se ve con la sesión abierta: Pacientes y Galería (PAPER §24.2.1, D-Aux-22). Dentro de
- * un paciente hay otras tres secciones (fase 2).
+ * un paciente hay otras tres secciones (`PacienteAbierto`).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +49,7 @@ fun Principal(entorno: Entorno) {
     val alcance = rememberCoroutineScope()
     // Aquí y no en la lista: pasar a Galería y volver no recarga ni vuelve a "Cargando…".
     val modelo = remember { PacientesModelo() }
+    val galeria = remember { GaleriaModelo(sesion.api) }
     val avisos = remember { SnackbarHostState() }
     var seccion by rememberSaveable { mutableIntStateOf(Seccion.Pacientes.ordinal) }
     // Solo debug: CEPI_DEV_PACIENTE abre ese paciente al entrar.
@@ -68,7 +71,7 @@ fun Principal(entorno: Entorno) {
     val id = abierto
     if (id != null) {
         BackHandler { abierto = null }
-        PacienteAbierto(modelo.fila(id)) { abierto = null }
+        PacienteAbierto(entorno, id, modelo.fila(id)) { abierto = null }
     } else {
         Scaffold(
             topBar = {
@@ -116,13 +119,7 @@ fun Principal(entorno: Entorno) {
                     alAbrir = { abierto = it },
                     alFallar = { alcance.launch { avisos.showSnackbar(it) } },
                 )
-                Seccion.Galeria -> Aviso(
-                    icono = painterResource(R.drawable.ic_galeria),
-                    titulo = "Galería",
-                    descripcion = "Las imágenes de todos los casos de la organización, con buscador, llegan en " +
-                        "la próxima versión de la app Android. Mientras tanto están en la web.",
-                    modifier = Modifier.padding(relleno),
-                )
+                Seccion.Galeria -> Galeria(galeria, organizacion, relleno)
             }
         }
     }

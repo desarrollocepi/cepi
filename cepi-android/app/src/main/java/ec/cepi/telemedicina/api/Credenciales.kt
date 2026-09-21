@@ -36,14 +36,18 @@ class Credenciales(private val almacen: Almacen) {
     private var enMemoria: String? = null
     private var leido = false
 
-    suspend fun token(): String? = withContext(Dispatchers.IO) {
-        synchronized(candado) {
-            if (!leido) {
-                enMemoria = almacen.leer()
-                leido = true
-            }
-            enMemoria
+    suspend fun token(): String? = withContext(Dispatchers.IO) { tokenActual() }
+
+    /**
+     * Sin suspender, para quien ya corre fuera del hilo principal (el interceptor de OkHttp de
+     * las imágenes). La primera vez lee el almacén.
+     */
+    fun tokenActual(): String? = synchronized(candado) {
+        if (!leido) {
+            enMemoria = almacen.leer()
+            leido = true
         }
+        enMemoria
     }
 
     suspend fun guardar(token: String?) = withContext(Dispatchers.IO) {
