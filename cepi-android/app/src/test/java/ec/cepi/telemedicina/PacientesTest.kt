@@ -1,8 +1,10 @@
 package ec.cepi.telemedicina
 
+import ec.cepi.telemedicina.api.Asignacion
 import ec.cepi.telemedicina.api.PendienteRevision
 import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.api.jsonCepi
+import ec.cepi.telemedicina.pacientes.EstadoFicha
 import ec.cepi.telemedicina.pacientes.FilaPaciente
 import ec.cepi.telemedicina.pacientes.PacientesModelo
 import org.junit.Assert.assertEquals
@@ -10,7 +12,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Los de `PacientesTests.swift`: orden, búsqueda y nombre de la fila. */
+/** Los de `PacientesTests.swift`: orden, estado de la ficha, búsqueda y nombre de la fila. */
 class PacientesTest {
     private fun registro(
         id: String,
@@ -37,6 +39,34 @@ class PacientesTest {
             "e" to PendienteRevision(1, null),
         )
         assertEquals(listOf("d", "c", "e", "a", "b"), PacientesModelo.ordenar(filas, revision).map { it.id })
+    }
+
+    @Test
+    fun primeroPorEstadoYDentroDelEstadoRevisar() {
+        val filas = listOf("a", "b", "c", "d", "e", "f").map { FilaPaciente(registro(it, nombre = it)) }
+        val asignaciones = mapOf(
+            "a" to Asignacion(estado = "cerrado"),
+            "b" to Asignacion(estado = "respondida"),
+            "c" to Asignacion(estado = "en_curso"),
+            "e" to Asignacion(estado = "en_curso"),
+            "f" to Asignacion(estado = "en_revisión_solicitada"),
+        )
+        val revision = mapOf("e" to PendienteRevision(1, null))
+        assertEquals(
+            listOf("b", "f", "e", "c", "a", "d"),
+            PacientesModelo.ordenar(filas, revision, asignaciones).map { it.id },
+        )
+    }
+
+    @Test
+    fun estadoDeLaFicha() {
+        assertEquals(EstadoFicha.SinConsulta, EstadoFicha.de(null))
+        assertEquals(EstadoFicha.SinConsulta, EstadoFicha.de(" "))
+        assertEquals(EstadoFicha.Derivada, EstadoFicha.de("derivada"))
+        assertEquals(EstadoFicha.RevisionSolicitada, EstadoFicha.de("en_revisión_solicitada"))
+        assertEquals(EstadoFicha.Agendada, EstadoFicha.de("agendado"))
+        // Un estado que la app no conoce no rompe la lista: cae en "Otro estado".
+        assertEquals(EstadoFicha.Otro, EstadoFicha.de("archivada"))
     }
 
     @Test

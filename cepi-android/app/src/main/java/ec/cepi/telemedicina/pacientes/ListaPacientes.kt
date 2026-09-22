@@ -4,7 +4,10 @@ import androidx.activity.compose.ReportDrawnWhen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +69,7 @@ fun ListaPacientes(
     var busqueda by rememberSaveable { mutableStateOf("") }
     var refrescando by remember { mutableStateOf(false) }
     var aBorrar by remember { mutableStateOf<FilaPaciente?>(null) }
+    var estadoElegido by rememberSaveable { mutableStateOf<EstadoFicha?>(null) }
     val puedeBorrar = sesion.usuario?.puede(CepiApi.PERMISO_BORRAR_PACIENTE) == true
 
     // Recarga al volver a primer plano, al cambiar de organización y cada 20 s mientras está
@@ -83,7 +88,10 @@ fun ListaPacientes(
     // El arranque en frío termina cuando la lista está a la vista (PAPER §25.5).
     ReportDrawnWhen { modelo.cargado }
 
-    val filas = remember(modelo.filas, busqueda) { modelo.filtradas(busqueda) }
+    val filas = remember(modelo.filas, modelo.asignaciones, busqueda, estadoElegido) {
+        modelo.filtradas(busqueda, estadoElegido)
+    }
+    val conteo = remember(modelo.filas, modelo.asignaciones) { modelo.conteoPorEstado() }
 
     Column(
         Modifier
@@ -105,6 +113,14 @@ fun ListaPacientes(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
+        FiltroEstados(
+            elegido = estadoElegido,
+            conteo = conteo,
+            total = modelo.filas.size,
+            habilitado = modelo.cargado,
+            alElegir = { estadoElegido = it },
         )
 
         Box(
@@ -129,6 +145,7 @@ fun ListaPacientes(
                             fila = fila,
                             revision = modelo.revision[fila.id],
                             asignacion = modelo.asignaciones[fila.id],
+                            estado = modelo.estado(fila.id),
                             puedeBorrar = puedeBorrar,
                             alAbrir = { alAbrir(fila.id) },
                             alBorrar = { aBorrar = fila },
@@ -150,6 +167,11 @@ fun ListaPacientes(
                     }
                 }
                 !modelo.cargado -> Espera("Cargando pacientes…")
+                filas.isEmpty() && estadoElegido != null && busqueda.isBlank() -> Aviso(
+                    icono = rememberVectorPainter(Icons.Filled.Search),
+                    titulo = "Ningún paciente en «${estadoElegido?.etiqueta}»",
+                    descripcion = "Elige otro estado o «Todos».",
+                )
                 filas.isEmpty() && busqueda.isBlank() -> Aviso(
                     icono = painterResource(R.drawable.ic_grupo),
                     titulo = "No hay pacientes",
@@ -205,6 +227,45 @@ private fun Espera(texto: String) {
         ) {
             CircularProgressIndicator()
             Text(texto, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+/**
+ * Los estados de la ficha como filtro, debajo del buscador. Cada chip lleva su LED y cuántos
+ * pacientes hay: es también la leyenda de los colores. Un estado sin pacientes se ve gris, no se
+ * esconde (nunca ocultes un botón). Tocar el elegido lo suelta.
+ */
+@Composable
+private fun FiltroEstados(
+    elegido: EstadoFicha?,
+    conteo: Map<EstadoFicha, Int>,
+    total: Int,
+    habilitado: Boolean,
+    alElegir: (EstadoFicha?) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+    ) {
+        FilterChip(
+            selected = elegido == null,
+            onClick = { alElegir(null) },
+            enabled = habilitado,
+            label = { Text("Todos · $total") },
+        )
+        EstadoFicha.entries.forEach { estado ->
+            val cuantos = conteo[estado] ?: 0
+            FilterChip(
+                selected = elegido == estado,
+                onClick = { alElegir(if (elegido == estado) null else estado) },
+                enabled = habilitado && (cuantos > 0 || elegido == estado),
+                leadingIcon = { LedEstado(estado, tamano = 10.dp) },
+                label = { Text("${estado.etiqueta} · $cuantos") },
+            )
         }
     }
 }

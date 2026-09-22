@@ -99,4 +99,6 @@ data class Asignacion(
     @SerialName("assignee_name") val nombre: String? = null,
     /** `responsable` | `derivado` | `derivado_grupo` | `creador` */
     @SerialName("source") val origen: String? = null,
+    /** Estado de la consulta más reciente (`en_curso`, `derivada`, `cerrado`…). */
+    val estado: String? = null,
 )

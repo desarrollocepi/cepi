@@ -98,6 +98,7 @@ class ContratoTest {
         )
         assertEquals("Dr. Mora", asignaciones.porPaciente["p1"]?.nombre)
         assertEquals("derivado_grupo", asignaciones.porPaciente["p1"]?.origen)
+        assertEquals("derivada", asignaciones.porPaciente["p1"]?.estado)
     }
 
     @Test

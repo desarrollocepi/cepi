@@ -2,6 +2,7 @@ package ec.cepi.telemedicina
 
 import ec.cepi.telemedicina.ServidorFalso.Respuesta
 import ec.cepi.telemedicina.api.Credenciales
+import ec.cepi.telemedicina.pacientes.EstadoFicha
 import ec.cepi.telemedicina.pacientes.PacientesModelo
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -106,5 +107,30 @@ class PacientesCargaTest {
         modelo.cargar(api)   // sin red en un refresco: la lista se queda
         assertNull(modelo.error)
         assertEquals(listOf("Ana"), modelo.filas.map { it.nombre })
+    }
+
+    @Test
+    fun filtraPorEstadoYCuentaCadaUno() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("GET /api/entities", Respuesta.Http(200, lista("Ana", "Beto", "Caro")))
+        servidor.fijar(
+            "GET /api/patient-assignments",
+            Respuesta.Http(
+                200,
+                """{"ok":true,"assignments":{"p0-Ana":{"estado":"derivada"},"p1-Beto":{"estado":"derivada"},"p2-Caro":{"estado":"cerrado"}}}""",
+            ),
+        )
+        val modelo = PacientesModelo()
+        modelo.cargar(servidor.api())
+
+        assertEquals(EstadoFicha.Derivada, modelo.estado("p1-Beto"))
+        assertEquals(listOf("p0-Ana", "p1-Beto"), modelo.filtradas("", EstadoFicha.Derivada).map { it.id })
+        assertEquals(listOf("p1-Beto"), modelo.filtradas("beto", EstadoFicha.Derivada).map { it.id })
+        assertTrue(modelo.filtradas("ana", EstadoFicha.Cerrada).isEmpty())
+        assertEquals(3, modelo.filtradas("", null).size)
+        assertEquals(
+            mapOf(EstadoFicha.Derivada to 2, EstadoFicha.Cerrada to 1),
+            modelo.conteoPorEstado(),
+        )
     }
 }

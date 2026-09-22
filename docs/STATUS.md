@@ -4,6 +4,24 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-22 — Estado de la ficha en la lista (iOS y Android)
+
+- Cada fila de Pacientes lleva a la derecha un **LED** con el estado de la consulta más
+  reciente; la lista se **ordena por estado** y debajo del buscador hay un **filtro por estado**
+  con el conteo de cada uno (los vacíos, deshabilitados). Tabla de estados, orden y colores en
+  PAPER §24.2.1. Sin cambios de backend: el `estado` ya venía en `/api/patient-assignments`.
+- **Android:** `EstadoFicha.kt`, `LedEstado.kt`, `PacientesModelo`, `FilaPacienteVista`,
+  `ListaPacientes`. 81 tests JVM en verde (+3). Probado en emulador contra el stack local:
+  131 pacientes, "Revisión solicitada · 7" arriba, filtro "En curso · 54" solo deja los azules.
+- **iOS:** `EstadoFicha.swift`, `LedEstado.swift`, `PacientesModelo`, `PacienteFila`,
+  `PacientesView` (filtro con `safeAreaInset` bajo el buscador, que ahora queda fijo:
+  `.navigationBarDrawer(displayMode: .always)`), tests en `PacientesTests`,
+  `PacientesCargaTests` y `ContratoTests`. **Sin compilar:** esta máquina no tiene Xcode; falta
+  `xcodebuild test` en la Mac.
+- La web (`ChatList.vue`) todavía no muestra el estado.
+
+---
+
 ## Sesión 2026-09-22 — App nativa Android, fase 6
 
 - **Macrobenchmark** en `baselineprofile/Mediciones.kt` (arranque con y sin perfil, scroll,

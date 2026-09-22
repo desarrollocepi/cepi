@@ -43,15 +43,17 @@ import ec.cepi.telemedicina.api.PendienteRevision
 import ec.cepi.telemedicina.app.Marca
 
 /**
- * Una fila de la lista. Borrar un paciente es de supermédico (D-Aux-23) y va en el menú de
- * pulsación larga; quien no puede, no lo ve: es la excepción por permisos de la regla de no
- * ocultar botones.
+ * Una fila de la lista. El LED de la derecha es el estado de la ficha actual: va al costado y no
+ * en una línea más, para que la fila no crezca. Borrar un paciente es de supermédico (D-Aux-23)
+ * y va en el menú de pulsación larga; quien no puede, no lo ve: es la excepción por permisos de
+ * la regla de no ocultar botones.
  */
 @Composable
 fun FilaPacienteVista(
     fila: FilaPaciente,
     revision: PendienteRevision?,
     asignacion: Asignacion?,
+    estado: EstadoFicha,
     puedeBorrar: Boolean,
     alAbrir: () -> Unit,
     alBorrar: () -> Unit,
@@ -132,6 +134,11 @@ fun FilaPacienteVista(
                         },
                 )
             }
+
+            LedEstado(
+                estado,
+                Modifier.semantics { contentDescription = "Ficha: ${estado.etiqueta}" },
+            )
         }
 
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

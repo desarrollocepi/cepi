@@ -1777,7 +1777,7 @@ arranque y memoria. §24.5 lo convierte en números.
 | entra | queda en la web por ahora (también en Android, §25.2) |
 |---|---|
 | Login con email y con Google; sesión deslizante; cambio de org activa; eliminar la cuenta | registro y verificación de email |
-| Lista de pacientes: búsqueda, alta, "revisar" primero, a cargo | portal de casos (§22) |
+| Lista de pacientes: búsqueda, estado de la ficha (LED, orden y filtro), alta, "revisar", a cargo | portal de casos (§22) |
 | Hilo del paciente por consulta, composer, respuestas rápidas, pendiente sí/no | admin, perfil |
 | Fotos (cámara y galería) e imágenes inline con zoom | DoctoPro |
 | Ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar | |
@@ -1807,6 +1807,33 @@ Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
   busca por imagen parecida; los embeddings del servicio ISIC quedan para después.
 
 La misma estructura se lleva a la web (§22): mismas secciones, sin gesto de deslizar.
+
+**Estado de la ficha en la lista (2026-09-22, pedido del cliente).** Cada fila lleva a la
+derecha un LED con el estado de la consulta más reciente del paciente: al costado y no en una
+línea más, para que la fila no crezca. El dato es el `estado` que `GET /api/patient-assignments`
+ya devolvía por paciente; el backend no cambió. La lista se ordena por ese estado y, dentro de
+cada uno, con la regla de antes ("revisar" primero, lo que vence antes arriba, el resto en el
+orden del servidor). Debajo del buscador, una fila de filtros —uno por estado, con su LED y
+cuántos pacientes tiene— se combina con la búsqueda por texto; es también la leyenda de los
+colores. Un estado sin pacientes se muestra deshabilitado, no se esconde.
+
+| orden | `estado` | etiqueta | LED |
+|---|---|---|---|
+| 1 | `respondida` | Respondida | verde `#16A34A` |
+| 2 | `en_revisión_solicitada` | Revisión solicitada | rojo `#DC2626` |
+| 3 | `derivada` | Derivada | ámbar `#F59E0B` |
+| 4 | `en_triage` | En triaje | cian `#06B6D4` |
+| 5 | `enviada` | Enviada al turno | violeta `#8B5CF6` |
+| 6 | `en_curso` | En curso | azul `#2563EB` |
+| 7 | `agendado` | Agendada (espejo DrPro) | pizarra `#64748B` |
+| 8 | `cerrado` | Cerrada | gris `#9CA3AF` |
+| 9 | otro valor | Otro estado | gris oscuro `#6B7280` |
+| 10 | sin consulta en la org | Sin consulta | gris, hueco |
+
+El orden va de lo más avanzado en el circuito de telemedicina a lo menos avanzado: arriba lo
+que el médico tiene que leer o resolver, abajo lo cerrado. Un valor que la app no conoce no
+rompe la lista: cae en "Otro estado". Vive en `EstadoFicha.swift` y `EstadoFicha.kt`, con
+los mismos colores. La web (`ChatList.vue`) todavía no lo muestra.
 
 **Borrado de paciente (D-Aux-23).** Un `supermedico` puede borrar un paciente. Es un borrado
 **suave** (el registro queda inactivo, como el resto del ERP): la historia clínica no se
@@ -1884,7 +1911,7 @@ varios client IDs y el borrado de cuenta, abajo), ya existía:
 | org activa | `POST /api/orgs/switch {org_id}` → `{token}` | TodoERP |
 | borrar la cuenta propia | `DELETE /api/auth/me {confirm: true}` → `{ok: true}`; 400 sin la confirmación, 409 si es el último super-admin activo | TodoERP |
 | pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
-| "revisar" y a cargo | `GET /api/review-queue`, `GET /api/patient-assignments` | TodoERP |
+| "revisar", a cargo y estado de la ficha | `GET /api/review-queue`, `GET /api/patient-assignments` → `{assignments: {<patient_id>: {assignee_name, source, estado}}}` | TodoERP |
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
 | turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
 | sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |

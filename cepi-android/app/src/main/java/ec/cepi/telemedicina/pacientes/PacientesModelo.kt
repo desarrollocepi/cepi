@@ -84,7 +84,9 @@ class PacientesModelo {
                 Triple(pacientes.await(), cola.await(), asignados.await())
             }
             // Fuera del hilo principal: normalizar y ordenar 500 filas no debe costar un frame.
-            val nuevasFilas = withContext(Dispatchers.Default) { preparar(registros, nuevaCola ?: revision) }
+            val nuevasFilas = withContext(Dispatchers.Default) {
+                preparar(registros, nuevaCola ?: revision, nuevasAsignaciones ?: asignaciones)
+            }
             if (mio != pedido.get()) return   // llegó otra carga más nueva (otra org)
             nuevaCola?.let { revision = it }
             nuevasAsignaciones?.let { asignaciones = it }
@@ -126,24 +128,41 @@ class PacientesModelo {
         porId = porId + (fila.id to fila)
     }
 
-    fun filtradas(busqueda: String): List<FilaPaciente> {
+    fun estado(id: String): EstadoFicha = EstadoFicha.de(asignaciones[id]?.estado)
+
+    /** Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. */
+    fun filtradas(busqueda: String, estado: EstadoFicha? = null): List<FilaPaciente> {
         val consulta = FilaPaciente.normalizar(busqueda.trim())
-        if (consulta.isEmpty()) return filas
-        return filas.filter { consulta in it.claveBusqueda }
+        return filas.filter { fila ->
+            (consulta.isEmpty() || consulta in fila.claveBusqueda) && (estado == null || estado(fila.id) == estado)
+        }
     }
 
+    /** Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos. */
+    fun conteoPorEstado(): Map<EstadoFicha, Int> = filas.groupingBy { estado(it.id) }.eachCount()
+
     companion object {
-        fun preparar(registros: List<Registro>, revision: Map<String, PendienteRevision>): List<FilaPaciente> =
-            ordenar(registros.map(::FilaPaciente), revision)
+        fun preparar(
+            registros: List<Registro>,
+            revision: Map<String, PendienteRevision>,
+            asignaciones: Map<String, Asignacion> = emptyMap(),
+        ): List<FilaPaciente> = ordenar(registros.map(::FilaPaciente), revision, asignaciones)
 
         /**
-         * Primero lo derivado a quien consulta, lo que vence antes arriba; el resto conserva el
-         * orden del servidor (`sortedWith` es estable). Misma regla que `filtered` en ChatList.vue.
+         * Por estado de la ficha (el orden de [EstadoFicha]). Dentro de un mismo estado, primero
+         * lo derivado a quien consulta, lo que vence antes arriba (la regla de `filtered` en
+         * ChatList.vue); el resto conserva el orden del servidor (`sortedWith` es estable).
          */
-        fun ordenar(filas: List<FilaPaciente>, revision: Map<String, PendienteRevision>): List<FilaPaciente> {
+        fun ordenar(
+            filas: List<FilaPaciente>,
+            revision: Map<String, PendienteRevision>,
+            asignaciones: Map<String, Asignacion> = emptyMap(),
+        ): List<FilaPaciente> {
             val vence = revision.mapValues { Fechas.iso(it.value.vence) ?: Instant.MAX }
             return filas.sortedWith(
-                compareBy<FilaPaciente> { if (it.id in vence) 0 else 1 }.thenBy { vence[it.id] ?: Instant.MAX },
+                compareBy<FilaPaciente> { EstadoFicha.de(asignaciones[it.id]?.estado).ordinal }
+                    .thenBy { if (it.id in vence) 0 else 1 }
+                    .thenBy { vence[it.id] ?: Instant.MAX },
             )
         }
 
