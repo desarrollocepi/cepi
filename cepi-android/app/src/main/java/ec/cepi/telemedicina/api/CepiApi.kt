@@ -16,6 +16,10 @@ class CepiApi(val cliente: ApiClient) {
             put("password", password)
         })
 
+    /** Cambia el ID token de Google por la sesión de CEPI (cuenta nueva → rol pendiente). */
+    suspend fun loginGoogle(idToken: String): SesionRespuesta =
+        cliente.post("/api/auth/google", buildJsonObject { put("credential", idToken) })
+
     suspend fun yo(): SesionRespuesta = cliente.get("/api/auth/me")
 
     suspend fun cambiarOrganizacion(id: String): TokenRespuesta =

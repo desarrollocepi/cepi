@@ -12,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -30,8 +31,8 @@ import ec.cepi.telemedicina.api.Adjunto
 
 /**
  * Caja de texto y acciones del hilo. Lo que no aplica se ve gris y el pie dice por qué
- * (CLAUDE.md: nunca ocultes un botón). El dictado no aparece hasta que exista (fase 4): un
- * micrófono gris con "llega después" se lee como función a medias.
+ * (CLAUDE.md: nunca ocultes un botón). Mientras se dicta, la caja muestra lo que se va
+ * reconociendo y no se edita a mano; Enviar espera a que se toque el micrófono de nuevo.
  */
 @Composable
 fun Composer(
@@ -41,12 +42,16 @@ fun Composer(
     subiendo: Boolean,
     adjunto: Adjunto?,
     hayCamara: Boolean,
+    dictado: Dictado,
+    alDictar: () -> Unit,
     alElegirFoto: () -> Unit,
     alTomarFoto: () -> Unit,
     alQuitarAdjunto: () -> Unit,
     alEnviar: () -> Unit,
 ) {
-    val puedeEnviar = !ocupado && !subiendo && (texto.isNotBlank() || adjunto != null)
+    val dictando = dictado.escuchando
+    val puedeEnviar = !ocupado && !subiendo && !dictando && (texto.isNotBlank() || adjunto != null)
+    val visible = if (dictando && dictado.parcial.isNotEmpty()) Dictado.unir(texto, dictado.parcial) else texto
 
     Surface(tonalElevation = 3.dp) {
         Column(
@@ -70,9 +75,10 @@ fun Composer(
             }
 
             OutlinedTextField(
-                value = texto,
+                value = visible,
                 onValueChange = alCambiar,
-                placeholder = { Text("Escribe o pega un texto largo…") },
+                readOnly = dictando,
+                placeholder = { Text(if (dictando) "Escuchando…" else "Escribe o pega un texto largo…") },
                 maxLines = 8,
                 shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
@@ -84,8 +90,22 @@ fun Composer(
                 IconButton(onClick = alElegirFoto, enabled = !ocupado && !subiendo) {
                     Icon(painterResource(R.drawable.ic_galeria), contentDescription = "Adjuntar foto de la galería")
                 }
-                IconButton(onClick = alTomarFoto, enabled = hayCamara && !ocupado && !subiendo) {
+                IconButton(onClick = alTomarFoto, enabled = hayCamara && !ocupado && !subiendo && !dictando) {
                     Icon(painterResource(R.drawable.ic_camara), contentDescription = "Tomar foto")
+                }
+                IconButton(
+                    onClick = alDictar,
+                    enabled = dictado.disponible && !ocupado && !subiendo,
+                    colors = if (dictando) {
+                        IconButtonDefaults.filledIconButtonColors()
+                    } else {
+                        IconButtonDefaults.iconButtonColors()
+                    },
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_microfono),
+                        contentDescription = if (dictando) "Terminar el dictado" else "Dictar",
+                    )
                 }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = alEnviar, enabled = puedeEnviar) {
@@ -93,12 +113,14 @@ fun Composer(
                 }
             }
 
-            if (!hayCamara) {
-                Text(
-                    "Cámara: este dispositivo no tiene",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            val pie = listOfNotNull(
+                "Escuchando en español… toca el micrófono para terminar".takeIf { dictando },
+                dictado.aviso,
+                "Dictado: este teléfono no tiene reconocimiento de voz".takeIf { !dictado.disponible },
+                "Cámara: este dispositivo no tiene".takeIf { !hayCamara },
+            )
+            pie.forEach {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

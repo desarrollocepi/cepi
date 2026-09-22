@@ -2150,6 +2150,19 @@ baselineprofile/          recorrido UiAutomator que genera el Baseline Profile (
   botón de guardar en su barra: el teclado no lo tapa. El auto-form es de cada paciente y se
   guarda en las preferencias de la app, que tampoco viajan en backups (`data_extraction_rules`).
 
+- **Dictado** con `SpeechRecognizer`, creado y usado en el hilo principal (el plugin de la APK
+  lo hacía fuera y tumbaba la app). Prefiere el motor en el dispositivo (Android 12+), que
+  funciona en modo avión. Prueba variantes de español en orden: la del teléfono, es-EC, es-US y
+  es-ES; los motores locales suelen traer solo es-US y es-ES, y a es-EC responden "idioma no
+  soportado". Si la variante existe pero no está bajada, le pide la descarga al sistema
+  (`triggerModelDownload`, Android 13+) y mientras tanto dicta por red. En Android 13+ la
+  sesión es segmentada (un tramo por pausa, sin reiniciar ni pitar); antes se relanza sola al
+  terminar cada frase. El micrófono se suelta al salir o al pasar a segundo plano.
+- **Google** por Credential Manager (`GetSignInWithGoogleOption` con el client ID web): la
+  hoja de cuentas del sistema, sin WebView ni plugin. Debug y release se firman con la clave
+  de subida (`keystore.properties`, fuera de git): el cliente OAuth Android de Google Cloud
+  tiene registrada esa huella y sin ella no hay token.
+
 ### 25.4 Contrato con el backend
 
 El de §24.4, sin endpoints nuevos. Dos diferencias:

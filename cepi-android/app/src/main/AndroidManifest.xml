@@ -3,6 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Dictado en el chat (PAPER §25.1). Se pide al tocar el micrófono, no al abrir. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Sin esto, en Android 11+ isRecognitionAvailable() da false aunque el motor exista. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <!-- Sin backup ni traspaso a otro teléfono: la sesión abre historias clínicas y es de
          este dispositivo (PAPER §25.3). -->

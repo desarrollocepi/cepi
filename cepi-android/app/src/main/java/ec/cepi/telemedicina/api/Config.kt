@@ -35,6 +35,13 @@ data class Config(
     companion object {
         val PRODUCCION = "https://telemedicina.cepi.ec".toHttpUrl()
 
+        /**
+         * Client ID **web** de Google (proyecto `cepi-500221`): Credential Manager lo pide como
+         * `serverClientId` y el ID token sale con ese `aud`, que es el que ya valida el backend
+         * (PAPER §25.4). No es secreto: viaja en cada login de la web.
+         */
+        const val GOOGLE_CLIENT_ID_WEB = "610463685358-muptdg7s0l598k05jladmmqcfml3gpeu.apps.googleusercontent.com"
+
         fun desde(intent: Intent?): Config {
             if (!BuildConfig.ENTORNO_CONFIGURABLE || intent == null) return Config()
             fun texto(clave: String) = intent.getStringExtra(clave)?.takeIf { it.isNotBlank() }

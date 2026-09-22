@@ -1,5 +1,6 @@
 package ec.cepi.telemedicina.chat
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import ec.cepi.telemedicina.R
 import ec.cepi.telemedicina.api.AccionPendiente
@@ -87,6 +89,10 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
     var captura by rememberSaveable { mutableStateOf<String?>(null) }
     var refrescando by remember { mutableStateOf(false) }
     val hayCamara = remember { contexto.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
+    val dictado = rememberDictado { tramo -> borrador = Dictado.unir(borrador, tramo) }
+    val permisoMicrofono = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) dictado.empezar() else modelo.error = "Sin permiso de micrófono no se puede dictar."
+    }
 
     val episodios = remember(modelo.mensajes, modelo.episodioActivo) { modelo.episodios }
     val indice = episodios.indice(modelo.pagina)
@@ -141,6 +147,15 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
                 subiendo = modelo.subiendo,
                 adjunto = modelo.adjunto,
                 hayCamara = hayCamara,
+                dictado = dictado,
+                alDictar = {
+                    when {
+                        dictado.escuchando -> dictado.terminar()
+                        ContextCompat.checkSelfPermission(contexto, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED -> dictado.empezar()
+                        else -> permisoMicrofono.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
                 alElegirFoto = {
                     galeria.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },

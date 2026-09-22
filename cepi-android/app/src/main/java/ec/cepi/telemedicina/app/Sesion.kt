@@ -92,6 +92,12 @@ class Sesion(
         renovar()
     }
 
+    suspend fun entrarConGoogle(idToken: String) {
+        val respuesta = api.loginGoogle(idToken)
+        credenciales.guardar(respuesta.token)
+        renovar()
+    }
+
     /**
      * La org activa viaja en el JWT: cambiarla reemite el token, y lo que depende de la org (la
      * lista de pacientes) se recarga al ver el `orgActiva` nuevo.

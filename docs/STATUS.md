@@ -4,6 +4,21 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-22 — App nativa Android, fase 4
+
+- **Dictado** en el composer con el reconocedor del sistema. En el emulador (Android 16): el
+  motor local no tiene es-EC (error 12), sí es-US sin bajar (error 13); la app pidió la
+  descarga, el sistema bajó el español (45 MB) y **con modo avión** el reconocedor quedó
+  escuchando en es-US. La transcripción no se probó: el emulador headless no tiene entrada de
+  audio (sin soporte de PulseAudio en `qemu-system-x86_64-headless`).
+- **Google**: el botón abre Credential Manager; el emulador no tiene cuenta de Google, así que
+  el sistema ofrece agregar una y cancelar vuelve al login sin error. El ingreso de punta a
+  punta queda por probar en un teléfono con cuenta. Debug y release salen firmados con la
+  clave de subida (SHA-1 `67:09:E3…BA:98`, la registrada en el cliente OAuth Android).
+- Tests: **73 JVM**.
+
+---
+
 ## Sesión 2026-09-21 (noche) — App nativa Android, fase 3
 
 - **Ficha por formularios:** los 10 tipos de campo de `BotForm.vue` en una hoja inferior

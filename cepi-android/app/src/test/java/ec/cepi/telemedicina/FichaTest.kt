@@ -58,3 +58,21 @@ class FichaTest {
         assertEquals(4, FotoClinica.muestreo(12000, 9000, 4096))
     }
 }
+
+class DictadoTest {
+    @Test
+    fun losTramosSePeganAlBorradorConUnEspacio() {
+        assertEquals("Paciente con prurito", ec.cepi.telemedicina.chat.Dictado.unir("Paciente ", " con prurito "))
+        assertEquals("hola", ec.cepi.telemedicina.chat.Dictado.unir("", "hola"))
+        assertEquals("ya escrito", ec.cepi.telemedicina.chat.Dictado.unir("ya escrito", "  "))
+    }
+}
+
+class IdiomasDictadoTest {
+    @Test
+    fun primeroElEspanolDelTelefonoYDespuesLasVariantesDeLosMotores() {
+        assertEquals(listOf("es-MX", "es-EC", "es-US", "es-ES"), ec.cepi.telemedicina.chat.Dictado.variantes(java.util.Locale.forLanguageTag("es-MX")))
+        assertEquals(listOf("es-EC", "es-US", "es-ES"), ec.cepi.telemedicina.chat.Dictado.variantes(java.util.Locale.forLanguageTag("en-US")))
+        assertEquals(listOf("es-US", "es-EC", "es-ES"), ec.cepi.telemedicina.chat.Dictado.variantes(java.util.Locale.forLanguageTag("es-US")))
+    }
+}

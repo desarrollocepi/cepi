@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
 }
+
+// La clave de subida de Play (PAPER §25.7). Vive fuera de git: `keystore.properties` junto a
+// este proyecto o, mientras exista, la de la APK Capacitor. Firma también debug: Google solo
+// entrega el ID token a apps firmadas con la huella registrada en su cliente OAuth Android.
+val propiedadesFirma = listOf(
+    rootProject.file("keystore.properties"),
+    rootProject.file("../cepi-frontend/android/keystore.properties"),
+).firstOrNull { it.exists() }
 
 android {
     namespace = "ec.cepi.telemedicina"
@@ -21,14 +31,28 @@ android {
         versionName = "2.0.0"
     }
 
+    signingConfigs {
+        if (propiedadesFirma != null) {
+            create("cepi") {
+                val propiedades = Properties().apply { propiedadesFirma.inputStream().use(::load) }
+                storeFile = propiedadesFirma.parentFile.resolve(propiedades.getProperty("storeFile"))
+                storePassword = propiedades.getProperty("storePassword")
+                keyAlias = propiedades.getProperty("keyAlias")
+                keyPassword = propiedades.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            signingConfigs.findByName("cepi")?.let { signingConfig = it }
             // Extras CEPI_* del intent (Config.kt): backend local, ingreso automático.
             buildConfigField("boolean", "ENTORNO_CONFIGURABLE", "true")
         }
         release {
             // La que va a Play: nadie la apunta a otro servidor.
             buildConfigField("boolean", "ENTORNO_CONFIGURABLE", "false")
+            signingConfigs.findByName("cepi")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -81,6 +105,9 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.credentials)
+    implementation(libs.credentials.play)
+    implementation(libs.googleid)
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
     implementation(libs.profileinstaller)

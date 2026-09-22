@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentType
@@ -55,6 +56,7 @@ fun Login(entorno: Entorno) {
     val sesion = entorno.sesion
     val alcance = rememberCoroutineScope()
     val foco = LocalFocusManager.current
+    val contexto = LocalContext.current
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var enviando by remember { mutableStateOf(false) }
@@ -70,6 +72,25 @@ fun Login(entorno: Entorno) {
         alcance.launch {
             try {
                 sesion.entrar(email, password)
+            } catch (e: ApiError) {
+                error = e.mensaje
+            } finally {
+                enviando = false
+            }
+        }
+    }
+
+    fun entrarConGoogle() {
+        if (enviando) return
+        enviando = true
+        error = null
+        alcance.launch {
+            try {
+                sesion.entrarConGoogle(LoginGoogle.idToken(contexto))
+            } catch (_: GoogleCancelado) {
+                // Cerrar la hoja de Google no es un error.
+            } catch (e: FallaGoogle) {
+                error = e.mensaje
             } catch (e: ApiError) {
                 error = e.mensaje
             } finally {
@@ -168,23 +189,14 @@ fun Login(entorno: Entorno) {
                 }
             }
 
-            // Nunca ocultes un botón: el ingreso con Google existe, llega en la fase 4.
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(
-                    onClick = {},
-                    enabled = false,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                ) {
-                    Text("Continuar con Google")
-                }
-                Text(
-                    "El ingreso con Google todavía no está en esta versión. Entra con email y contraseña.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
+            OutlinedButton(
+                onClick = { entrarConGoogle() },
+                enabled = !enviando,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) {
+                Text("Continuar con Google")
             }
         }
     }
