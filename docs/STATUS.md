@@ -15,15 +15,22 @@ Estado del proyecto al cierre de la sesión actual.
 - Baseline Profile regenerado con el código de las fases 3–5 (1.768 reglas de la app).
 - **Release firmado:** AAB con la clave de subida, `versionCode 3`, perfil incluido; el APK
   release ignora los extras de desarrollo (probado en emulador).
-- **No hecho:** subir a la pista interna de Play. No hay credencial de la API de Play en esta
-  máquina; es un paso manual (PAPER §25.7). Tampoco hay teléfono conectado para la medición
-  real: los números son de emulador.
+- **Pista interna de Play:** versión **4 (2.0.0)** activa, reemplaza a la 2 de Capacitor. Se
+  subió desde Play Console con el perfil de navegador del proyecto (`.pw-profile`). La 3 quedó
+  inactiva: exigía micrófono y Play perdía 20 dispositivos; la 4 lo declara opcional.
+  Testers: los 3 de TestFlight (developer@cepi.ec, gabrielaramong@gmail.com,
+  seyacat@gmail.com) más sandrade@dotrino.com.
+- Falta registrar la huella de Play App Signing (`99:C5:32…9D:2C`) en el cliente OAuth
+  Android para que funcione Google en la build de Play. Tampoco hay teléfono conectado para la
+  medición real: los números son de emulador.
 
 Pendientes de las fases 4–6 que necesitan algo que no está en la máquina:
 - teléfono Android real: medición de §25.5, transcripción del dictado, ingreso con Google con
   una cuenta;
 - credencial de FCM en un backend (local o prod): ver llegar un push;
-- Play Console: subir el AAB y agregar la huella de Play App Signing al cliente OAuth Android.
+- Google Cloud (`cepi-500221`): agregar la huella de Play App Signing al cliente OAuth Android.
+- Play avisa como crítico: registrar las apps para la verificación de desarrolladores de
+  Android antes del 30 de septiembre de 2026.
 
 ---
 

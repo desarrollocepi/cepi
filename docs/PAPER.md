@@ -2265,15 +2265,18 @@ notificaciones se pide en tiempo de ejecución. `google-services.json` es el mis
 - `cepi-frontend/android/` y el OTA (`/api/ota/latest`) se retiran cuando la nativa esté en
   producción con las fases 1–5 completas. Hasta entonces la APK Capacitor es la que se
   publica.
-- **Estado (2026-09-22):** `./gradlew :app:bundleRelease` da el AAB firmado con la clave de
-  subida (SHA-1 `67:09:E3:F9:41:AC:C3:15:84:36:3A:B2:91:CB:EE:C3:28:18:BA:98`),
-  `versionCode 3`, `versionName 2.0.0`, con el Baseline Profile adentro. Subirlo a la pista
-  interna es a mano: Play Console (desarrollo@cepi.ec → Cempiel → CEPI Telemedicina) →
-  Prueba interna → Crear versión → subir `cepi-android/app/build/outputs/bundle/release/app-release.aab`.
-  No hay credencial de la API de Play en la máquina de desarrollo para hacerlo desde acá.
-- **Antes de probar el ingreso con Google en la build de Play:** agregar al cliente OAuth
-  Android de Google Cloud la huella de **Play App Signing** (Play Console → Configuración de
-  la app → Integridad de la app). La de la clave de subida ya está; la de Play es otra.
+- **Estado (2026-09-22):** la versión **4 (2.0.0)** nativa está activa en la pista interna y
+  reemplazó a la 2 (1.0.1) de Capacitor. La app es solo para gente de la empresa: pista
+  interna con la lista "Testers internos CEPI" (los mismos correos que TestFlight, más
+  sandrade@dotrino.com), sin ficha pública. Se sube el AAB de `./gradlew :app:bundleRelease`
+  desde Play Console (desarrollo@cepi.ec → Cempiel), con el perfil de navegador del proyecto.
+- La 3 se subió y no se publicó: `RECORD_AUDIO` hacía obligatorio el micrófono y Play dejaba
+  afuera 20 dispositivos. El manifiesto lo declara opcional (el dictado lo es) y la 4 los
+  conserva todos.
+- **Pendiente para el ingreso con Google en la build de Play:** registrar la huella de Play App
+  Signing, `99:C5:32:07:DC:F6:74:14:7E:C7:9B:7E:4C:75:EF:4D:8D:B3:9D:2C` (leída del APK que
+  entrega Play), en un cliente OAuth Android del proyecto `cepi-500221`. La de la clave de
+  subida (`67:09:E3…BA:98`) ya está.
 
 ### 25.8 Fases
 
@@ -2285,7 +2288,7 @@ notificaciones se pide en tiempo de ejecución. `google-services.json` es el mis
 | 3 | ficha: formularios nativos, secciones, auto-form, nueva consulta, derivar, visor | se llena una ficha completa desde Android |
 | 4 | dictado en el dispositivo + Google Sign-In | se dicta en español en modo avión (Android 12+ con el idioma descargado) |
 | 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al teléfono y tocarla abre el paciente |
-| 6 | Macrobenchmark contra §25.5, release firmado, pista interna de Play | la app nativa reemplaza a la APK Capacitor en la pista interna |
+| 6 | Macrobenchmark contra §25.5, release firmado, pista interna de Play | la app nativa reemplaza a la APK Capacitor en la pista interna (hecho el 2026-09-22, versión 4) |
 
 
 ---
