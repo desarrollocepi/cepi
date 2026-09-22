@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+// Firebase (push, PAPER §25.6) con el mismo google-services.json de la APK, fuera de git. Sin
+// el archivo la app compila igual y el push queda apagado, con el motivo a la vista.
+if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
+
 // La clave de subida de Play (PAPER §25.7). Vive fuera de git: `keystore.properties` junto a
 // este proyecto o, mientras exista, la de la APK Capacitor. Firma también debug: Google solo
 // entrega el ID token a apps firmadas con la huella registrada en su cliente OAuth Android.
@@ -108,6 +112,9 @@ dependencies {
     implementation(libs.credentials)
     implementation(libs.credentials.play)
     implementation(libs.googleid)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.coroutines.play.services)
     implementation(libs.coil.compose)
     implementation(libs.coil.okhttp)
     implementation(libs.profileinstaller)

@@ -30,6 +30,10 @@ fun Raiz(entorno: Entorno) {
     val alcance = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { sesion.restaurar(olvidarToken = entorno.config.devEmail != null) }
+    // Al entrar (o al volver con la sesión guardada) este teléfono queda registrado para push.
+    LaunchedEffect(sesion.estado) {
+        if (sesion.estado == Sesion.Estado.Activa) entorno.registroPush.registrar()
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         alcance.launch { sesion.renovarSiHaceFalta() }
     }

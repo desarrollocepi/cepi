@@ -124,7 +124,9 @@ SIMCTL_CHILD_CEPI_API_BASE=http://127.0.0.1:3001 SIMCTL_CHILD_CEPI_BOT_BASE=http
 SIMCTL_CHILD_CEPI_DEV_EMAIL=primario@cepi.local SIMCTL_CHILD_CEPI_DEV_PASSWORD='Admin123!' \
 SIMCTL_CHILD_CEPI_DEV_PACIENTE=<uuid> xcrun simctl launch booted ec.cepi.telemedicina
 
-# App Android: tests JVM + APK debug (JDK 21; ANDROID_HOME=~/Android/Sdk)
+# App Android: tests JVM + APK debug (JDK 21; ANDROID_HOME=~/Android/Sdk). El push necesita
+# el google-services.json de la APK (fuera de git); la firma, keystore.properties (PAPER §25.7)
+cp cepi-frontend/android/app/google-services.json cepi-android/app/
 cd cepi-android && JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew testDebugUnitTest assembleDebug
 
 # App Android contra el stack local desde el emulador (10.0.2.2 = esta máquina; en un

@@ -2213,6 +2213,21 @@ usa en consulta); al cerrar sesión se borra el token. En Android 13+ el permiso
 notificaciones se pide en tiempo de ejecución. `google-services.json` es el mismo de la APK
 (mismo paquete) y sigue fuera de git.
 
+- Dos canales: **Derivaciones** (con sonido, lo pinta el sistema con la app cerrada: es el canal
+  por defecto de FCM) y **Derivaciones con la app abierta** (vibración, sin sonido).
+- El token se registra cada vez que la sesión queda activa y se borra **antes** de soltar la
+  sesión; si fuera después, el DELETE saldría sin Bearer. Al borrar la cuenta no se llama: el
+  backend ya borró sus tokens.
+- Tocar la notificación: el sistema pone el `data` del push en los extras (`entity_id`);
+  `MainActivity` es `singleTop` y lo lee en `onCreate` o `onNewIntent`, y `Principal` abre el
+  paciente con `GET /api/review-queue/patient/:entityId`. Con la app cerrada espera a que se
+  restaure la sesión.
+- Bandeja: la campana de la barra con el número de avisos sin ver; la lista de
+  `GET /api/reminders` del usuario, "Visto" (`POST …/complete`) y tocar un aviso abre su paciente.
+  Se refresca al volver a primer plano, cada minuto y al llegar un push.
+- Sin `google-services.json` al compilar, la app no aplica el plugin de Google Services y el
+  menú de la cuenta dice "esta compilación no tiene Firebase".
+
 ### 25.7 Distribución en Play
 
 - Paquete **`ec.cepi.telemedicina`**, la misma ficha de Play Console que la APK (cuenta

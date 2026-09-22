@@ -4,6 +4,25 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-22 — App nativa Android, fase 5
+
+- **Push y bandeja.** Probado en emulador contra el stack local:
+  - al entrar pidió el permiso de notificaciones; el token de FCM salió del proyecto real
+    (`telemedicina-cepi`) y quedó en `device_tokens` como `android` de derma1;
+  - la campana mostró 3 avisos; tocar el de la derivación hecha desde Android en la fase 3
+    abrió a Andrés Herrera;
+  - el intent que arma el sistema al tocar una notificación abrió al paciente con la app en
+    segundo plano y en arranque en frío (esperando la sesión);
+  - cerrar sesión borró el token (1 → 0).
+- **Sin probar:** la entrega real de un push. El backend local no tiene la service account de
+  FCM (`FCM no configurado`), así que ni el aviso del sistema ni el de la app abierta se vieron.
+  Queda para producción o para un backend local con la credencial.
+- Bug de la app encontrado en la prueba y arreglado: el efecto que abría el paciente se
+  cancelaba solo al limpiar el destino.
+- Tests: **78 JVM**.
+
+---
+
 ## Sesión 2026-09-22 — App nativa Android, fase 4
 
 - **Dictado** en el composer con el reconocedor del sistema. En el emulador (Android 16): el

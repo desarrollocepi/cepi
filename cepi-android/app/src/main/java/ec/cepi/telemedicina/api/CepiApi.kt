@@ -163,6 +163,29 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun subirImagen(jpeg: ByteArray, nombre: String): Adjunto =
         cliente.subir("/api/attachments", jpeg, nombre, "image/jpeg")
 
+    // Avisos y push
+
+    /** La bandeja es personal: aunque el rol lea todos, se pide solo lo del usuario (como la web). */
+    suspend fun recordatorios(usuario: String): List<Recordatorio> =
+        cliente.get<Lista<Recordatorio>>("/api/reminders", "owner_user_id" to usuario).data
+
+    suspend fun completarRecordatorio(id: String) {
+        cliente.post<Confirmacion>("/api/reminders/$id/complete", buildJsonObject {})
+    }
+
+    suspend fun pacienteDeAviso(entidad: String): PacienteDeAviso = cliente.get("/api/review-queue/patient/$entidad")
+
+    suspend fun registrarDispositivo(token: String) {
+        cliente.post<Confirmacion>("/api/push/device-token", buildJsonObject {
+            put("platform", "android")
+            put("token", token)
+        })
+    }
+
+    suspend fun olvidarDispositivo(token: String) {
+        cliente.delete<Confirmacion>("/api/push/device-token", buildJsonObject { put("token", token) })
+    }
+
     /** Dónde está el archivo de un adjunto; lo pide el cargador de imágenes con el token. */
     fun urlAdjunto(id: String): String = cliente.url("/api/attachments/$id/file").toString()
 

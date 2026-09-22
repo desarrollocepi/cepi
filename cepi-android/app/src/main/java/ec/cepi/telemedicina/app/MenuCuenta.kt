@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -35,7 +36,14 @@ import kotlinx.coroutines.launch
  * quien contiene la barra.
  */
 @Composable
-fun MenuCuenta(sesion: Sesion, alEliminarCuenta: () -> Unit, alFallarCambio: (String) -> Unit) {
+fun MenuCuenta(
+    sesion: Sesion,
+    /** El estado del push para mostrarlo; `null` = apagado por permiso, con el botón a los ajustes. */
+    notificaciones: String?,
+    alAbrirAjustesDeNotificaciones: () -> Unit,
+    alEliminarCuenta: () -> Unit,
+    alFallarCambio: (String) -> Unit,
+) {
     val alcance = rememberCoroutineScope()
     var abierto by remember { mutableStateOf(false) }
     val usuario = sesion.usuario
@@ -94,6 +102,21 @@ fun MenuCuenta(sesion: Sesion, alEliminarCuenta: () -> Unit, alFallarCambio: (St
                 }
                 HorizontalDivider()
             }
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(notificaciones ?: "Notificaciones desactivadas")
+                        if (notificaciones == null) Text("Tocar para activarlas en Ajustes", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                leadingIcon = { Icon(Icons.Filled.Notifications, contentDescription = null) },
+                enabled = notificaciones == null,
+                onClick = {
+                    abierto = false
+                    alAbrirAjustesDeNotificaciones()
+                },
+            )
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Cerrar sesión") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null) },

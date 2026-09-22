@@ -20,6 +20,8 @@ class Sesion(
     private val credenciales: Credenciales,
     val api: CepiApi,
     private val reloj: () -> Long = System::currentTimeMillis,
+    /** Lo que se hace con la sesión todavía abierta antes de cerrarla: borrar el token de push. */
+    private val antesDeSalir: suspend () -> Unit = {},
 ) {
     sealed interface Estado {
         data object Cargando : Estado
@@ -114,6 +116,7 @@ class Sesion(
     }
 
     suspend fun salir() {
+        antesDeSalir()
         credenciales.guardar(null)
         cerrarLocal()
     }
@@ -124,7 +127,9 @@ class Sesion(
      */
     suspend fun eliminarCuenta() {
         api.eliminarCuenta()
-        salir()
+        // El backend ya borró los tokens de push de la cuenta: no hay nada que avisar.
+        credenciales.guardar(null)
+        cerrarLocal()
     }
 
     private fun aplicar(usuario: Usuario) {

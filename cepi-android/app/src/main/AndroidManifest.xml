@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Dictado en el chat (PAPER §25.1). Se pide al tocar el micrófono, no al abrir. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Android 13+: se pide al entrar por primera vez (PAPER §25.6). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Sin esto, en Android 11+ isRecognitionAvailable() da false aunque el motor exista. -->
     <queries>
@@ -31,6 +33,7 @@
         <activity
             android:name=".app.MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|fontScale|layoutDirection|locale"
             android:windowSoftInputMode="adjustResize">
             <!-- Compose recompone ante estos cambios sin recrear la actividad: girar el
@@ -40,6 +43,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".notificaciones.ServicioPush"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- Lo que pinta el sistema con la app cerrada (Push.kt, Canales). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="derivaciones" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notificacion" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/acento" />
 
         <!-- La cámara del sistema escribe la foto en nuestra caché por esta URI; sin permiso
              CAMERA propio (PAPER §25.1). -->
