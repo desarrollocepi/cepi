@@ -2273,10 +2273,11 @@ notificaciones se pide en tiempo de ejecución. `google-services.json` es el mis
 - La 3 se subió y no se publicó: `RECORD_AUDIO` hacía obligatorio el micrófono y Play dejaba
   afuera 20 dispositivos. El manifiesto lo declara opcional (el dictado lo es) y la 4 los
   conserva todos.
-- **Pendiente para el ingreso con Google en la build de Play:** registrar la huella de Play App
-  Signing, `99:C5:32:07:DC:F6:74:14:7E:C7:9B:7E:4C:75:EF:4D:8D:B3:9D:2C` (leída del APK que
-  entrega Play), en un cliente OAuth Android del proyecto `cepi-500221`. La de la clave de
-  subida (`67:09:E3…BA:98`) ya está.
+- **Google en la build de Play:** la huella de Play App Signing,
+  `99:C5:32:07:DC:F6:74:14:7E:C7:9B:7E:4C:75:EF:4D:8D:B3:9D:2C` (leída del APK que entrega
+  Play), está registrada desde el 2026-09-22 como cliente OAuth Android "CEPI Telemedicina
+  Android (Play App Signing)" en `cepi-500221`; la de la clave de subida, en "CEPI
+  Telemedicina Android". Un cliente por huella, mismo paquete.
 
 ### 25.8 Fases
 
