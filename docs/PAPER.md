@@ -2188,6 +2188,27 @@ debug es varias veces más lento que en release: una medición en debug no vale.
 | enviar mensaje → eco en pantalla | eco optimista | inmediato |
 | hilo con 50 imágenes | `dumpsys meminfo` | < 150 MB |
 
+**Primera medición (2026-09-22), en emulador** (Android 16 x86_64, render por software con
+SwiftShader), contra el stack local por `adb reverse`:
+
+| métrica | sin perfil | con Baseline Profile | objetivo |
+|---|---|---|---|
+| arranque en frío con sesión → lista con datos (`timeToFullDisplay`) | 617 ms | **549 ms** | < 1 s ✓ |
+| primer frame (`timeToInitialDisplay`) | 232 ms | 218 ms | — |
+| scroll de la lista (131 pacientes), `frameOverrunMs` P95 | — | 11,3 ms | ≤ 0 ✗ |
+| memoria con un paciente abierto y la galería (RssAnon máx.) | — | 101 MB | < 150 MB con 50 imágenes |
+
+El scroll no vale en emulador: SwiftShader pinta en la CPU (18,8 ms de CPU por frame en la
+mediana). La memoria se midió sin el hilo de 50 imágenes, que los datos locales no tienen (los
+adjuntos de los seeds no traen archivo). Las tres filas se repiten en el teléfono.
+
+Dos lecciones de la medición:
+- La red del emulador hacia `10.0.2.2` agrega ~500 ms fijos por pedido (medido con `nc` desde
+  el shell del emulador); por `adb reverse` son 7 ms. Con `10.0.2.2` el arranque daba 1,6 s y
+  todo era red. Las mediciones van por `adb reverse` y `127.0.0.1`, igual que en un teléfono.
+- `reportFullyDrawn` se llama con la lista **cargada**, no solo pintada: el número de arriba ya
+  incluye `/me` y los tres pedidos de la lista.
+
 Decisiones que salen de acá, además de las de iOS (carga en paralelo, texto de búsqueda
 normalizado una vez por carga, imágenes autenticadas con caché):
 
@@ -2244,6 +2265,15 @@ notificaciones se pide en tiempo de ejecución. `google-services.json` es el mis
 - `cepi-frontend/android/` y el OTA (`/api/ota/latest`) se retiran cuando la nativa esté en
   producción con las fases 1–5 completas. Hasta entonces la APK Capacitor es la que se
   publica.
+- **Estado (2026-09-22):** `./gradlew :app:bundleRelease` da el AAB firmado con la clave de
+  subida (SHA-1 `67:09:E3:F9:41:AC:C3:15:84:36:3A:B2:91:CB:EE:C3:28:18:BA:98`),
+  `versionCode 3`, `versionName 2.0.0`, con el Baseline Profile adentro. Subirlo a la pista
+  interna es a mano: Play Console (desarrollo@cepi.ec → Cempiel → CEPI Telemedicina) →
+  Prueba interna → Crear versión → subir `cepi-android/app/build/outputs/bundle/release/app-release.aab`.
+  No hay credencial de la API de Play en la máquina de desarrollo para hacerlo desde acá.
+- **Antes de probar el ingreso con Google en la build de Play:** agregar al cliente OAuth
+  Android de Google Cloud la huella de **Play App Signing** (Play Console → Configuración de
+  la app → Integridad de la app). La de la clave de subida ya está; la de Play es otra.
 
 ### 25.8 Fases
 

@@ -4,6 +4,29 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-22 — App nativa Android, fase 6
+
+- **Macrobenchmark** en `baselineprofile/Mediciones.kt` (arranque con y sin perfil, scroll,
+  memoria). En emulador por `adb reverse`: arranque en frío con sesión → lista con datos en
+  **549 ms** con el perfil (617 sin); scroll con frames tarde (P95 11,3 ms, render por software);
+  101 MB con paciente y galería. Tabla completa en PAPER §25.5.
+- La primera corrida daba 1,6 s de arranque: la red del emulador hacia 10.0.2.2 suma ~500 ms
+  por pedido. Medido con `nc` desde el emulador (488–1000 ms) contra 7 ms por `adb reverse`.
+- Baseline Profile regenerado con el código de las fases 3–5 (1.768 reglas de la app).
+- **Release firmado:** AAB con la clave de subida, `versionCode 3`, perfil incluido; el APK
+  release ignora los extras de desarrollo (probado en emulador).
+- **No hecho:** subir a la pista interna de Play. No hay credencial de la API de Play en esta
+  máquina; es un paso manual (PAPER §25.7). Tampoco hay teléfono conectado para la medición
+  real: los números son de emulador.
+
+Pendientes de las fases 4–6 que necesitan algo que no está en la máquina:
+- teléfono Android real: medición de §25.5, transcripción del dictado, ingreso con Google con
+  una cuenta;
+- credencial de FCM en un backend (local o prod): ver llegar un push;
+- Play Console: subir el AAB y agregar la huella de Play App Signing al cliente OAuth Android.
+
+---
+
 ## Sesión 2026-09-22 — App nativa Android, fase 5
 
 - **Push y bandeja.** Probado en emulador contra el stack local:

@@ -31,6 +31,8 @@ class GeneradorPerfil {
         val argumentos = InstrumentationRegistry.getArguments()
         fun argumento(clave: String, porDefecto: String) = argumentos.getString(clave) ?: porDefecto
 
+        // El pedido de permiso de notificaciones (Android 13+) taparía la lista.
+        device.executeShellCommand("pm grant $PAQUETE android.permission.POST_NOTIFICATIONS")
         pressHome()
         startActivityAndWait(
             Intent(Intent.ACTION_MAIN).apply {
