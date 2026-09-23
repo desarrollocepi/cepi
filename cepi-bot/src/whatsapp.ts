@@ -12,6 +12,8 @@
  *   WHATSAPP_VERIFY_TOKEN   token Meta echoes back on GET verification
  *   WHATSAPP_TOKEN          Cloud API bearer token (to send replies)
  *   WHATSAPP_PHONE_ID       Cloud API phone-number id (to send replies)
+ *   WHATSAPP_APP_SECRET     app secret of the Meta app; signs every POST
+ *                           (X-Hub-Signature-256). Unset ⇒ every POST is refused.
  *   CEPI_GUEST_API_KEY      identity invokeChat uses for WhatsApp users
  *
  * Auth model: WhatsApp users have no TodoERP JWT of their own, so the adapter
@@ -21,6 +23,7 @@
  * uses CEPI_GUEST_API_KEY (the chat handler already accepts it). Each phone
  * number is mapped to one persisted bot_session, kept in memory here.
  */
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
 
@@ -159,12 +162,36 @@ async function handleInbound(invokeChat: InvokeChat, msg: any): Promise<void> {
 }
 
 /**
+ * Check Meta's `X-Hub-Signature-256: sha256=<hex>` header against the HMAC of
+ * the raw request body. Without it anyone who knows the URL could post a fake
+ * "message" from any phone and have the bot write as the service account.
+ * Fails closed: no secret, no header or a malformed one ⇒ false.
+ */
+export function verifyMetaSignature(
+  rawBody: Buffer | undefined,
+  header: string | undefined,
+  secret: string | undefined,
+): boolean {
+  if (!secret || !rawBody || !header?.startsWith('sha256=')) return false;
+  const got = Buffer.from(header.slice('sha256='.length), 'hex');
+  const want = createHmac('sha256', secret).update(rawBody).digest();
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+/**
  * Start the WhatsApp webhook listener. Returns the http.Server so the caller
  * can close it on shutdown.
  */
 export function startWhatsapp(invokeChat: InvokeChat) {
   const app = express();
-  app.use(express.json({ limit: '5mb' }));
+  // Keep the raw bytes: the signature is over the body exactly as Meta sent it.
+  app.use(express.json({
+    limit: '5mb',
+    verify: (req, _res, buf) => { (req as any).rawBody = buf; },
+  }));
+  if (!process.env.WHATSAPP_APP_SECRET) {
+    console.warn('[whatsapp] WHATSAPP_APP_SECRET unset: every webhook POST will be refused');
+  }
 
   app.get('/health', (_req: Request, res: Response) =>
     res.json({ ok: true, service: 'cepi-bot-whatsapp' }));
@@ -182,6 +209,10 @@ export function startWhatsapp(invokeChat: InvokeChat) {
 
   // Inbound messages + status callbacks.
   app.post('/whatsapp', async (req: Request, res: Response) => {
+    if (!verifyMetaSignature((req as any).rawBody, req.get('x-hub-signature-256'),
+                             process.env.WHATSAPP_APP_SECRET)) {
+      return res.sendStatus(401);
+    }
     // Ack immediately so Meta doesn't retry; process asynchronously.
     res.sendStatus(200);
     try {
