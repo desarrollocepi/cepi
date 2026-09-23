@@ -16,8 +16,19 @@ Estado del proyecto al cierre de la sesión actual.
 - **iOS:** `EstadoFicha.swift`, `LedEstado.swift`, `PacientesModelo`, `PacienteFila`,
   `PacientesView` (filtro con `safeAreaInset` bajo el buscador, que ahora queda fijo:
   `.navigationBarDrawer(displayMode: .always)`), tests en `PacientesTests`,
-  `PacientesCargaTests` y `ContratoTests`. **Sin compilar:** esta máquina no tiene Xcode; falta
-  `xcodebuild test` en la Mac.
+  `PacientesCargaTests` y `ContratoTests`. **Probado en la Mac** (2026-09-23, por ssh):
+  `xcodebuild test` en el simulador iPhone 17 Pro / iOS 26.5, **60 tests de unidad en verde**.
+- La Mac de compilación ahora se alcanza desde esta máquina por **`ssh mac`**
+  (`cepi@192.168.100.217`, llave instalada, repo en `~/cepi`, Xcode 26.5). Se sincroniza por
+  git: la rama `feat/android-nativa` está en GitHub y bajada allá.
+- **TestFlight: no se subió.** El archive firma con el certificado de **desarrollo**; exportar
+  para App Store falla con `Unable to log in with account 'developer@cepi.ec'` → *Your session
+  has expired* y `No signing certificate "iOS Distribution" found`. No hay certificado de
+  distribución ni llave de App Store Connect API en esa Mac. Hace falta: (1) volver a entrar
+  con `developer@cepi.ec` en Xcode → Settings → Accounts (pide el código de 2FA, es en la
+  pantalla de la Mac), y (2) para subir sin Xcode, una contraseña específica de app o una
+  llave de la API de App Store Connect. Después: subir `CURRENT_PROJECT_VERSION` a 8, archive,
+  export y `xcrun altool --upload-app`.
 - La web (`ChatList.vue`) todavía no muestra el estado.
 
 ---
