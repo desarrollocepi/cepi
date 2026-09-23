@@ -16,8 +16,11 @@ import type { AddressInfo } from 'node:net';
 process.env.WHATSAPP_TOKEN = 'test-token';
 process.env.WHATSAPP_PHONE_ID = '111';
 process.env.WHATSAPP_APP_SECRET = 'app-secret';
-process.env.WHATSAPP_BOT_EMAIL = 'svc@test.local';
-process.env.WHATSAPP_BOT_PASSWORD = 'secret';
+// Only the Telegram service account is set, as in prod: WhatsApp must reuse it.
+delete process.env.WHATSAPP_BOT_EMAIL;
+delete process.env.WHATSAPP_BOT_PASSWORD;
+process.env.TELEGRAM_BOT_EMAIL = 'svc@test.local';
+process.env.TELEGRAM_BOT_PASSWORD = 'secret';
 process.env.WHATSAPP_WEBHOOK_PORT = '0';            // random free port
 
 import { startWhatsapp, phoneCandidates } from '../src/whatsapp.js';

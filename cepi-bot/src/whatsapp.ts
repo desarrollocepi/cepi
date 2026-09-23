@@ -16,6 +16,7 @@
  *                           (X-Hub-Signature-256). Unset ⇒ every POST is refused.
  *   WHATSAPP_BOT_EMAIL / WHATSAPP_BOT_PASSWORD   admin service account, used
  *                           ONLY to resolve a phone to its TodoERP user
+ *                           (falls back to TELEGRAM_BOT_*, same account)
  *
  * Auth model (same as the Telegram adapter): every inbound phone is resolved
  * through /api/auth/external/resolve to the user whose users.data.whatsapp_phone
@@ -37,8 +38,8 @@ let svcJwt: { token: string; exp: number } | null = null;
  * is NOT the identity messages act with. Returns '' when not configured.
  */
 async function getServiceJwt(): Promise<string> {
-  const email = process.env.WHATSAPP_BOT_EMAIL;
-  const password = process.env.WHATSAPP_BOT_PASSWORD;
+  const email = process.env.WHATSAPP_BOT_EMAIL || process.env.TELEGRAM_BOT_EMAIL;
+  const password = process.env.WHATSAPP_BOT_PASSWORD || process.env.TELEGRAM_BOT_PASSWORD;
   if (!email || !password) return '';
 
   const now = Math.floor(Date.now() / 1000);
