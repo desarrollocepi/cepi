@@ -59,7 +59,9 @@ final class PacientesModelo {
             let registros = try await pacientes
             let nuevaCola = await cola
             let nuevasAsignaciones = await asignados
-            let nuevasFilas = await Self.preparar(registros, revision: nuevaCola ?? revision)
+            let nuevasFilas = await Self.preparar(
+                registros, revision: nuevaCola ?? revision, asignaciones: nuevasAsignaciones ?? asignaciones
+            )
             guard mio == pedido else { return }   // llegó otra carga más nueva (otra org)
             if let nuevaCola { revision = nuevaCola }
             if let nuevasAsignaciones { asignaciones = nuevasAsignaciones }
@@ -104,27 +106,43 @@ final class PacientesModelo {
         porId[fila.id] = fila
     }
 
-    func filtradas(por busqueda: String) -> [FilaPaciente] {
+    func estado(_ id: String) -> EstadoFicha { EstadoFicha(asignaciones[id]?.estado) }
+
+    /// Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha.
+    func filtradas(por busqueda: String, estado: EstadoFicha? = nil) -> [FilaPaciente] {
         let consulta = FilaPaciente.normalizar(busqueda.trimmingCharacters(in: .whitespaces))
-        guard !consulta.isEmpty else { return filas }
-        return filas.filter { $0.claveBusqueda.contains(consulta) }
+        guard !consulta.isEmpty || estado != nil else { return filas }
+        return filas.filter { fila in
+            (consulta.isEmpty || fila.claveBusqueda.contains(consulta))
+                && (estado == nil || self.estado(fila.id) == estado)
+        }
+    }
+
+    /// Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos.
+    func conteoPorEstado() -> [EstadoFicha: Int] {
+        filas.reduce(into: [:]) { conteo, fila in conteo[estado(fila.id), default: 0] += 1 }
     }
 
     /// Fuera del hilo principal: normalizar y ordenar 500 filas no debe costar un frame.
     nonisolated static func preparar(
-        _ registros: [Registro], revision: [String: PendienteRevision]
+        _ registros: [Registro], revision: [String: PendienteRevision], asignaciones: [String: Asignacion] = [:]
     ) async -> [FilaPaciente] {
-        ordenar(registros.map(FilaPaciente.init), revision: revision)
+        ordenar(registros.map(FilaPaciente.init), revision: revision, asignaciones: asignaciones)
     }
 
-    /// Primero lo derivado a quien consulta, lo que vence antes arriba; el resto conserva el
-    /// orden del servidor. Misma regla que `filtered` en ChatList.vue.
+    /// Por estado de la ficha (el orden de `EstadoFicha`). Dentro de un mismo estado, primero
+    /// lo derivado a quien consulta, lo que vence antes arriba (la regla de `filtered` en
+    /// ChatList.vue); el resto conserva el orden del servidor.
     nonisolated static func ordenar(
-        _ filas: [FilaPaciente], revision: [String: PendienteRevision]
+        _ filas: [FilaPaciente], revision: [String: PendienteRevision], asignaciones: [String: Asignacion] = [:]
     ) -> [FilaPaciente] {
         let vence = revision.mapValues { Fechas.iso($0.vence) ?? .distantFuture }
-        return filas.enumerated().sorted { a, b in
-            switch (vence[a.element.id], vence[b.element.id]) {
+        let conEstado = filas.enumerated().map { indice, fila in
+            (fila: fila, orden: indice, estado: EstadoFicha(asignaciones[fila.id]?.estado).rawValue)
+        }
+        return conEstado.sorted { a, b in
+            if a.estado != b.estado { return a.estado < b.estado }
+            switch (vence[a.fila.id], vence[b.fila.id]) {
             case (.some, .none):
                 return true
             case (.none, .some):
@@ -132,8 +150,8 @@ final class PacientesModelo {
             case let (.some(va), .some(vb)) where va != vb:
                 return va < vb
             default:
-                return a.offset < b.offset
+                return a.orden < b.orden
             }
-        }.map(\.element)
+        }.map(\.fila)
     }
 }

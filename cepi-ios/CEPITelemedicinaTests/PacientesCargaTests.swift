@@ -3,7 +3,8 @@ import Testing
 @testable import CEPITelemedicina
 
 /// Cambiar de organización con una carga en curso. Antes `guard !cargando` descartaba la carga
-/// de la org nueva y la lista de la anterior quedaba a la vista hasta el próximo refresco.
+/// de la org nueva y la lista de la anterior quedaba a la vista hasta el próximo refresco. Y el
+/// filtro por estado de la ficha con lo que manda `patient-assignments`.
 @MainActor
 struct PacientesCargaTests {
     private static func lista(_ nombres: [String]) -> String {
@@ -63,5 +64,24 @@ struct PacientesCargaTests {
         await vieja
         #expect(modelo.filas.map(\.nombre) == ["De la org B"])
         #expect(modelo.cargado)
+    }
+
+    @Test func filtraPorEstadoYCuentaCadaUno() async {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("GET /api/review-queue", .http(200, #"{"ok":true,"by_patient":{}}"#))
+        servidor.fijar("GET /api/entities", .http(200, Self.lista(["Ana", "Beto", "Caro"])))
+        servidor.fijar("GET /api/patient-assignments", .http(200, """
+        {"ok":true,"assignments":{"p0-Ana":{"estado":"derivada"},"p1-Beto":{"estado":"derivada"},"p2-Caro":{"estado":"cerrado"}}}
+        """))
+        let modelo = PacientesModelo()
+        await modelo.cargar(api: api(servidor))
+
+        #expect(modelo.estado("p1-Beto") == .derivada)
+        #expect(modelo.filtradas(por: "", estado: .derivada).map(\.id) == ["p0-Ana", "p1-Beto"])
+        #expect(modelo.filtradas(por: "beto", estado: .derivada).map(\.id) == ["p1-Beto"])
+        #expect(modelo.filtradas(por: "ana", estado: .cerrada).isEmpty)
+        #expect(modelo.filtradas(por: "").count == 3)
+        #expect(modelo.conteoPorEstado() == [.derivada: 2, .cerrada: 1])
     }
 }

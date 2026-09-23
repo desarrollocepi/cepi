@@ -73,6 +73,7 @@ struct ContratoTests {
         """)
         #expect(asignaciones.porPaciente["p1"]?.nombre == "Dr. Mora")
         #expect(asignaciones.porPaciente["p1"]?.origen == "derivado_grupo")
+        #expect(asignaciones.porPaciente["p1"]?.estado == "derivada")
     }
 
     @Test func urlCodificaElMas() {

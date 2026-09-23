@@ -26,6 +26,30 @@ struct PacientesTests {
         #expect(orden == ["d", "c", "e", "a", "b"])
     }
 
+    @Test func primeroPorEstadoYDentroDelEstadoRevisar() throws {
+        let filas = try ["a", "b", "c", "d", "e", "f"].map { FilaPaciente(try registro($0, nombre: $0)) }
+        let asignaciones = [
+            "a": Asignacion(nombre: nil, origen: nil, estado: "cerrado"),
+            "b": Asignacion(nombre: nil, origen: nil, estado: "respondida"),
+            "c": Asignacion(nombre: nil, origen: nil, estado: "en_curso"),
+            "e": Asignacion(nombre: nil, origen: nil, estado: "en_curso"),
+            "f": Asignacion(nombre: nil, origen: nil, estado: "en_revisión_solicitada"),
+        ]
+        let revision = ["e": PendienteRevision(pendientes: 1, vence: nil)]
+        let orden = PacientesModelo.ordenar(filas, revision: revision, asignaciones: asignaciones).map(\.id)
+        #expect(orden == ["b", "f", "e", "c", "a", "d"])
+    }
+
+    @Test func estadoDeLaFicha() {
+        #expect(EstadoFicha(nil) == .sinConsulta)
+        #expect(EstadoFicha(" ") == .sinConsulta)
+        #expect(EstadoFicha("derivada") == .derivada)
+        #expect(EstadoFicha("en_revisión_solicitada") == .revisionSolicitada)
+        #expect(EstadoFicha("agendado") == .agendada)
+        // Un estado que la app no conoce no rompe la lista: cae en "Otro estado".
+        #expect(EstadoFicha("archivada") == .otro)
+    }
+
     @Test func busquedaSinTildesNiMayusculas() throws {
         let fila = FilaPaciente(try registro("p", nombre: "José", apellidos: "Núñez", cedula: "0912345678"))
         #expect(fila.claveBusqueda.contains(FilaPaciente.normalizar("JOSE nunez")))

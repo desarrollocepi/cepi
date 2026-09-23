@@ -1,9 +1,12 @@
 import SwiftUI
 
+/// Una fila de la lista. El LED de la derecha es el estado de la ficha actual: va al costado
+/// y no en una línea más, para que la fila no crezca.
 struct PacienteFila: View {
     let fila: FilaPaciente
     let revision: PendienteRevision?
     let asignacion: Asignacion?
+    let estado: EstadoFicha
 
     var body: some View {
         HStack(spacing: 12) {
@@ -43,6 +46,9 @@ struct PacienteFila: View {
                     .background(Marca.revisar, in: Capsule())
                     .accessibilityLabel("\(revision.pendientes) pendiente(s) de revisión derivadas a ti")
             }
+
+            LedEstado(estado: estado)
+                .accessibilityLabel("Ficha: \(estado.etiqueta)")
         }
         .padding(.vertical, 2)
     }

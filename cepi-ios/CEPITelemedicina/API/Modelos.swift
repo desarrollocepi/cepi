@@ -207,10 +207,13 @@ struct Asignacion: Decodable, Sendable, Hashable {
     let nombre: String?
     /// `responsable` | `derivado` | `derivado_grupo` | `creador`
     let origen: String?
+    /// Estado de la consulta más reciente (`en_curso`, `derivada`, `cerrado`…).
+    let estado: String?
 
     enum CodingKeys: String, CodingKey {
         case nombre = "assignee_name"
         case origen = "source"
+        case estado
     }
 }
 
