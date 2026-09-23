@@ -14,14 +14,15 @@
  *   WHATSAPP_PHONE_ID       Cloud API phone-number id (to send replies)
  *   WHATSAPP_APP_SECRET     app secret of the Meta app; signs every POST
  *                           (X-Hub-Signature-256). Unset ⇒ every POST is refused.
- *   CEPI_GUEST_API_KEY      identity invokeChat uses for WhatsApp users
+ *   WHATSAPP_BOT_EMAIL / WHATSAPP_BOT_PASSWORD   admin service account, used
+ *                           ONLY to resolve a phone to its TodoERP user
  *
- * Auth model: WhatsApp users have no TodoERP JWT of their own, so the adapter
- * authenticates as a single service account (WHATSAPP_BOT_EMAIL/PASSWORD) and
- * forwards that JWT on every turn — every WhatsApp write is thus attributed to
- * that user and goes through the normal permission checks. As a fallback it
- * uses CEPI_GUEST_API_KEY (the chat handler already accepts it). Each phone
- * number is mapped to one persisted bot_session, kept in memory here.
+ * Auth model (same as the Telegram adapter): every inbound phone is resolved
+ * through /api/auth/external/resolve to the user whose users.data.whatsapp_phone
+ * matches it, and the turn runs AS that user, with their own role/permissions.
+ * A phone linked to nobody gets a "not registered" reply and never reaches the
+ * brain — the number is public, so anyone can write to it. Each phone number is
+ * mapped to one persisted bot_session, kept in memory here.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
@@ -32,8 +33,8 @@ let svcJwt: { token: string; exp: number } | null = null;
 
 /**
  * Return a valid service-account JWT, logging in to TodoERP when missing or
- * within 60s of expiry. Returns '' when no service credentials are configured
- * (the caller then falls back to CEPI_GUEST_API_KEY).
+ * within 60s of expiry. This admin account only resolves phones to users — it
+ * is NOT the identity messages act with. Returns '' when not configured.
  */
 async function getServiceJwt(): Promise<string> {
   const email = process.env.WHATSAPP_BOT_EMAIL;
@@ -60,6 +61,49 @@ async function getServiceJwt(): Promise<string> {
   } catch (e: any) {
     console.error('[whatsapp] service login failed:', e?.message || e);
     return '';
+  }
+}
+
+type ResolveResult =
+  | { ok: true; jwt: string }
+  | { ok: false; reason: 'unregistered' | 'error' };
+
+/**
+ * The forms a WhatsApp `from` (digits, no "+") may have been typed in when an
+ * admin linked it on the user: as-is and with a leading "+".
+ */
+export function phoneCandidates(from: string): string[] {
+  const digits = from.replace(/\D/g, '');
+  return digits ? [digits, `+${digits}`] : [];
+}
+
+/**
+ * Resolve the TodoERP user linked to a WhatsApp phone and return a JWT to act
+ * AS that user. `unregistered` ⇒ no active user has this number.
+ */
+async function resolveUserAuth(from: string): Promise<ResolveResult> {
+  const adminJwt = await getServiceJwt();
+  if (!adminJwt) {
+    console.error('[whatsapp] no service account configured to resolve identity');
+    return { ok: false, reason: 'error' };
+  }
+  const base = process.env.TODOERP_API_URL || 'http://localhost:3001';
+  try {
+    for (const externalId of phoneCandidates(from)) {
+      const r = await fetch(`${base}/api/auth/external/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminJwt}` },
+        body: JSON.stringify({ platform: 'whatsapp', external_id: externalId }),
+      });
+      if (r.status === 404) continue;
+      if (!r.ok) { console.error('[whatsapp] resolve failed', r.status); return { ok: false, reason: 'error' }; }
+      const data: any = await r.json().catch(() => ({}));
+      return data?.token ? { ok: true, jwt: data.token } : { ok: false, reason: 'error' };
+    }
+    return { ok: false, reason: 'unregistered' };
+  } catch (e: any) {
+    console.error('[whatsapp] resolve error:', e?.message || e);
+    return { ok: false, reason: 'error' };
   }
 }
 
@@ -140,17 +184,26 @@ async function handleInbound(invokeChat: InvokeChat, msg: any): Promise<void> {
     return;
   }
 
-  const jwt = await getServiceJwt();
-  const apiKey = process.env.CEPI_GUEST_API_KEY || '';
-  const headers: Record<string, string> = {};
-  if (jwt) headers['authorization'] = `Bearer ${jwt}`;
-  else if (apiKey) headers['x-api-key'] = apiKey;
+  // Identity gate: the turn runs AS the user linked to this phone, or not at all.
+  const auth = await resolveUserAuth(from);
+  if (!auth.ok) {
+    await sendWhatsappText(from, auth.reason === 'unregistered'
+      ? `🔒 Este número no está registrado para usar el asistente de CEPI.\n\n` +
+        `Tu número es +${from}. Pásaselo al administrador para que te dé acceso.`
+      : 'No pude validar tu identidad ahora mismo. Prueba de nuevo en un rato.');
+    return;
+  }
   const sessionId = phoneSessions.get(from) || undefined;
 
-  const { body } = await invokeChat({
-    headers,
+  const { status, body } = await invokeChat({
+    headers: { authorization: `Bearer ${auth.jwt}` },
     body: { message: text, session_id: sessionId },
   });
+  if (status !== 200 || body?.ok === false) {
+    console.error(`[whatsapp] chat turn failed ${status}: ${body?.error || 'no error message'}`);
+    await sendWhatsappText(from, 'No pude procesar tu mensaje. Prueba de nuevo en un rato.');
+    return;
+  }
 
   // Remember the session for this phone; drop it when the session closes.
   if (body?.session_id) {
