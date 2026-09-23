@@ -21,14 +21,16 @@ Estado del proyecto al cierre de la sesión actual.
 - La Mac de compilación ahora se alcanza desde esta máquina por **`ssh mac`**
   (`cepi@192.168.100.217`, llave instalada, repo en `~/cepi`, Xcode 26.5). Se sincroniza por
   git: la rama `feat/android-nativa` está en GitHub y bajada allá.
-- **TestFlight: no se subió.** El archive firma con el certificado de **desarrollo**; exportar
-  para App Store falla con `Unable to log in with account 'developer@cepi.ec'` → *Your session
-  has expired* y `No signing certificate "iOS Distribution" found`. No hay certificado de
-  distribución ni llave de App Store Connect API en esa Mac. Hace falta: (1) volver a entrar
-  con `developer@cepi.ec` en Xcode → Settings → Accounts (pide el código de 2FA, es en la
-  pantalla de la Mac), y (2) para subir sin Xcode, una contraseña específica de app o una
-  llave de la API de App Store Connect. Después: subir `CURRENT_PROJECT_VERSION` a 8, archive,
-  export y `xcrun altool --upload-app`.
+- **TestFlight: build 8 subido** (2026-09-23, `CURRENT_PROJECT_VERSION = 8`, 1.0). El primer
+  intento falló con *Your session has expired* / `No signing certificate "iOS Distribution"
+  found`: la sesión de `developer@cepi.ec` en Xcode estaba vencida. El usuario volvió a entrar
+  en Xcode → Settings → Accounts y entonces el certificado de distribución se creó solo.
+- **Cómo se sube desde acá, sin GUI ni llave de la API:** `ssh mac`, desbloquear el llavero
+  (`security unlock-keychain`), `xcodebuild archive … -allowProvisioningUpdates` y
+  `xcodebuild -exportArchive` con un `ExportOptions.plist` de `method: app-store-connect` y
+  **`destination: upload`** — usa la sesión de Xcode, así que no hace falta contraseña
+  específica de app ni App Store Connect API. El grupo interno "CEPI interno" distribuye
+  automáticamente cuando Apple termina de procesar.
 - La web (`ChatList.vue`) todavía no muestra el estado.
 
 ---
