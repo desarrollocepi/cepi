@@ -138,12 +138,11 @@
                 <span class="dg-name">{{ g.kind === 'all' ? '🌐' : '⭕' }} {{ g.name }}</span>
                 <span class="dg-kind">{{ g.kind === 'all' ? 'toda la red' : g.kind }}</span>
               </button>
-              <button v-if="g.kind !== 'all'" type="button" class="dg-expand" @click="toggleMembers(g)" title="Ver personas">
+              <button type="button" class="dg-expand" @click="toggleMembers(g)" :title="g.kind === 'all' ? 'Ver a toda la gente de la organización' : 'Ver personas'">
                 {{ expandedGroup === g.slug ? '▾' : '▸' }} 👤{{ g.member_count }}
               </button>
-              <span v-else class="dg-allcount">👤{{ g.member_count }}</span>
             </div>
-            <ul v-if="g.kind !== 'all' && expandedGroup === g.slug" class="derivar-members">
+            <ul v-if="expandedGroup === g.slug" class="derivar-members">
               <li v-if="!(groupMembers[g.slug] || []).length" class="derivar-muted">(sin miembros)</li>
               <li v-for="m in (groupMembers[g.slug] || [])" :key="m.user_id">
                 <button type="button" class="dm-pick" @click="pickPerson(m)" :title="'Derivar a ' + (m.name || m.email)">

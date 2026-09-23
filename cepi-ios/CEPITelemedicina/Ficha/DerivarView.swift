@@ -81,36 +81,35 @@ struct DerivarView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        // "Toda la red" no tiene personas que listar; el resto se abre para elegir a alguien.
-        if !todaLaRed {
-            DisclosureGroup(
-                isExpanded: Binding(
-                    get: { expandido == grupo.slug },
-                    set: { expandido = $0 ? grupo.slug : nil }
-                )
-            ) {
-                let personas = miembros[grupo.slug] ?? []
-                if personas.isEmpty {
-                    Text("(sin miembros)").foregroundStyle(.secondary)
-                }
-                ForEach(personas) { persona in
-                    Button {
-                        Task { await derivar("escalar a \(persona.usuario)") }
-                    } label: {
-                        HStack {
-                            Label(persona.nombre ?? persona.email ?? "Profesional", systemImage: "person")
-                            Spacer()
-                            if let rol = persona.rol {
-                                Text(rol).font(.caption2).textCase(.uppercase).foregroundStyle(.secondary)
-                            }
+        // Todos los destinos se abren para elegir a alguien, "toda la red" incluida: ahí
+        // está quien no pertenece a ningún círculo.
+        DisclosureGroup(
+            isExpanded: Binding(
+                get: { expandido == grupo.slug },
+                set: { expandido = $0 ? grupo.slug : nil }
+            )
+        ) {
+            let personas = miembros[grupo.slug] ?? []
+            if personas.isEmpty {
+                Text("(sin miembros)").foregroundStyle(.secondary)
+            }
+            ForEach(personas) { persona in
+                Button {
+                    Task { await derivar("escalar a \(persona.usuario)") }
+                } label: {
+                    HStack {
+                        Label(persona.nombre ?? persona.email ?? "Profesional", systemImage: "person")
+                        Spacer()
+                        if let rol = persona.rol {
+                            Text(rol).font(.caption2).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                     }
                 }
-            } label: {
-                Text("Personas de \(grupo.nombre)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
+        } label: {
+            Text(todaLaRed ? "Personas de la organización" : "Personas de \(grupo.nombre)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 

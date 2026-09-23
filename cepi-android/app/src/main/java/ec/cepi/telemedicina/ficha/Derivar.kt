@@ -210,12 +210,12 @@ private fun FilaGrupo(
         trailingContent = { Text("${grupo.miembros}", style = MaterialTheme.typography.labelMedium) },
         modifier = Modifier.clickable(enabled = habilitado, onClick = alDerivarGrupo),
     )
-    // "Toda la red" no tiene personas que listar; el resto se abre para elegir a alguien.
-    if (todaLaRed) return
+    // Todos los destinos se abren para elegir a alguien, "toda la red" incluida: ahí está
+    // quien no pertenece a ningún círculo.
     ListItem(
         headlineContent = {
             Text(
-                "Personas de ${grupo.nombre}",
+                if (todaLaRed) "Personas de la organización" else "Personas de ${grupo.nombre}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
