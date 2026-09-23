@@ -131,7 +131,7 @@
         <p v-if="derivarError" class="derivar-error">{{ derivarError }}</p>
         <p v-if="derivarLoading" class="derivar-muted">Cargando destinos…</p>
         <ul v-else class="derivar-list">
-          <li v-if="!derivarGroups.length" class="derivar-muted">No hay círculos disponibles.</li>
+          <li v-if="!derivarGroups.length" class="derivar-muted">Ningún círculo tiene miembros en esta organización.</li>
           <li v-for="g in derivarGroups" :key="g.id" class="derivar-group">
             <div class="dg-row">
               <button type="button" class="dg-pick" @click="pickCircle(g)" :title="g.kind === 'all' ? 'Derivar a toda la red' : 'Derivar al círculo ' + g.name">
@@ -446,9 +446,11 @@ async function openDerivar() {
   try {
     const r = await listGroups();
     // Exclude the on-call 'turno' roster — that's "enviar caso", not derivar.
+    // A circle with nobody in this organization is not offered: deriving there reaches
+    // no one and the backend rejects it.
     // Put the virtual "todos" (kind 'all') first for prominence.
     derivarGroups.value = (r?.data || [])
-      .filter(g => g.kind !== 'roster')
+      .filter(g => g.kind !== 'roster' && Number(g.member_count) > 0)
       .sort((a, b) => (b.kind === 'all' ? 1 : 0) - (a.kind === 'all' ? 1 : 0));
   } catch (e) {
     derivarError.value = e?.message || 'No se pudieron cargar los destinos.';

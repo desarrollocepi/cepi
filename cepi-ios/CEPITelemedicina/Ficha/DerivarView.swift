@@ -36,7 +36,8 @@ struct DerivarView: View {
                     if cargando {
                         ProgressView()
                     } else if grupos.isEmpty {
-                        Text("No hay círculos disponibles.").foregroundStyle(.secondary)
+                        Text("Ningún círculo tiene miembros en esta organización.")
+                            .foregroundStyle(.secondary)
                     }
                     ForEach(grupos) { grupo in
                         filaGrupo(grupo)
@@ -117,8 +118,10 @@ struct DerivarView: View {
         defer { cargando = false }
         do {
             // Sin el turno de guardia: eso es "enviar caso", no derivar. "Toda la red" primero.
+            // Un círculo sin nadie de esta organización no se ofrece: derivar ahí no llega a
+            // nadie y el backend lo rechaza. Es la excepción a "nunca ocultes un botón".
             grupos = try await sesion.api.grupos()
-                .filter { $0.tipo != "roster" }
+                .filter { $0.tipo != "roster" && $0.miembros > 0 }
                 .sorted { ($0.tipo == "all" ? 0 : 1) < ($1.tipo == "all" ? 0 : 1) }
         } catch {
             self.error = "No se pudieron cargar los destinos: \(error.localizedDescription)"

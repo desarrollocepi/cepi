@@ -71,7 +71,11 @@ fun DerivarPantalla(
     LaunchedEffect(Unit) {
         try {
             // Sin el turno de guardia: eso es "enviar caso", no derivar. "Toda la red" primero.
-            grupos = api.grupos().filter { it.tipo != "roster" }.sortedBy { if (it.tipo == "all") 0 else 1 }
+            // Un círculo sin nadie de esta organización no se ofrece: derivar ahí no llega a
+            // nadie y el backend lo rechaza. Es la excepción a "nunca ocultes un botón".
+            grupos = api.grupos()
+                .filter { it.tipo != "roster" && it.miembros > 0 }
+                .sortedBy { if (it.tipo == "all") 0 else 1 }
         } catch (e: ApiError) {
             error = "No se pudieron cargar los destinos: ${e.mensaje}"
         } finally {
@@ -157,7 +161,11 @@ fun DerivarPantalla(
                     if (cargando) {
                         item { CircularProgressIndicator(Modifier.padding(16.dp)) }
                     } else if (grupos.isEmpty()) {
-                        item { ListItem(headlineContent = { Text("No hay círculos disponibles.") }) }
+                        item {
+                            ListItem(headlineContent = {
+                                Text("Ningún círculo tiene miembros en esta organización.")
+                            })
+                        }
                     }
                     items(grupos, key = { it.id }) { grupo ->
                         FilaGrupo(
