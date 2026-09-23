@@ -60,12 +60,11 @@ module.exports = {
         TODOERP_API_URL: 'http://localhost:3001',
         CEPI_LLM_PROVIDER: 'deepseek',
         // ── WhatsApp webhook (segundo listener en el mismo proceso) ──
+        // WHATSAPP_TOKEN y WHATSAPP_VERIFY_TOKEN viven en cepi-bot/.env
+        // (gitignored); en prod, en el vault (ns cepi-prod). Acá solo lo público.
         WHATSAPP_WEBHOOK_PORT: 9997,
-        WHATSAPP_VERIFY_TOKEN: 'mywpverifytoken',    // el mismo configurado en Meta
         WHATSAPP_BOT_EMAIL: 'admin@erp.com',        // service account → JWT por turno
         WHATSAPP_BOT_PASSWORD: 'Admin123!',
-        // Credenciales Meta Cloud API (envío real de respuestas).
-        WHATSAPP_TOKEN:    'EAAcujNkZCcnEBRlT45OP1SGYhCbgaZCCZAk9SGi0OR7M7KO4bso2iYpwmOMEsgKvgcZBcZAKLMZBrAXLdIQsodNHNdrTOAZC3gOmp0m1gTZBbLCGJbZAH7sWF1ndVU6058v5a22pJZC8jcQ9eNhijlRarJFrD2ZBG0Bym8mHvpC43nZAAKZCCSnWgeqwDYqOJNxW5AGDYUxCV8g88cJZAZAxMCvX0v4tEM5azdMP8Vw1Kju4mgLusAmnbsHHH28kUyumReZCdsbf72xLFexHuGklFZAme0AuVGX7DQKrT75IZD',
         WHATSAPP_PHONE_ID: '1195901160263503',
         // ── Telegram webhook (tercer listener en el mismo proceso) ──
         // El token, el secret y TELEGRAM_PUBLIC_URL viven en cepi-bot/.env
