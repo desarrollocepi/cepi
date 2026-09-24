@@ -4,6 +4,38 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
+
+- **Modelo nuevo (PAPER §27, D-Aux-26)**: el remitente de WhatsApp/Telegram es una **cuenta
+  hijo** — fila de `users` con `parent_user_id`, que **no inicia sesión** y cuyos mensajes
+  corren como el padre. Se evaluó el merge de cuentas y se descartó al medirlo: `users(id)`
+  tiene **34 claves foráneas** apuntándole, así que fusionar es reescribir `created_by` de la
+  historia clínica sin vuelta atrás. Vincular es un `UPDATE` de una columna; desvincular,
+  ponerla en `NULL`.
+- **Dos agujeros que aparecieron al mirarlo**, los dos corregidos:
+  - `tokenForExternalIdentity` emitía el token **sin `org_id`** y buscaba el remitente entre
+    todos los usuarios. Sin org activa el alcance por persona no filtra nada (§13.7): el turno
+    de WhatsApp veía a todo el mundo. Ahora el llamador pasa su organización, el actor tiene
+    que ser miembro, y una org desconocida da 400 en vez de degradar a «sin filtro».
+  - `loginWithGoogle` tenía el mismo bug del token sin `org_id`.
+- **El bot deja de necesitar el comodín**: `/auth/external/resolve` acepta el permiso granular
+  `auth:external:resolve`. Era la razón por la que los bots corrían con `admin@erp.com`.
+- Migración `022_cuentas_padre_hijo.sql` + endpoints `POST/DELETE /api/admin/users/:id/parent`
+  (un solo nivel, ambos extremos dentro del alcance de quien administra). **19 tests nuevos**;
+  uno verifica explícitamente que vincular **no mueve ninguna fila**.
+- **Falta para que funcione de punta a punta** (no desplegado a prod todavía):
+  1. `cepi-bot`: mandar `org` al resolver y crear la identidad en `pendiente` cuando el
+     remitente no existe.
+  2. Seed de la cuenta de servicio por canal con el permiso granular.
+  3. Pantalla de identidades en la consola (vincular/desvincular).
+  4. Apuntar el `ecosystem.config.cjs` de prod a la cuenta nueva y recién ahí desactivar
+     `admin@erp.com`.
+- ⚠️ **TodoERP `main` ya lleva la migración.** El próximo push a `master` de cepi la aplica en
+  producción. Es aditiva (una columna nullable) y el código viejo no la usa, pero conviene
+  saberlo antes de desplegar cualquier otra cosa.
+
+---
+
 ## Sesión 2026-09-24 — La administración se muda a su propia consola
 
 - **`console.cepi.ec`**: repo propio (`desarrollocepi/cepi-console`, privado), app Vue 3 propia
