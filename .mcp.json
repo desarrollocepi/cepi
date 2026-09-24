@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--user-data-dir=/mnt/sda1/cepi/.pw-profile"
+      ],
+      "env": {}
+    }
+  }
+}

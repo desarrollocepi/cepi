@@ -149,6 +149,24 @@ al arrancar llama a `setWebhook` con el token del bot real y le roba el webhook 
 producción (`telegram.ts`). Arrancarlo con `TELEGRAM_BOT_TOKEN= TELEGRAM_PUBLIC_URL=
 CEPI_LLM_PROVIDER=stub DEEPSEEK_API_KEY=` para que nada salga de la máquina.
 
+## Navegador del agente (Playwright MCP)
+
+`.mcp.json` fija el MCP de Playwright con **perfil persistente** en `.pw-profile/`
+(git-ignored, ~358 MB). Ahí viven las sesiones de Google — Cloud Console, Play Console —, así
+que el agente entra sin pedir la contraseña cada vez.
+
+- **Precedencia**: el scope `local` de `~/.claude.json` gana sobre este archivo. Si ambos
+  existen, manda el local; `.mcp.json` es el que vale al clonar el repo en otra máquina.
+  Revisar con `claude mcp list`, que además avisa si el scope `user` apunta a otro perfil.
+- **Corre headed**: la ventana se ve en el escritorio. Sirve para pedirle al usuario que
+  escriba una contraseña que el agente no tiene, y seguir operando en esa misma sesión.
+- ⚠️ **No matar procesos de `@playwright/mcp` por parecer viejos.** La fecha de arranque es la
+  de su sesión de Claude Code, no señal de proceso huérfano: matar el del perfil de cepi
+  desconecta el MCP de la sesión en curso.
+- ⚠️ Que Google pida contraseña **no** significa que el perfil no persista: re-verifica
+  sesiones por política de la organización ("Demuestra que eres tú", con la cuenta ya
+  seleccionada, es re-auth y no un login desde cero).
+
 ## Bots de testing (browser-bot multi-perfil)
 
 Para probar la app desde 6 roles a la vez (una ventana Chrome auto-logueada por
