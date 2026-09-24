@@ -45,8 +45,12 @@ El corte está automatizado en **`scripts/corte-bots-cuentas-servicio.sh`**, que
 servidor** y lo hace todo en un paso seguro:
 
 ```bash
-scp scripts/corte-bots-cuentas-servicio.sh prod:/tmp/
-ssh prod 'bash /tmp/corte-bots-cuentas-servicio.sh'
+# El alias `prod` NO existe fuera del runner: lo crea el workflow. Desde esta
+# máquina va con la llave y el host explícitos.
+scp -i ~/.ssh/cepi_console_deploy_ed25519 \
+  scripts/corte-bots-cuentas-servicio.sh ubuntu@3.23.236.49:/tmp/
+ssh -i ~/.ssh/cepi_console_deploy_ed25519 ubuntu@3.23.236.49 \
+  'bash /tmp/corte-bots-cuentas-servicio.sh'
 ```
 
 Qué garantiza, y por qué está escrito así:
