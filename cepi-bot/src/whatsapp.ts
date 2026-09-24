@@ -14,16 +14,25 @@
  *   WHATSAPP_PHONE_ID       Cloud API phone-number id (to send replies)
  *   WHATSAPP_APP_SECRET     app secret of the Meta app; signs every POST
  *                           (X-Hub-Signature-256). Unset ⇒ every POST is refused.
- *   WHATSAPP_BOT_EMAIL / WHATSAPP_BOT_PASSWORD   admin service account, used
- *                           ONLY to resolve a phone to its TodoERP user
- *                           (falls back to TELEGRAM_BOT_*, same account)
+ *   WHATSAPP_BOT_EMAIL / WHATSAPP_BOT_PASSWORD   cuenta de servicio del canal
+ *                           (rol `bot_canal`: solo resuelve, da de alta y
+ *                           vincula identidades). Cae a TELEGRAM_BOT_* si falta.
+ *   WHATSAPP_BOT_ORG        OBLIGATORIA. Organización a la que queda acotado el
+ *                           canal (slug o uuid, p. ej. `cepi`). Sin ella no se
+ *                           resuelve nada: un turno sin org activa no está
+ *                           limitado a nadie (PAPER §27.4).
+ *   WHATSAPP_BOT_AUTOALTA   '1' ⇒ un remitente desconocido se da de alta como
+ *                           identidad en rol `pendiente`, sin acceso clínico,
+ *                           para que un admin la vincule a su cuenta. Sin esto,
+ *                           se mantiene el "no estás registrado".
  *
- * Auth model (same as the Telegram adapter): every inbound phone is resolved
- * through /api/auth/external/resolve to the user whose users.data.whatsapp_phone
- * matches it, and the turn runs AS that user, with their own role/permissions.
- * A phone linked to nobody gets a "not registered" reply and never reaches the
- * brain — the number is public, so anyone can write to it. Each phone number is
- * mapped to one persisted bot_session, kept in memory here.
+ * Auth model (same as the Telegram adapter): cada número entrante se resuelve
+ * contra /api/auth/external/{resolve,ensure} y el turno corre COMO esa persona,
+ * con su rol y sus permisos. Si el número es una **identidad hija** (§27), el
+ * turno corre como su cuenta **padre**. Un número que no alcanza a nadie de la
+ * organización del bot recibe "no registrado" y nunca llega al cerebro — el
+ * número es público, así que cualquiera puede escribir. Cada número se mapea a
+ * un bot_session persistido, cacheado acá en memoria.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
@@ -82,19 +91,35 @@ export function phoneCandidates(from: string): string[] {
  * Resolve the TodoERP user linked to a WhatsApp phone and return a JWT to act
  * AS that user. `unregistered` ⇒ no active user has this number.
  */
-async function resolveUserAuth(from: string): Promise<ResolveResult> {
+async function resolveUserAuth(from: string, nombre?: string): Promise<ResolveResult> {
   const adminJwt = await getServiceJwt();
   if (!adminJwt) {
     console.error('[whatsapp] no service account configured to resolve identity');
     return { ok: false, reason: 'error' };
   }
   const base = process.env.TODOERP_API_URL || 'http://localhost:3001';
+  // La organización acota a quién alcanza este número (PAPER §27.4). Va por
+  // configuración porque el ERP no sabe qué es telemedicina; sin ella el turno
+  // correría sin org activa, que es no estar limitado a nada.
+  // Cae a la de Telegram igual que la cuenta de servicio, unas líneas más
+  // arriba: en prod los dos canales comparten configuración.
+  const org = process.env.WHATSAPP_BOT_ORG || process.env.TELEGRAM_BOT_ORG
+    || process.env.CEPI_BOT_ORG || '';
+  if (!org) {
+    console.error('[whatsapp] falta WHATSAPP_BOT_ORG: sin organización no se resuelve');
+    return { ok: false, reason: 'error' };
+  }
+  // Con alta automática, el remitente desconocido pasa a existir como identidad
+  // en rol `pendiente` (sin acceso clínico) y un admin la vincula después a su
+  // cuenta real. Sin el flag se mantiene el «no estás registrado» de siempre.
+  const daDeAlta = process.env.WHATSAPP_BOT_AUTOALTA === '1';
+  const ruta = daDeAlta ? 'ensure' : 'resolve';
   try {
     for (const externalId of phoneCandidates(from)) {
-      const r = await fetch(`${base}/api/auth/external/resolve`, {
+      const r = await fetch(`${base}/api/auth/external/${ruta}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminJwt}` },
-        body: JSON.stringify({ platform: 'whatsapp', external_id: externalId }),
+        body: JSON.stringify({ platform: 'whatsapp', external_id: externalId, org, ...(nombre ? { name: nombre } : {}) }),
       });
       if (r.status === 404) continue;
       if (!r.ok) { console.error('[whatsapp] resolve failed', r.status); return { ok: false, reason: 'error' }; }
@@ -175,7 +200,7 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
 }
 
 /** Process one inbound message object from the webhook payload. */
-async function handleInbound(invokeChat: InvokeChat, msg: any): Promise<void> {
+async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string): Promise<void> {
   const from = msg?.from;
   if (!from) return;
   // Only plain text is routed for now (images/audio would map to attachments).
@@ -186,7 +211,7 @@ async function handleInbound(invokeChat: InvokeChat, msg: any): Promise<void> {
   }
 
   // Identity gate: the turn runs AS the user linked to this phone, or not at all.
-  const auth = await resolveUserAuth(from);
+  const auth = await resolveUserAuth(from, nombre);
   if (!auth.ok) {
     await sendWhatsappText(from, auth.reason === 'unregistered'
       ? `🔒 Este número no está registrado para usar el asistente de CEPI.\n\n` +
@@ -274,8 +299,16 @@ export function startWhatsapp(invokeChat: InvokeChat) {
       for (const entry of entries) {
         for (const change of entry?.changes || []) {
           const messages = change?.value?.messages || [];
+          // El nombre del perfil viaja en `contacts`, hermano de `messages`, no
+          // dentro del mensaje. Solo se usa para bautizar una identidad nueva:
+          // ver un nombre en la pantalla de aprobación es la diferencia entre
+          // reconocer a alguien y tener que adivinar por el número.
+          const contactos: Record<string, string> = {};
+          for (const c of change?.value?.contacts || []) {
+            if (c?.wa_id && c?.profile?.name) contactos[String(c.wa_id)] = String(c.profile.name);
+          }
           for (const msg of messages) {
-            await handleInbound(invokeChat, msg).catch(e =>
+            await handleInbound(invokeChat, msg, contactos[String(msg?.from)]).catch(e =>
               console.error('[whatsapp] handle error:', e?.message || e));
           }
         }

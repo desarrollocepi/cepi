@@ -23,13 +23,33 @@ Estado del proyecto al cierre de la sesión actual.
 - Migración `022_cuentas_padre_hijo.sql` + endpoints `POST/DELETE /api/admin/users/:id/parent`
   (un solo nivel, ambos extremos dentro del alcance de quien administra). **19 tests nuevos**;
   uno verifica explícitamente que vincular **no mueve ninguna fila**.
-- **Falta para que funcione de punta a punta** (no desplegado a prod todavía):
-  1. `cepi-bot`: mandar `org` al resolver y crear la identidad en `pendiente` cuando el
-     remitente no existe.
-  2. Seed de la cuenta de servicio por canal con el permiso granular.
-  3. Pantalla de identidades en la consola (vincular/desvincular).
-  4. Apuntar el `ecosystem.config.cjs` de prod a la cuenta nueva y recién ahí desactivar
-     `admin@erp.com`.
+- **Alta automática**: `POST /auth/external/ensure` da de alta al remitente desconocido como
+  identidad sin padre y rol `pendiente`. Email sintético (`wa-593…@whatsapp.local`) y hash
+  vacío, así que **nace sin contraseña con la que entrar**. `org` es obligatoria al crear.
+- **`cepi-bot`**: los dos canales mandan su organización en cada resolución y, con
+  `*_BOT_AUTOALTA=1`, usan `/ensure`. **Sin org configurada el bot no resuelve nada**: falla
+  ruidoso en vez de correr sin límite de alcance.
+- **Seed 020**: rol `bot_canal` con tres permisos (resolver, crear, vincular) y nada más.
+  `bot-telegram` baja de `admin` a ese rol y se agrega `bot-whatsapp`, los dos solo en `cepi`.
+- **Consola**: columna *Chat* en Usuarios — vincular, desvincular y ver los canales de cada
+  cuenta. Probado contra el stack local de punta a punta.
+- Tests: **25** en `cuentas_padre_hijo`, **134** en cepi-bot, **469** en TodoERP.
+
+### ⚠️ Orden de corte en producción (no hacer a medias)
+
+El deploy **no toca** `/opt/cepi/ecosystem.config.cjs`, así que en prod los bots siguen usando
+`admin@erp.com` hasta que se cambie a mano. El seed 020 es seguro de desplegar igual: crea rol
+y cuenta nuevos y baja el rol de `bot-telegram@cepi.local`, que hoy no usa nadie.
+
+Para completar el corte, **en este orden**:
+
+1. Poner contraseña a `bot-whatsapp@cepi.local` y `bot-telegram@cepi.local` (el seed las deja
+   con un hash inválido a propósito) y guardarlas en el vault.
+2. Editar `/opt/cepi/ecosystem.config.cjs`: `*_BOT_EMAIL` a las cuentas nuevas, más
+   `*_BOT_ORG: 'cepi'` y `*_BOT_AUTOALTA: '1'`. El repo ya tiene esa forma como referencia.
+3. `pm2 restart cepi-bot` y probar un mensaje real por cada canal.
+4. **Recién entonces** desactivar `admin@erp.com`. Antes de eso, desactivarla deja mudos los
+   dos bots.
 - ⚠️ **TodoERP `main` ya lleva la migración.** El próximo push a `master` de cepi la aplica en
   producción. Es aditiva (una columna nullable) y el código viejo no la usa, pero conviene
   saberlo antes de desplegar cualquier otra cosa.

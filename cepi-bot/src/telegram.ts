@@ -82,18 +82,31 @@ type ResolveResult =
  * AS that user (their real role/permissions). Uses the admin service account
  * to call the resolve endpoint. `unregistered` ⇒ no user linked to this id.
  */
-async function resolveUserAuth(platform: string, externalId: string | number): Promise<ResolveResult> {
+async function resolveUserAuth(
+  platform: string, externalId: string | number, nombre?: string,
+): Promise<ResolveResult> {
   const adminJwt = await getServiceJwt();
   if (!adminJwt) {
     console.error('[telegram] no service account configured to resolve identity');
     return { ok: false, reason: 'error' };
   }
   const base = process.env.TODOERP_API_URL || 'http://localhost:3001';
+  // Igual que en WhatsApp: la organización acota a quién alcanza este canal
+  // (PAPER §27.4) y sin ella el turno correría sin org activa, que es no estar
+  // limitado a nada. Va por configuración; el ERP no sabe qué es telemedicina.
+  const org = process.env.TELEGRAM_BOT_ORG || process.env.CEPI_BOT_ORG || '';
+  if (!org) {
+    console.error('[telegram] falta TELEGRAM_BOT_ORG: sin organización no se resuelve');
+    return { ok: false, reason: 'error' };
+  }
+  const ruta = process.env.TELEGRAM_BOT_AUTOALTA === '1' ? 'ensure' : 'resolve';
   try {
-    const r = await fetch(`${base}/api/auth/external/resolve`, {
+    const r = await fetch(`${base}/api/auth/external/${ruta}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminJwt}` },
-      body: JSON.stringify({ platform, external_id: String(externalId) }),
+      body: JSON.stringify({
+        platform, external_id: String(externalId), org, ...(nombre ? { name: nombre } : {}),
+      }),
     });
     if (r.status === 404) return { ok: false, reason: 'unregistered' };
     if (!r.ok) { console.error('[telegram] resolve failed', r.status); return { ok: false, reason: 'error' }; }
@@ -402,13 +415,21 @@ function isNewChat(chatId: number): boolean {
   return seen === undefined || (Date.now() - seen) > IDLE_MS;
 }
 
+/** Nombre legible de un `from` de Telegram, para bautizar una identidad nueva. */
+function nombreDe(from: any): string | undefined {
+  const n = [from?.first_name, from?.last_name].filter(Boolean).join(' ').trim();
+  return n || (from?.username ? `@${from.username}` : undefined);
+}
+
 /**
  * Resolve the acting user for an inbound chat. Returns their JWT, or sends the
  * appropriate message (not-registered with their id, or a transient error) and
  * returns null so the caller stops.
  */
-async function authorizeChat(chatId: number, fromId: number): Promise<string | null> {
-  const auth = await resolveUserAuth('telegram', fromId);
+async function authorizeChat(chatId: number, fromId: number, nombre?: string): Promise<string | null> {
+  // `nombre` solo bautiza una identidad nueva: ver un nombre en la pantalla de
+  // aprobación es la diferencia entre reconocer a alguien y adivinar por el id.
+  const auth = await resolveUserAuth('telegram', fromId, nombre);
   if (auth.ok) { chatAuth.set(chatId, auth.jwt); return auth.jwt; }
   if (auth.reason === 'unregistered') {
     await sendTelegramText(chatId,
@@ -429,7 +450,7 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
   if (typeof fromId !== 'number') return;
 
   // Identity gate: every inbound is acted on AS the linked TodoERP user.
-  const jwt = await authorizeChat(chatId, fromId);
+  const jwt = await authorizeChat(chatId, fromId, nombreDe(message?.from));
   if (!jwt) return;
 
   // Admin linking command: "vincular telegram <id> <email>".

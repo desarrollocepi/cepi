@@ -17,6 +17,9 @@ import type { AddressInfo } from 'node:net';
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.TELEGRAM_BOT_EMAIL = 'svc@test.local';
 process.env.TELEGRAM_BOT_PASSWORD = 'secret';
+// La organización es obligatoria: sin ella el turno correría sin org activa,
+// o sea sin estar limitado a nadie (PAPER §27.4).
+process.env.TELEGRAM_BOT_ORG = 'cepi';
 process.env.TELEGRAM_WEBHOOK_PORT = '0';            // random free port
 delete process.env.TELEGRAM_PUBLIC_URL;             // no webhook self-registration
 delete process.env.TELEGRAM_WEBHOOK_SECRET;         // no secret check

@@ -63,14 +63,23 @@ module.exports = {
         // WHATSAPP_TOKEN y WHATSAPP_VERIFY_TOKEN viven en cepi-bot/.env
         // (gitignored); en prod, en el vault (ns cepi-prod). Acá solo lo público.
         WHATSAPP_WEBHOOK_PORT: 9997,
-        WHATSAPP_BOT_EMAIL: 'admin@erp.com',        // service account → JWT por turno
+        // Cuenta de servicio del canal (seed 020): rol `bot_canal`, que solo sabe
+        // resolver, dar de alta y vincular identidades. Ya NO es superadmin.
+        WHATSAPP_BOT_EMAIL: 'bot-whatsapp@cepi.local',
+        // Organización a la que queda acotado el canal (PAPER §27.4). Obligatoria:
+        // sin ella el turno correría sin org activa, o sea sin límite de alcance.
+        WHATSAPP_BOT_ORG: 'cepi',
+        // '1' ⇒ un número desconocido se da de alta como identidad en `pendiente`.
+        WHATSAPP_BOT_AUTOALTA: '1',
         WHATSAPP_BOT_PASSWORD: 'Admin123!',
         WHATSAPP_PHONE_ID: '1195901160263503',
         // ── Telegram webhook (tercer listener en el mismo proceso) ──
         // El token, el secret y TELEGRAM_PUBLIC_URL viven en cepi-bot/.env
         // (gitignored). Acá solo el puerto y la cuenta de servicio.
         TELEGRAM_WEBHOOK_PORT: 9998,
-        TELEGRAM_BOT_EMAIL: 'admin@erp.com',   // service account → JWT por turno
+        TELEGRAM_BOT_EMAIL: 'bot-telegram@cepi.local',   // seed 020: rol `bot_canal`
+        TELEGRAM_BOT_ORG: 'cepi',
+        TELEGRAM_BOT_AUTOALTA: '1',
         TELEGRAM_BOT_PASSWORD: 'Admin123!',
       },
       max_memory_restart: '500M',
