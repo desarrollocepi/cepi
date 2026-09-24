@@ -1,10 +1,12 @@
 package ec.cepi.telemedicina.pacientes
 
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -21,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -142,6 +145,25 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
                 .imePadding()
                 .fillMaxSize(),
         ) {
+            // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
+            // abre Derivar para sumar o cambiar destinos.
+            if (modelo.derivados.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { derivar = true },
+                ) {
+                    Text(
+                        "↪ Derivado a " + modelo.derivados.joinToString(", ") { it.comoSeLlama },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    )
+                }
+            }
             PrimaryTabRow(selectedTabIndex = paginas.currentPage) {
                 secciones.forEachIndexed { indice, titulo ->
                     Tab(
@@ -208,6 +230,7 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
             },
             responsable = { modelo.responsableDelCaso() },
             alCerrar = { derivar = false },
+            yaDerivados = modelo.derivados,
         )
     }
 }

@@ -145,6 +145,10 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun miembros(grupo: String): List<MiembroGrupo> =
         cliente.get<Lista<MiembroGrupo>>("/api/groups/$grupo/members").data
 
+    /** A quién está derivado el episodio ahora mismo. */
+    suspend fun derivaciones(episodio: String): List<Derivado> =
+        cliente.get<Derivaciones>("/api/review-queue/entity/$episodio").derivados
+
     // Galería y adjuntos
 
     /**

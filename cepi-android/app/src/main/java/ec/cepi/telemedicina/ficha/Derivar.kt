@@ -2,6 +2,7 @@ package ec.cepi.telemedicina.ficha
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -24,10 +26,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +46,7 @@ import androidx.compose.ui.window.DialogProperties
 import ec.cepi.telemedicina.R
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.GrupoDerivacion
 import ec.cepi.telemedicina.api.MiembroGrupo
 import kotlinx.coroutines.launch
@@ -58,11 +63,16 @@ fun DerivarPantalla(
     alDerivar: suspend (String) -> String?,
     responsable: suspend () -> String?,
     alCerrar: () -> Unit,
+    /** A quién está derivado el caso ahora: se marca y no se lo puede volver a elegir. */
+    yaDerivados: List<Derivado> = emptyList(),
 ) {
     val alcance = rememberCoroutineScope()
     var grupos by remember { mutableStateOf(emptyList<GrupoDerivacion>()) }
     val miembros = remember { mutableStateMapOf<String, List<MiembroGrupo>>() }
     var expandido by remember { mutableStateOf<String?>(null) }
+    // Destinos marcados: `circulo:<slug>` o `persona:<uuid>`.
+    val seleccion = remember { mutableStateListOf<String>() }
+    val yaIds = remember(yaDerivados) { yaDerivados.map { it.usuario }.toSet() }
     var motivo by remember { mutableStateOf("") }
     var cargando by remember { mutableStateOf(true) }
     var enviando by remember { mutableStateOf(false) }
@@ -105,6 +115,16 @@ fun DerivarPantalla(
         }
     }
 
+    fun alternar(token: String) {
+        if (token in seleccion) seleccion.remove(token) else seleccion.add(token)
+    }
+
+    /** Todo lo marcado en una sola derivación: el bot acepta la lista separada por comas. */
+    fun derivarSeleccion() {
+        val destinos = seleccion.map { it.substringAfter(':') }.sorted()
+        if (destinos.isNotEmpty()) derivar("derivar a ${destinos.joinToString(", ")}")
+    }
+
     Dialog(onDismissRequest = alCerrar, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
             topBar = {
@@ -112,6 +132,14 @@ fun DerivarPantalla(
                     title = { Text("Derivar episodio") },
                     navigationIcon = {
                         IconButton(onClick = alCerrar) { Icon(Icons.Filled.Close, contentDescription = "Cerrar") }
+                    },
+                    actions = {
+                        TextButton(
+                            onClick = { derivarSeleccion() },
+                            enabled = seleccion.isNotEmpty() && !enviando,
+                        ) {
+                            Text(if (seleccion.isEmpty()) "Derivar" else "Derivar (${seleccion.size})")
+                        }
                     },
                 )
             },
@@ -129,7 +157,17 @@ fun DerivarPantalla(
                             label = { Text("Motivo de la derivación (opcional)") },
                             maxLines = 4,
                             enabled = !enviando,
-                            supportingText = { Text("Elegir un destino deriva al instante.") },
+                            supportingText = {
+                                Text(
+                                    if (yaDerivados.isEmpty()) {
+                                        "Marca uno o varios destinos y toca Derivar."
+                                    } else {
+                                        "Ahora está derivado a " +
+                                            yaDerivados.joinToString(", ") { it.comoSeLlama } +
+                                            ". Marca más destinos para sumar."
+                                    },
+                                )
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
@@ -173,9 +211,12 @@ fun DerivarPantalla(
                             abierto = expandido == grupo.slug,
                             personas = miembros[grupo.slug],
                             habilitado = !enviando,
-                            alDerivarGrupo = { derivar("derivar a ${grupo.slug}") },
+                            marcado = "circulo:${grupo.slug}" in seleccion,
+                            marcados = seleccion,
+                            yaDerivados = yaIds,
+                            alMarcarGrupo = { alternar("circulo:${grupo.slug}") },
                             alAlternar = { expandido = if (expandido == grupo.slug) null else grupo.slug },
-                            alDerivarPersona = { derivar("escalar a ${it.usuario}") },
+                            alMarcarPersona = { alternar("persona:${it.usuario}") },
                         )
                     }
                     error?.let {
@@ -198,17 +239,25 @@ private fun FilaGrupo(
     abierto: Boolean,
     personas: List<MiembroGrupo>?,
     habilitado: Boolean,
-    alDerivarGrupo: () -> Unit,
+    marcado: Boolean,
+    marcados: List<String>,
+    yaDerivados: Set<String>,
+    alMarcarGrupo: () -> Unit,
     alAlternar: () -> Unit,
-    alDerivarPersona: (MiembroGrupo) -> Unit,
+    alMarcarPersona: (MiembroGrupo) -> Unit,
 ) {
     val todaLaRed = grupo.tipo == "all"
     ListItem(
         headlineContent = { Text(grupo.nombre) },
         supportingContent = { Text(tipoDeGrupo(grupo.tipo)) },
-        leadingContent = { Icon(painterResource(R.drawable.ic_grupo), contentDescription = null) },
+        leadingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = marcado, onCheckedChange = { alMarcarGrupo() }, enabled = habilitado)
+                Icon(painterResource(R.drawable.ic_grupo), contentDescription = null)
+            }
+        },
         trailingContent = { Text("${grupo.miembros}", style = MaterialTheme.typography.labelMedium) },
-        modifier = Modifier.clickable(enabled = habilitado, onClick = alDerivarGrupo),
+        modifier = Modifier.clickable(enabled = habilitado, onClick = alMarcarGrupo),
     )
     // Todos los destinos se abren para elegir a alguien, "toda la red" incluida: ahí está
     // quien no pertenece a ningún círculo.
@@ -239,13 +288,28 @@ private fun FilaGrupo(
             modifier = Modifier.padding(start = 56.dp, bottom = 8.dp),
         )
         else -> personas.forEach { persona ->
+            val ya = persona.usuario in yaDerivados
+            val marcadaPersona = "persona:${persona.usuario}" in marcados
             ListItem(
                 headlineContent = { Text(persona.nombre ?: persona.email ?: "Profesional") },
-                supportingContent = persona.rol?.let { { Text(it) } },
-                leadingContent = { Icon(Icons.Filled.Person, contentDescription = null) },
+                supportingContent = when {
+                    ya -> { { Text("ya derivado") } }
+                    persona.rol != null -> { { Text(persona.rol) } }
+                    else -> null
+                },
+                leadingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = ya || marcadaPersona,
+                            onCheckedChange = { alMarcarPersona(persona) },
+                            enabled = habilitado && !ya,
+                        )
+                        Icon(Icons.Filled.Person, contentDescription = null)
+                    }
+                },
                 modifier = Modifier
                     .padding(start = 40.dp)
-                    .clickable(enabled = habilitado) { alDerivarPersona(persona) },
+                    .clickable(enabled = habilitado && !ya) { alMarcarPersona(persona) },
             )
         }
     }

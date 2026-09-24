@@ -101,4 +101,20 @@ data class Asignacion(
     @SerialName("source") val origen: String? = null,
     /** Estado de la consulta más reciente (`en_curso`, `derivada`, `cerrado`…). */
     val estado: String? = null,
+    /** A quién está derivado el caso ahora; puede ser más de uno. */
+    val derivados: List<DerivadoBreve> = emptyList(),
+) {
+    /** Cómo se resume "a cargo" en la fila: con varios derivados, sus nombres. */
+    val aCargo: String?
+        get() = when {
+            derivados.size <= 1 -> nombre
+            derivados.size > 2 -> derivados.take(2).joinToString(", ") { it.nombre } + " +" + (derivados.size - 2)
+            else -> derivados.joinToString(", ") { it.nombre }
+        }
+}
+
+@Serializable
+data class DerivadoBreve(
+    val id: String = "",
+    @SerialName("name") val nombre: String = "",
 )

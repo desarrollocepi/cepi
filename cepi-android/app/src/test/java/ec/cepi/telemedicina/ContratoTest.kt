@@ -2,6 +2,7 @@ package ec.cepi.telemedicina
 
 import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.Asignaciones
+import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.CepiApi
 import ec.cepi.telemedicina.api.ColaRevision
 import ec.cepi.telemedicina.api.Confirmacion
@@ -99,6 +100,18 @@ class ContratoTest {
         assertEquals("Dr. Mora", asignaciones.porPaciente["p1"]?.nombre)
         assertEquals("derivado_grupo", asignaciones.porPaciente["p1"]?.origen)
         assertEquals("derivada", asignaciones.porPaciente["p1"]?.estado)
+
+        // Derivado a varios: la fila resume los nombres en vez del único "a cargo".
+        val varios = decodificar<Asignaciones>(
+            """{"ok":true,"assignments":{"p1":{"assignee_name":"Dr. Mora","source":"derivado","estado":"derivada",
+               "derivados":[{"id":"u1","name":"Dra. Ramon"},{"id":"u2","name":"Dr. Mora"},{"id":"u3","name":"Dra. Paz"}]}}}""",
+        )
+        assertEquals("Dra. Ramon, Dr. Mora +1", varios.porPaciente["p1"]?.aCargo)
+
+        val derivaciones = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}""",
+        )
+        assertEquals("Dra. Ramon", derivaciones.derivados.single().comoSeLlama)
     }
 
     @Test

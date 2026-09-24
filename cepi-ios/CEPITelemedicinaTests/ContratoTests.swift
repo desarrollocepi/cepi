@@ -74,6 +74,18 @@ struct ContratoTests {
         #expect(asignaciones.porPaciente["p1"]?.nombre == "Dr. Mora")
         #expect(asignaciones.porPaciente["p1"]?.origen == "derivado_grupo")
         #expect(asignaciones.porPaciente["p1"]?.estado == "derivada")
+
+        // Derivado a varios: la fila resume los nombres en vez del único "a cargo".
+        let varios = try decodificar(Asignaciones.self, """
+        {"ok":true,"assignments":{"p1":{"assignee_name":"Dr. Mora","source":"derivado","estado":"derivada",
+         "derivados":[{"id":"u1","name":"Dra. Ramon"},{"id":"u2","name":"Dr. Mora"},{"id":"u3","name":"Dra. Paz"}]}}}
+        """)
+        #expect(varios.porPaciente["p1"]?.aCargo == "Dra. Ramon, Dr. Mora +1")
+
+        let derivaciones = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}
+        """)
+        #expect(derivaciones.derivados.first?.comoSeLlama == "Dra. Ramon")
     }
 
     @Test func urlCodificaElMas() {

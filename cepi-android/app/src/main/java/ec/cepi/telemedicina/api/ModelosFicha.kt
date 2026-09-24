@@ -140,6 +140,22 @@ data class GrupoDerivacion(
     val nombre: String get() = nombreOriginal ?: slug
 }
 
+/**
+ * A quién está derivado un episodio ahora (`GET /api/review-queue/entity/:id`): una revisión
+ * pendiente por persona. Con varias derivaciones a la vez, son varias.
+ */
+@Serializable
+data class Derivado(
+    @SerialName("user_id") val usuario: String,
+    @SerialName("name") val nombre: String? = null,
+    val email: String? = null,
+) {
+    val comoSeLlama: String get() = nombre ?: email ?: "Profesional"
+}
+
+@Serializable
+data class Derivaciones(val derivados: List<Derivado> = emptyList())
+
 @Serializable
 data class MiembroGrupo(
     @SerialName("user_id") val usuario: String,

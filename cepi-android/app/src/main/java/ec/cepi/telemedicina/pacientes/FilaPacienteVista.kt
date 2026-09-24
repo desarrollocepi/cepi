@@ -101,7 +101,7 @@ fun FilaPacienteVista(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                asignacion?.nombre?.let { nombre ->
+                asignacion?.aCargo?.let { nombre ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(
                             iconoACargo(asignacion.origen),

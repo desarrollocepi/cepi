@@ -7,6 +7,7 @@ import ec.cepi.telemedicina.api.AccionPendiente
 import ec.cepi.telemedicina.api.Adjunto
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.FormularioBot
 import ec.cepi.telemedicina.api.Marcador
 import ec.cepi.telemedicina.api.MensajeHilo
@@ -42,6 +43,10 @@ class HiloModelo(
     var respuestasRapidas: List<RespuestaRapida> by mutableStateOf(emptyList())
         private set
     var episodioActivo: String? by mutableStateOf(null)
+        private set
+
+    /** A quién está derivada la consulta activa ahora mismo (revisiones pendientes). */
+    var derivados: List<Derivado> by mutableStateOf(emptyList())
         private set
     var pagina: PaginaHilo by mutableStateOf(PaginaHilo.MasNueva)
         private set
@@ -177,8 +182,22 @@ class HiloModelo(
         try {
             mensajes = api.hilo(pacienteId)
             cargado = true
+            releerDerivaciones()
         } catch (e: ApiError) {
             error = "No se pudo cargar el hilo: ${e.mensaje}"
+        }
+    }
+
+    /**
+     * Quién tiene pendiente esta consulta. Un fallo acá no molesta al hilo: se muestra sin la
+     * barra de "derivado a…" y se reintenta en la próxima relectura.
+     */
+    suspend fun releerDerivaciones() {
+        val episodio = episodioActivo
+        derivados = if (episodio == null) emptyList() else try {
+            api.derivaciones(episodio)
+        } catch (_: ApiError) {
+            emptyList()
         }
     }
 
