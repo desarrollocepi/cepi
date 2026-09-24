@@ -209,11 +209,53 @@ struct Asignacion: Decodable, Sendable, Hashable {
     let origen: String?
     /// Estado de la consulta más reciente (`en_curso`, `derivada`, `cerrado`…).
     let estado: String?
+    /// A quién está derivado el caso ahora; puede ser más de uno.
+    let derivados: [DerivadoBreve]
+
+    /// Cómo se resume "a cargo" en la fila: con varios derivados, sus nombres.
+    var aCargo: String? {
+        guard derivados.count > 1 else { return nombre }
+        let nombres = derivados.map(\.nombre)
+        return nombres.count > 2 ? "\(nombres.prefix(2).joined(separator: ", ")) +\(nombres.count - 2)" : nombres.joined(separator: ", ")
+    }
 
     enum CodingKeys: String, CodingKey {
         case nombre = "assignee_name"
         case origen = "source"
-        case estado
+        case estado, derivados
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        nombre = try c.decodeIfPresent(String.self, forKey: .nombre)
+        origen = try c.decodeIfPresent(String.self, forKey: .origen)
+        estado = try c.decodeIfPresent(String.self, forKey: .estado)
+        derivados = try c.decodeIfPresent([DerivadoBreve].self, forKey: .derivados) ?? []
+    }
+
+    init(nombre: String? = nil, origen: String? = nil, estado: String? = nil, derivados: [DerivadoBreve] = []) {
+        self.nombre = nombre
+        self.origen = origen
+        self.estado = estado
+        self.derivados = derivados
+    }
+}
+
+struct DerivadoBreve: Decodable, Sendable, Hashable {
+    let id: String
+    let nombre: String
+
+    enum CodingKeys: String, CodingKey { case id, nombre = "name" }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        nombre = try c.decodeIfPresent(String.self, forKey: .nombre) ?? ""
+    }
+
+    init(id: String, nombre: String) {
+        self.id = id
+        self.nombre = nombre
     }
 }
 

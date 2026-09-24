@@ -108,6 +108,12 @@ struct CEPIAPI: Sendable {
         return lista.data
     }
 
+    /// A quién está derivado el episodio ahora mismo.
+    func derivaciones(episodio id: String) async throws -> [Derivado] {
+        let r: Derivaciones = try await cliente.get("/api/review-queue/entity/\(id)")
+        return r.derivados
+    }
+
     // MARK: Registros
 
     func entidad(_ id: String) async throws -> Registro {

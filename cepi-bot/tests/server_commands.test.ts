@@ -29,7 +29,7 @@ const RE = {
   sendCase:      /^\/?\s*enviar\s+caso\b\s*(.*)$/i,
   inbox:         /^\/?\s*(entrantes|turno|bandeja(?:\s+de)?\s+turno)\s*$/i,
   claim:         /^\/?\s*reclamar\b\s*([0-9a-f-]{36})?\s*$/i,
-  derive:        /^\/?\s*derivar\s+a\s+([a-z][a-z0-9_-]+)\b\s*(.*)$/i,
+  derive:        /^\/?\s*derivar\s+a\s+(.+)$/is,
   answer:        /^\/?\s*responder\s+([\s\S]+)$/i,
 };
 
@@ -142,12 +142,38 @@ describe('telemedicine command regexes', () => {
     expect(`reclamar ${VALID_UUID}`.match(RE.claim)?.[1]).toBe(VALID_UUID);
   });
 
-  it('matches "derivar a <especialidad> [motivo]"', () => {
-    const m = 'derivar a dermatologia sospecha de melanoma'.match(RE.derive);
-    expect(m?.[1]).toBe('dermatologia');
-    expect(m?.[2]).toBe('sospecha de melanoma');
+  it('parsea varios destinos: círculos, personas y el motivo', async () => {
+    const { parsearDestinos } = await import('../src/server.js');
+    const uno = parsearDestinos('dermatologia sospecha de melanoma');
+    expect(uno.circulos).toEqual(['dermatologia']);
+    expect(uno.personas).toEqual([]);
+    expect(uno.motivo).toBe('sospecha de melanoma');
+
+    const varios = parsearDestinos(
+      'dermatologia, 3f2a1b4c-5d6e-4f7a-8b9c-0d1e2f3a4b5c, 9b1c2d3e-4f5a-4b6c-8d9e-0f1a2b3c4d5e urgente',
+    );
+    expect(varios.circulos).toEqual(['dermatologia']);
+    expect(varios.personas).toEqual([
+      '3f2a1b4c-5d6e-4f7a-8b9c-0d1e2f3a4b5c',
+      '9b1c2d3e-4f5a-4b6c-8d9e-0f1a2b3c4d5e',
+    ]);
+    expect(varios.motivo).toBe('urgente');
+
+    // Repetir a la misma persona no la duplica; sin destinos, nada que derivar.
+    const repe = parsearDestinos('3f2a1b4c-5d6e-4f7a-8b9c-0d1e2f3a4b5c, 3F2A1B4C-5D6E-4F7A-8B9C-0D1E2F3A4B5C');
+    expect(repe.personas).toHaveLength(1);
+    expect(parsearDestinos('  ').circulos).toEqual([]);
+  });
+
+  it('matches "derivar a <destinos> [motivo]"', () => {
+    // El regex solo separa el comando de sus destinos; quién es quién lo decide
+    // `parsearDestinos` (el test de arriba).
+    expect('derivar a dermatologia sospecha de melanoma'.match(RE.derive)?.[1])
+      .toBe('dermatologia sospecha de melanoma');
     expect('derivar a comite_tumores'.match(RE.derive)?.[1]).toBe('comite_tumores');
-    // a specialty slug is required
+    expect('derivar a dermatologia, 3f2a1b4c-5d6e-4f7a-8b9c-0d1e2f3a4b5c'.match(RE.derive)?.[1])
+      .toBe('dermatologia, 3f2a1b4c-5d6e-4f7a-8b9c-0d1e2f3a4b5c');
+    // sin destino no es el comando
     expect('derivar a'.match(RE.derive)).toBeNull();
   });
 

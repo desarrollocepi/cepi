@@ -12,6 +12,8 @@ final class HiloModelo {
     private(set) var pendiente: AccionPendiente?
     private(set) var respuestasRapidas: [RespuestaRapida] = []
     private(set) var episodioActivo: String?
+    /// A quién está derivada la consulta activa ahora mismo (revisiones pendientes).
+    private(set) var derivados: [Derivado] = []
     private(set) var pagina: PaginaHilo = .masNueva
     private(set) var ocupado = false
     private(set) var subiendo = false
@@ -142,9 +144,17 @@ final class HiloModelo {
         do {
             mensajes = try await api.hilo(paciente: pacienteId)
             cargado = true
+            await releerDerivaciones(api: api)
         } catch {
             if !Task.isCancelled { self.error = "No se pudo cargar el hilo: \(error.localizedDescription)" }
         }
+    }
+
+    /// Quién tiene pendiente esta consulta. Un fallo acá no molesta al hilo: se muestra sin
+    /// la barra de "derivado a…" y se reintenta en la próxima relectura.
+    func releerDerivaciones(api: CEPIAPI) async {
+        guard let episodio = episodioActivo else { derivados = []; return }
+        derivados = (try? await api.derivaciones(episodio: episodio)) ?? []
     }
 
     func irAnterior() { mover(-1) }

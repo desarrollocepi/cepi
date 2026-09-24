@@ -123,7 +123,7 @@ export class StubLLMAdapter implements LLMAdapter {
           '  enviar caso [motivo]               → (primario) envía el episodio a la bandeja de turno',
           '  entrantes | turno                  → (turno) bandeja compartida de casos por triagear',
           '  reclamar [<uuid>]                  → (turno) toma un caso → en_triage',
-          '  derivar a <especialidad> [motivo]  → deriva el caso al círculo de especialistas',
+          '  derivar a <destino>[, <destino>…] [motivo]  → deriva el caso a círculos (dermatologia) y/o personas (uuid), varios a la vez',
           '  responder <texto>                  → registra recomendación y notifica al primario',
           '',
           '**Chatter**',

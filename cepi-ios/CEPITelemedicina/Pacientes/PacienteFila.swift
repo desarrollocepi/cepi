@@ -27,7 +27,7 @@ struct PacienteFila: View {
                 Text("CC: \(fila.cedula ?? "—")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if let nombre = asignacion?.nombre {
+                if let nombre = asignacion?.aCargo {
                     Label(nombre, systemImage: iconoACargo)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Marca.acento)

@@ -45,6 +45,28 @@ struct PacienteView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
 
+            // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
+            // abre Derivar para sumar o cambiar destinos.
+            if !modelo.derivados.isEmpty {
+                Button {
+                    mostrarDerivar = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.turn.up.right")
+                        Text("Derivado a \(modelo.derivados.map(\.comoSeLlama).joined(separator: ", "))")
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(Marca.revisar.opacity(0.18))
+                    .foregroundStyle(Marca.revisar)
+                }
+                .buttonStyle(.plain)
+            }
+
             TabView(selection: $seccion) {
                 HiloView(fila: fila, modelo: modelo)
                     .tag(Seccion.chat)
@@ -104,11 +126,13 @@ struct PacienteView: View {
         }
         .sheet(isPresented: $mostrarDerivar) {
             DerivarView(
+                yaDerivados: modelo.derivados,
                 alDerivar: { comando in
                     guard await modelo.enviar(comando, api: sesion.api) else {
                         return modelo.error ?? "No se pudo derivar."
                     }
                     mostrarDerivar = false
+                    await modelo.releerDerivaciones(api: sesion.api)
                     alTerminar()
                     return nil
                 },

@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// Derivar el episodio a un círculo, a una persona o al responsable del caso. Elegir un destino
-/// ejecuta la derivación al instante, igual que en la web: `derivar a <slug>` o `escalar a <uuid>`.
+/// Derivar el episodio a círculos y/o personas — varios a la vez — o al responsable del caso.
+/// Se marcan los destinos y un botón los manda en una sola derivación:
+/// `derivar a <slug>, <uuid>, … [motivo]`. A quien ya está derivado se le muestra la marca y
+/// no se lo puede volver a elegir.
 struct DerivarView: View {
+    /// A quién está derivado el caso ahora (para marcarlo y no duplicarlo).
+    var yaDerivados: [Derivado] = []
     /// Envía el comando; devuelve el error, o `nil` si el bot lo procesó.
     let alDerivar: (String) async -> String?
     let responsable: () async -> String?
@@ -12,6 +16,8 @@ struct DerivarView: View {
     @State private var grupos: [GrupoDerivacion] = []
     @State private var miembros: [String: [MiembroGrupo]] = [:]
     @State private var expandido: String?
+    /// Destinos marcados: `circulo:<slug>` o `persona:<uuid>`.
+    @State private var seleccion: Set<String> = []
     @State private var motivo = ""
     @State private var cargando = true
     @State private var enviando = false
@@ -23,7 +29,9 @@ struct DerivarView: View {
                 Section {
                     TextField("Motivo de la derivación (opcional)", text: $motivo, axis: .vertical)
                 } footer: {
-                    Text("Elegir un destino deriva al instante.")
+                    Text(yaDerivados.isEmpty
+                         ? "Marca uno o varios destinos y toca Derivar."
+                         : "Ahora está derivado a \(yaDerivados.map(\.comoSeLlama).joined(separator: ", ")). Marca más destinos para sumar.")
                 }
 
                 Section {
@@ -57,6 +65,12 @@ struct DerivarView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cerrar") { cerrar() }
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(seleccion.isEmpty ? "Derivar" : "Derivar (\(seleccion.count))") {
+                        Task { await derivarSeleccion() }
+                    }
+                    .disabled(seleccion.isEmpty || enviando)
+                }
             }
             .task { await cargarGrupos() }
             .task(id: expandido) { await cargarMiembros() }
@@ -66,10 +80,13 @@ struct DerivarView: View {
     @ViewBuilder
     private func filaGrupo(_ grupo: GrupoDerivacion) -> some View {
         let todaLaRed = grupo.tipo == "all"
+        let token = "circulo:\(grupo.slug)"
         Button {
-            Task { await derivar("derivar a \(grupo.slug)") }
+            alternar(token)
         } label: {
             HStack {
+                Image(systemName: seleccion.contains(token) ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(seleccion.contains(token) ? Marca.acento : .secondary)
                 Label(grupo.nombre, systemImage: todaLaRed ? "globe" : "circle.circle")
                 Spacer()
                 Text(todaLaRed ? "toda la red" : (grupo.tipo ?? ""))
@@ -94,17 +111,25 @@ struct DerivarView: View {
                 Text("(sin miembros)").foregroundStyle(.secondary)
             }
             ForEach(personas) { persona in
+                let token = "persona:\(persona.usuario)"
+                let ya = yaDerivados.contains { $0.usuario == persona.usuario }
                 Button {
-                    Task { await derivar("escalar a \(persona.usuario)") }
+                    alternar(token)
                 } label: {
                     HStack {
+                        Image(systemName: ya ? "checkmark.circle.fill"
+                                            : (seleccion.contains(token) ? "checkmark.square.fill" : "square"))
+                            .foregroundStyle(ya ? Color.green : (seleccion.contains(token) ? Marca.acento : .secondary))
                         Label(persona.nombre ?? persona.email ?? "Profesional", systemImage: "person")
                         Spacer()
-                        if let rol = persona.rol {
+                        if ya {
+                            Text("ya derivado").font(.caption2).foregroundStyle(.secondary)
+                        } else if let rol = persona.rol {
                             Text(rol).font(.caption2).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                     }
                 }
+                .disabled(ya)
             }
         } label: {
             Text(todaLaRed ? "Personas de la organización" : "Personas de \(grupo.nombre)")
@@ -138,6 +163,17 @@ struct DerivarView: View {
             return
         }
         await derivar("escalar a \(usuario)")
+    }
+
+    private func alternar(_ token: String) {
+        if seleccion.contains(token) { seleccion.remove(token) } else { seleccion.insert(token) }
+    }
+
+    /// Todo lo marcado en una sola derivación: el bot acepta la lista separada por comas.
+    private func derivarSeleccion() async {
+        let destinos = seleccion.map { String($0.split(separator: ":", maxSplits: 1)[1]) }.sorted()
+        guard !destinos.isEmpty else { return }
+        await derivar("derivar a \(destinos.joined(separator: ", "))")
     }
 
     private func derivar(_ comando: String) async {

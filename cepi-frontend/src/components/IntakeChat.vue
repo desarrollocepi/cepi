@@ -38,6 +38,10 @@
       >↻ actual</button>
     </div>
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
+    <button
+      v-if="patientName && derivados.length" type="button" class="iderivado"
+      @click="openDerivar" title="Ver o cambiar la derivación"
+    >↪️ Derivado a <b>{{ derivadosTexto }}</b></button>
 
     <div class="ifeed" ref="feedEl">
       <div v-if="!visibleMessages.length && !busy" class="iwelcome">
@@ -134,8 +138,12 @@
           <li v-if="!derivarGroups.length" class="derivar-muted">Ningún círculo tiene miembros en esta organización.</li>
           <li v-for="g in derivarGroups" :key="g.id" class="derivar-group">
             <div class="dg-row">
-              <button type="button" class="dg-pick" @click="pickCircle(g)" :title="g.kind === 'all' ? 'Derivar a toda la red' : 'Derivar al círculo ' + g.name">
-                <span class="dg-name">{{ g.kind === 'all' ? '🌐' : '⭕' }} {{ g.name }}</span>
+              <button
+                type="button" class="dg-pick" :class="{ marcado: seleccion.includes('circulo:' + g.slug) }"
+                @click="alternarSeleccion('circulo:' + g.slug)"
+                :title="g.kind === 'all' ? 'Marcar toda la red' : 'Marcar el círculo ' + g.name"
+              >
+                <span class="dg-name">{{ seleccion.includes('circulo:' + g.slug) ? '☑' : '☐' }} {{ g.kind === 'all' ? '🌐' : '⭕' }} {{ g.name }}</span>
                 <span class="dg-kind">{{ g.kind === 'all' ? 'toda la red' : g.kind }}</span>
               </button>
               <button type="button" class="dg-expand" @click="toggleMembers(g)" :title="g.kind === 'all' ? 'Ver a toda la gente de la organización' : 'Ver personas'">
@@ -145,7 +153,14 @@
             <ul v-if="expandedGroup === g.slug" class="derivar-members">
               <li v-if="!(groupMembers[g.slug] || []).length" class="derivar-muted">(sin miembros)</li>
               <li v-for="m in (groupMembers[g.slug] || [])" :key="m.user_id">
-                <button type="button" class="dm-pick" @click="pickPerson(m)" :title="'Derivar a ' + (m.name || m.email)">
+                <button
+                  type="button" class="dm-pick"
+                  :class="{ marcado: seleccion.includes('persona:' + m.user_id), yaderivado: derivadoIds.has(m.user_id) }"
+                  :disabled="derivadoIds.has(m.user_id)"
+                  @click="alternarSeleccion('persona:' + m.user_id)"
+                  :title="derivadoIds.has(m.user_id) ? 'El caso ya está derivado a esta persona' : 'Marcar a ' + (m.name || m.email)"
+                >
+                  {{ derivadoIds.has(m.user_id) ? '✔' : (seleccion.includes('persona:' + m.user_id) ? '☑' : '☐') }}
                   👤 {{ m.name || m.email }}
                   <span v-if="m.role_in_group" class="dm-role">{{ m.role_in_group }}</span>
                 </button>
@@ -153,6 +168,14 @@
             </ul>
           </li>
         </ul>
+        <p v-if="derivados.length" class="derivar-muted">
+          Ahora está derivado a <b>{{ derivadosTexto }}</b>. Marca más destinos para sumar.
+        </p>
+        <button
+          type="button" class="derivar-go" :disabled="busy || !seleccion.length"
+          :title="seleccion.length ? 'Derivar a todo lo marcado de una vez' : 'Marcá al menos un destino'"
+          @click="derivarSeleccion"
+        >↪️ Derivar{{ seleccion.length ? ` a ${seleccion.length} destino(s)` : '' }}</button>
       </div>
     </div>
 
@@ -181,7 +204,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listBotSessions, getPatientThread } from '../api.js';
+import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, listBotSessions, getPatientThread } from '../api.js';
 import MessageContent from './MessageContent.vue';
 import BotForm from './BotForm.vue';
 import DoctoProSearch from './DoctoProSearch.vue';
@@ -426,6 +449,43 @@ const derivarError   = ref('');
 const derivarMotivo  = ref('');          // motivo opcional para la derivación
 const expandedGroup  = ref('');          // slug currently expanded to show members
 const groupMembers   = ref({});          // slug → members[] (cached)
+// A quién está derivado el episodio activo (revisiones pendientes) y qué destinos marcó
+// el usuario para la próxima derivación: `circulo:<slug>` o `persona:<uuid>`.
+const derivados      = ref([]);
+const seleccion      = ref([]);
+
+const derivadosTexto = computed(() => {
+  const nombres = derivados.value.map(d => d.name || d.email).filter(Boolean);
+  return nombres.length > 3 ? `${nombres.slice(0, 3).join(', ')} +${nombres.length - 3}` : nombres.join(', ');
+});
+const derivadoIds = computed(() => new Set(derivados.value.map(d => d.user_id)));
+
+function alternarSeleccion(token) {
+  const i = seleccion.value.indexOf(token);
+  if (i >= 0) seleccion.value = seleccion.value.filter(t => t !== token);
+  else seleccion.value = [...seleccion.value, token];
+}
+
+async function cargarDerivados() {
+  const epId = activeEpisodeId.value;
+  if (!epId) { derivados.value = []; return; }
+  try {
+    const r = await listEntityDerivations(epId);
+    derivados.value = Array.isArray(r?.derivados) ? r.derivados : [];
+  } catch { derivados.value = []; }
+}
+
+// Un solo envío para todo lo marcado: "derivar a <slug>, <uuid>, … [motivo]".
+async function derivarSeleccion() {
+  if (!seleccion.value.length) return;
+  const destinos = seleccion.value.map(t => t.split(':')[1]).join(', ');
+  const motivo = derivarMotivo.value.trim();
+  showDerivar.value = false;
+  derivarMotivo.value = '';
+  seleccion.value = [];
+  await send(`derivar a ${destinos}${motivo ? ' ' + motivo : ''}`);
+  if (!error.value) closeChat();
+}
 
 function prefillCommand(text) {
   draft.value = text;
@@ -440,6 +500,8 @@ async function openDerivar() {
   showMenu.value = false;
   derivarError.value = '';
   expandedGroup.value = '';
+  seleccion.value = [];
+  cargarDerivados();
   if (derivarGroups.value.length) return;   // cached from a previous open
   derivarLoading.value = true;
   try {
@@ -470,22 +532,6 @@ async function toggleMembers(g) {
   }
 }
 
-// Elegir un destino EJECUTA la derivación (antes solo la pre-escribía en el
-// input). Círculo → "derivar a <slug> [motivo]". Persona → "escalar a <uuid> [motivo]".
-async function pickCircle(g) {
-  const motivo = derivarMotivo.value.trim();
-  showDerivar.value = false;
-  derivarMotivo.value = '';
-  await send(`derivar a ${g.slug}${motivo ? ' ' + motivo : ''}`);
-  if (!error.value) closeChat();           // derivado → cerrar el chat para elegir otro
-}
-async function pickPerson(m) {
-  const motivo = derivarMotivo.value.trim();
-  showDerivar.value = false;
-  derivarMotivo.value = '';
-  await send(`escalar a ${m.user_id}${motivo ? ' ' + motivo : ''}`);
-  if (!error.value) closeChat();
-}
 // Derivar al responsable del caso: el responsable_actual_id del episodio (quien
 // lo reclamó/se le asignó por turno) o, si no hay, el médico que lo creó.
 async function pickResponsable() {
@@ -731,6 +777,7 @@ async function reloadThread() {
     const r = await getPatientThread(uuid);
     if (currentPatientId.value !== uuid) return;            // patient switched → drop
     messages.value = Array.isArray(r?.messages) ? r.messages : [];
+    cargarDerivados();                                       // la barra de "derivado a…"
     await scrollEnd();                                       // al abrir/recargar, ir al último mensaje
   } catch (e) {
     if (currentPatientId.value === uuid) error.value = 'No se pudo cargar el hilo: ' + (e.message || e);
@@ -979,6 +1026,18 @@ defineExpose({ openPatient, newGeneral });
 .derivar-resp:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .derivar-resp:disabled { opacity: .5; cursor: not-allowed; }
 .derivar-error { margin: 6px 14px; color: #c43d3d; font-size: 0.82rem; }
+.iderivado {
+  display: block; width: 100%; text-align: left;
+  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--border, #334155);
+  background: #7c2d12; color: #fed7aa; font-size: 12px; cursor: pointer;
+}
+.derivar-go {
+  width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; border: 0;
+  background: #6366f1; color: #fff; font-weight: 700; cursor: pointer;
+}
+.derivar-go:disabled { opacity: .5; cursor: not-allowed; }
+.dg-pick.marcado, .dm-pick.marcado { outline: 2px solid #6366f1; }
+.dm-pick.yaderivado { opacity: .6; cursor: not-allowed; }
 .derivar-muted { color: var(--text-muted); font-size: 0.84rem; padding: 4px 6px; list-style: none; }
 .derivar-list { list-style: none; margin: 6px 0 10px; padding: 0 8px; overflow-y: auto; }
 .derivar-group { border-bottom: 1px solid var(--border); }

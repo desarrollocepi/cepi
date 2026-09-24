@@ -30,7 +30,7 @@
           <span class="name">{{ fullName(p) }}</span>
           <span class="cc">CC: {{ p.data?.cedula || '—' }}</span>
           <span v-if="assignments[p.id]?.assignee_name" class="acargo" :title="acargoMeta(p).title">
-            {{ acargoMeta(p).icon }} {{ assignments[p.id].assignee_name }}
+            {{ acargoMeta(p).icon }} {{ acargoMeta(p).texto }}
           </span>
         </span>
         <!-- Borrar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve:
@@ -93,13 +93,21 @@ const all = ref([]);
 const reviewQueue = ref({});   // { patientId: { pending, earliest_due } } — derived to me
 const assignments = ref({});   // { patientId: { assignee_name, source, ... } } — a cargo
 
-// Icono + tooltip según cómo quedó "a cargo" el responsable.
+// Icono, texto y tooltip de "a cargo". Si el caso está derivado a varias personas se
+// nombran todas (hasta dos, y el resto como "+N"): con una sola derivación visible no se
+// sabía que había más gente mirando el caso.
 function acargoMeta(p) {
   const a = assignments.value[p.id] || {};
-  if (a.source === 'derivado_grupo') return { icon: '👥', title: 'Derivado al círculo (pendiente de revisión)' };
-  if (a.source === 'derivado') return { icon: '↪️', title: 'Derivado a (pendiente de revisión)' };
-  if (a.source === 'creador') return { icon: '👤', title: 'Médico que creó el caso' };
-  return { icon: '🩺', title: 'Responsable del caso' };
+  const derivados = (a.derivados || []).map(d => d.name).filter(Boolean);
+  const varios = derivados.length > 1;
+  const texto = varios
+    ? (derivados.length > 2 ? `${derivados.slice(0, 2).join(', ')} +${derivados.length - 2}` : derivados.join(', '))
+    : a.assignee_name;
+  const detalle = varios ? ` — derivado a ${derivados.join(', ')}` : '';
+  if (a.source === 'derivado_grupo') return { icon: '👥', texto, title: 'Derivado al círculo (pendiente de revisión)' + detalle };
+  if (a.source === 'derivado') return { icon: '↪️', texto, title: 'Derivado a (pendiente de revisión)' + detalle };
+  if (a.source === 'creador') return { icon: '👤', texto, title: 'Médico que creó el caso' + detalle };
+  return { icon: '🩺', texto, title: 'Responsable del caso' + detalle };
 }
 const q = ref('');
 const busy = ref(false);

@@ -111,6 +111,11 @@ export async function listGroupMembers(idOrSlug) {
   return call(`/api/groups/${encodeURIComponent(idOrSlug)}/members`, { method: 'GET' });
 }
 
+// A quién está derivado un episodio ahora mismo (revisiones pendientes).
+export async function listEntityDerivations(entityId) {
+  return call(`/api/review-queue/entity/${encodeURIComponent(entityId)}`, { method: 'GET' });
+}
+
 export async function adminUpdateUser(id, patch) {
   return call(`/api/admin/users/${encodeURIComponent(id)}`, {
     method: 'PATCH',

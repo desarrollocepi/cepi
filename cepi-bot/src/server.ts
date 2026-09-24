@@ -548,6 +548,32 @@ function computeStatusHeader(session: BotSession | null): string {
  */
 const CONFIRM_GATE_ENABLED = process.env.CEPI_CONFIRM_GATE === '1';
 
+const UUID_DESTINO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Los destinos de "derivar a …": círculos (slug) y personas (uuid), separados por comas, y
+ * lo que sobra del último es el motivo. Con un solo destino se comporta como siempre
+ * ("derivar a dermatologia sospecha de melanoma").
+ */
+export function parsearDestinos(texto: string): { circulos: string[]; personas: string[]; motivo: string } {
+  const circulos: string[] = [];
+  const personas: string[] = [];
+  let motivo = '';
+  const trozos = texto.split(',');
+  trozos.forEach((trozo, i) => {
+    const t = trozo.trim();
+    if (!t) return;
+    const m = t.match(/^([0-9a-f-]{36}|[a-z][a-z0-9_-]*)\b\s*([\s\S]*)$/i);
+    if (!m) { if (i === trozos.length - 1) motivo = t; return; }
+    const destino = m[1];
+    const resto = (m[2] || '').trim();
+    if (UUID_DESTINO.test(destino)) personas.push(destino.toLowerCase());
+    else circulos.push(destino.toLowerCase());
+    if (resto && i === trozos.length - 1) motivo = resto;
+  });
+  return { circulos, personas: Array.from(new Set(personas)), motivo };
+}
+
 /** Consent entity (PAPER §8 image-consent records). Mirrors flowV1's constant. */
 const CONSENT_ENTITY_ID = '18000000-0000-0000-0000-000000000000';
 
@@ -584,10 +610,20 @@ async function executePendingActionResult(
         errs.push((r as any)?.error || 'error');
       }
     }
+    // `{{reviewers}}`: a quién se derivó, por nombre, tal como lo resolvió el backend
+    // (un círculo son sus miembros). Así el hilo dice a quién fue, no un slug ni un uuid.
+    const nombres: string[] = [];
+    for (const c of batchCalls) {
+      for (const n of ((c.result as any)?.data?.reviewer_names || [])) {
+        if (!nombres.includes(n)) nombres.push(n);
+      }
+    }
+    const conDatos = (t: string) => t
+      .replace(/\{\{count\}\}/g, String(ids.length))
+      .replace(/\{\{reviewers\}\}/g, nombres.length ? nombres.join(', ') : 'nadie');
     const ackText = errs.length
-      ? `${pa.successMessage.replace(/\{\{count\}\}/g, String(ids.length))}` +
-        ` (con ${errs.length} error(es): ${errs.join('; ')})`
-      : pa.successMessage.replace(/\{\{count\}\}/g, String(ids.length));
+      ? `${conDatos(pa.successMessage)} (con ${errs.length} error(es): ${errs.join('; ')})`
+      : conDatos(pa.successMessage);
     session.pending_action = null;
     session.turns = [
       ...session.turns,
@@ -1647,8 +1683,11 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
       }
 
-      // ── "derivar a <especialidad-slug> [motivo]" — al círculo de especialistas ──
-      const deriveMatch = message.trim().match(/^\/?\s*derivar\s+a\s+([a-z][a-z0-9_-]+)\b\s*(.*)$/i);
+      // ── "derivar a <destino>[, <destino>…] [motivo]" ──────────────────────
+      // Un destino es un círculo (slug) o una persona (uuid), y se pueden mezclar en una
+      // sola derivación: "derivar a dermatologia, 3f2a…, 9b1c… sospecha de melanoma".
+      // El motivo es lo que sobra del último destino, como cuando había uno solo.
+      const deriveMatch = message.trim().match(/^\/?\s*derivar\s+a\s+(.+)$/is);
       if (deriveMatch) {
         if (!activeEpisodeId) {
           const ackText = 'Activá o reclamá un episodio antes de derivarlo.';
@@ -1657,21 +1696,40 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
             active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
         }
-        const slug = deriveMatch[1].toLowerCase();
-        const reason = (deriveMatch[2] || '').trim() || `Derivado al círculo "${slug}" para segunda opinión`;
+        const { circulos, personas, motivo } = parsearDestinos(deriveMatch[1]);
+        if (!circulos.length && !personas.length) {
+          const ackText = 'Dime a quién derivar: un círculo (dermatologia) o una persona, separados por comas.';
+          session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
+          await saveSession(mcp, session);
+          return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
+            active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
+        }
+        const destinos = [...circulos, ...personas];
+        const comoTexto = circulos.length
+          ? `al círculo "${circulos.join('", "')}"${personas.length ? ` y a ${personas.length} persona(s)` : ''}`
+          : `a ${personas.length} persona(s)`;
+        const reason = motivo || `Derivado ${comoTexto} para segunda opinión`;
+        const batch: any[] = [];
+        // `derivado_a` guarda el círculo (es lo que la lista muestra como "a cargo"); con
+        // varios, el primero. A quién está derivado de verdad son las revisiones pendientes.
+        if (circulos.length) {
+          batch.push({ tool: 'entities.update', args: { id: activeEpisodeId, record_type: 'business',
+            data: { derivado_a: circulos[0], especialidad: circulos[0] } } });
+        }
+        batch.push({ tool: 'entities.request_review', args: {
+          entity_id: activeEpisodeId,
+          ...(personas.length ? { reviewers: personas } : {}),
+          ...(circulos.length ? { group_ids: circulos } : {}),
+          reason, status_value: 'derivada',
+        } });
         session.pending_action = {
-          summary: `Derivar episodio ${activeEpisodeId} al círculo "${slug}"`,
-          batch: [
-            { tool: 'entities.update', args: { id: activeEpisodeId, record_type: 'business',
-              data: { derivado_a: slug, especialidad: slug } } },
-            { tool: 'entities.request_review', args: { entity_id: activeEpisodeId, group_id: slug,
-              reason, status_value: 'derivada' } },
-          ],
-          successMessage: `Caso derivado al círculo "${slug}". Sus especialistas fueron notificados.`,
+          summary: `Derivar episodio ${activeEpisodeId} ${comoTexto}`,
+          batch,
+          successMessage: `Caso derivado ${comoTexto}: {{reviewers}}. Se les notificó.`,
           createdAt: new Date().toISOString(),
         };
         if (!CONFIRM_GATE_ENABLED) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
-        const ackText = `Voy a derivar el episodio ${activeEpisodeId} al círculo "${slug}".\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
+        const ackText = `Voy a derivar el episodio ${activeEpisodeId} ${comoTexto} (${destinos.length} destino(s)).\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
         return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],

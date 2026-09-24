@@ -173,6 +173,27 @@ struct GrupoDerivacion: Decodable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// A quién está derivado un episodio ahora (`GET /api/review-queue/entity/:id`): una
+/// revisión pendiente por persona. Con varias derivaciones a la vez, son varias.
+struct Derivado: Decodable, Sendable, Hashable, Identifiable {
+    let usuario: String
+    let nombre: String?
+    let email: String?
+
+    var id: String { usuario }
+    var comoSeLlama: String { nombre ?? email ?? "Profesional" }
+
+    enum CodingKeys: String, CodingKey {
+        case usuario = "user_id"
+        case nombre = "name"
+        case email
+    }
+}
+
+struct Derivaciones: Decodable, Sendable {
+    let derivados: [Derivado]
+}
+
 struct MiembroGrupo: Decodable, Sendable, Hashable, Identifiable {
     let usuario: String
     let nombre: String?
