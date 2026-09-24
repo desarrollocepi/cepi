@@ -4,6 +4,24 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-24 — Derivar a varios, y saber a quién
+
+- **Multiderivación**: se marcan círculos y personas —mezclados— y un botón los manda en una
+  sola derivación (iOS, Android y web). A quien ya la tiene pendiente se le muestra la marca
+  y no se lo puede repetir. El bot acepta `derivar a <círculo|persona>[, …] [motivo]`
+  (`parsearDestinos`); con un destino se comporta igual que antes.
+- **Se ve a quién está derivado**: barra sobre el hilo ("↪ Derivado a …", abre el selector),
+  la línea de "a cargo" de la lista nombra a todos ("Ana, Beto +2") y el hilo registra la
+  derivación **por nombre** (`{{reviewers}}`, que el backend resuelve al derivar).
+- **Backend**: `GET /api/review-queue/entity/:id` (quién tiene pendiente esa entidad,
+  genérico), `derivados[]` en `/api/patient-assignments` y `reviewer_names` en la respuesta de
+  `request_review`. `request_review` ya aceptaba `reviewers[]` + `group_ids[]` en una llamada.
+- Tests: TodoERP 440, cepi-bot 130, Android 81, iOS 60 — todos en verde.
+- **Publicado**: web y backend en prod (deploy verde), Android **6 (2.2.0)** en la pista
+  interna de Play e iOS build **10** en TestFlight. PAPER §24.2.
+
+---
+
 ## Sesión 2026-09-23 — Derivar: solo la gente de tu organización
 
 - **El alcance de personas es la org activa, no solo la sandbox.** Los miembros de un círculo,
