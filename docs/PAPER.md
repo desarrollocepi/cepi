@@ -1853,6 +1853,22 @@ cédula en otra organización es otra persona (D-Aux-21), y ahí se crea un regi
 Mientras está borrado, el paciente no aparece en la lista, la búsqueda, la cola de revisión,
 "a cargo", su hilo ni la galería.
 
+**Derivar a varios, y saber a quién (2026-09-24).** Una consulta puede estar derivada a más
+de una persona a la vez, así que la app lo dice en tres lugares y deja elegir varios destinos
+de una vez:
+
+- **Selector**: se marcan círculos y personas —mezclados— y un botón los manda en una sola
+  derivación. A quien ya la tiene pendiente se le muestra la marca y no se lo puede repetir.
+- **Barra sobre el hilo**: "↪ Derivado a …" mientras haya revisiones pendientes; se toca y
+  abre el selector.
+- **Lista de pacientes**: la línea de "a cargo" nombra a todos los derivados ("Ana, Beto +2").
+
+El comando del bot acepta la lista: `derivar a <círculo|persona>[, …] [motivo]`, y el hilo
+registra a quién fue **por nombre**, no por slug ni uuid (`{{reviewers}}` lo resuelve el
+backend al derivar). Endpoints: `GET /api/review-queue/entity/:id` (quién tiene pendiente esa
+entidad, genérico) y `derivados[]` en `/api/patient-assignments`. `request_review` ya aceptaba
+`reviewers[]` + `group_ids[]` en una llamada: no hizo falta inventar nada del otro lado.
+
 ### 24.3 Arquitectura
 
 ```
