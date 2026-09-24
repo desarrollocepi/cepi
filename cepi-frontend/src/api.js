@@ -189,6 +189,9 @@ export async function chat(message, sessionId, extra = {}) {
   if (sessionId) body.session_id = sessionId;
   // Structured form submission ({ form_id, data }) — used by ficha sections.
   if (extra.formSubmission) body.form_submission = extra.formSubmission;
+  // Acción disparada por el usuario desde un botón (derivar, enviar caso…): el bot no la
+  // confirma con sí/no, ya la confirmó al tocarla.
+  if (extra.explicit) body.explicit = true;
   try {
     return await call('/api/bot/chat', { method: 'POST', body: JSON.stringify(body) });
   } catch (e) {

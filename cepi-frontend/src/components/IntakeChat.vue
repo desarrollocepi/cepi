@@ -483,7 +483,7 @@ async function derivarSeleccion() {
   showDerivar.value = false;
   derivarMotivo.value = '';
   seleccion.value = [];
-  await send(`derivar a ${destinos}${motivo ? ' ' + motivo : ''}`);
+  await send(`derivar a ${destinos}${motivo ? ' ' + motivo : ''}`, { explicit: true });
   if (!error.value) closeChat();
 }
 

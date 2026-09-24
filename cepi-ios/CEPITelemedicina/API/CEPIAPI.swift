@@ -83,8 +83,13 @@ struct CEPIAPI: Sendable {
         return respuesta.sesiones
     }
 
-    func chat(_ mensaje: String, sesion: String?) async throws -> RespuestaChat {
-        try await cliente.post("/api/bot/chat", json: TurnoChat(message: mensaje, sessionId: sesion, formulario: nil))
+    /// `explicito`: lo disparó el usuario desde un botón (derivar, enviar caso…), así que el
+    /// bot lo ejecuta sin pedir sí/no.
+    func chat(_ mensaje: String, sesion: String?, explicito: Bool = false) async throws -> RespuestaChat {
+        try await cliente.post(
+            "/api/bot/chat",
+            json: TurnoChat(message: mensaje, sessionId: sesion, formulario: nil, explicit: explicito),
+        )
     }
 
     /// Un envío estructurado (`ficha_grp_*`, `ficha_goto`, `ficha_save`): no lleva texto, es la
@@ -187,9 +192,10 @@ private struct TurnoChat: Encodable, Sendable {
     let message: String
     let sessionId: String?
     let formulario: EnvioFormulario?
+    var explicit: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case message
+        case message, explicit
         case sessionId = "session_id"
         case formulario = "form_submission"
     }

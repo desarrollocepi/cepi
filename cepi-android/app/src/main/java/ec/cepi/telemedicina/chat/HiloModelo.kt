@@ -116,7 +116,8 @@ class HiloModelo(
     }
 
     /** Envía un mensaje (con la foto adjunta, si hay). Devuelve si el bot lo procesó. */
-    suspend fun enviar(texto: String): Boolean {
+    /** `accionExplicita`: lo disparó un botón (derivar), así que el bot no pide sí/no. */
+    suspend fun enviar(texto: String, accionExplicita: Boolean = false): Boolean {
         val limpio = texto.trim()
         val foto = adjunto
         val mensaje = if (foto == null) limpio else {
@@ -124,7 +125,9 @@ class HiloModelo(
         }
         if (mensaje.isEmpty() || ocupado) return false
         adjunto = null
-        return turno(eco = mensaje, explicito = false) { sesion -> api.chat(mensaje, sesion) }
+        return turno(eco = mensaje, explicito = false) { sesion ->
+            api.chat(mensaje, sesion, explicito = accionExplicita)
+        }
     }
 
     /** Un envío estructurado: un grupo de la ficha, "ir a sección" o guardar el visor. */

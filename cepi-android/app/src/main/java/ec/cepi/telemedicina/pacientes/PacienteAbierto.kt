@@ -219,7 +219,7 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
         DerivarPantalla(
             api = api,
             alDerivar = { comando ->
-                if (modelo.enviar(comando)) {
+                if (modelo.enviar(comando, accionExplicita = true)) {
                     // Derivado: el médico pasa al siguiente paciente.
                     derivar = false
                     alVolver()

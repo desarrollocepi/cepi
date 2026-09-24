@@ -84,10 +84,15 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun sesionesBot(paciente: String): List<SesionBot> =
         cliente.get<SesionesBot>("/api/bot/sessions", "patient_id" to paciente).sesiones
 
-    suspend fun chat(mensaje: String, sesion: String?): RespuestaChat =
+    /**
+     * `explicito`: lo disparó el usuario desde un botón (derivar, enviar caso…), así que el
+     * bot lo ejecuta sin pedir sí/no.
+     */
+    suspend fun chat(mensaje: String, sesion: String?, explicito: Boolean = false): RespuestaChat =
         RespuestaChat.desde(cliente.post<JsonObject>("/api/bot/chat", buildJsonObject {
             put("message", mensaje)
             if (sesion != null) put("session_id", sesion)
+            if (explicito) put("explicit", true)
         }))
 
     /**

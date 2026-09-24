@@ -128,7 +128,7 @@ struct PacienteView: View {
             DerivarView(
                 yaDerivados: modelo.derivados,
                 alDerivar: { comando in
-                    guard await modelo.enviar(comando, api: sesion.api) else {
+                    guard await modelo.enviar(comando, api: sesion.api, accionExplicita: true) else {
                         return modelo.error ?? "No se pudo derivar."
                     }
                     mostrarDerivar = false

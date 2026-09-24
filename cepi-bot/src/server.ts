@@ -731,7 +731,13 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       session_id: incomingSessionId,
       message = '',
       form_submission: formSubmission,
+      explicit: explicitAction = false,
     } = req.body || {};
+
+    // Una acción que el usuario disparó a propósito (un botón del menú: derivar, enviar
+    // caso, nueva consulta) no se confirma: ya la confirmó al tocarla. El gate es para lo
+    // que el agente INFIERE de texto libre (PAPER §13.3.1, D-Aux-1).
+    const gateOn = CONFIRM_GATE_ENABLED && !explicitAction;
 
     const auth = req.header('authorization') || '';
     const headerJwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
@@ -1084,7 +1090,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         if (v1) {
           // A flow that staged a pending_action (e.g. /nuevo-paciente): with the
           // gate disabled, execute it now instead of asking sí/no.
-          if (!CONFIRM_GATE_ENABLED && session.pending_action) {
+          if (!gateOn && session.pending_action) {
             return res.json(await executePendingActionResult(session, mcp, message, sessionId));
           }
           // session was already mutated + saved by handleV1Flow.
@@ -1315,7 +1321,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: `Signos vitales guardados.`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) {
+        if (!gateOn) {
           return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         }
         const ackText =
@@ -1523,7 +1529,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: `Diagnóstico presuntivo guardado (id: {{id}}, CIE-10: ${codigo}).`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) {
+        if (!gateOn) {
           return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         }
         const ackText =
@@ -1550,6 +1556,16 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
 
       // ── Stage "/escalar a <user-uuid> <razón>" behind gate ──
       const escalateMatch = message.trim().match(/^\/?\s*escalar\s+a\s+([0-9a-f-]{36})\b\s*(.*)$/i);
+      // Sin consulta activa se dice eso y se corta: antes caía al LLM, que contestaba
+      // "voy a derivar… ¿confirmas?" a una acción que el usuario ya había confirmado al
+      // tocar el menú, y no derivaba nada.
+      if (escalateMatch && !activeEpisodeId) {
+        const ackText = 'Abre o reclama una consulta antes de derivarla.';
+        session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
+        await saveSession(mcp, session);
+        return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
+          active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
+      }
       if (escalateMatch && activeEpisodeId) {
         const reviewer = escalateMatch[1];
         const reason   = (escalateMatch[2] || '').trim() || 'Derivado para segunda opinión';
@@ -1564,7 +1580,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: `Episodio escalado. Recordatorio creado para el reviewer.`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) {
+        if (!gateOn) {
           return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         }
         const ackText =
@@ -1621,7 +1637,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: 'Caso enviado a la bandeja de turno. Los médicos en turno fueron notificados.',
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
+        if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         const ackText = `Voy a enviar el episodio ${activeEpisodeId} a la bandeja de turno.\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
@@ -1690,7 +1706,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       const deriveMatch = message.trim().match(/^\/?\s*derivar\s+a\s+(.+)$/is);
       if (deriveMatch) {
         if (!activeEpisodeId) {
-          const ackText = 'Activá o reclamá un episodio antes de derivarlo.';
+          const ackText = 'Abre o reclama una consulta antes de derivarla.';
           session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
           await saveSession(mcp, session);
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
@@ -1728,7 +1744,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: `Caso derivado ${comoTexto}: {{reviewers}}. Se les notificó.`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
+        if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         const ackText = `Voy a derivar el episodio ${activeEpisodeId} ${comoTexto} (${destinos.length} destino(s)).\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
@@ -1768,7 +1784,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             : 'Recomendación registrada (sin médico primario asociado para notificar).',
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
+        if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         const ackText = `Voy a registrar tu recomendación en el episodio ${activeEpisodeId} y notificar al primario.\n\n¿Confirmás? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
@@ -1836,7 +1852,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             : `Episodio cerrado.`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) {
+        if (!gateOn) {
           return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         }
         const ackText =
@@ -1899,7 +1915,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           successMessage: `Episodio creado (id: {{id}}). Lo activo automáticamente; puedes ya subir imágenes.`,
           createdAt: new Date().toISOString(),
         };
-        if (!CONFIRM_GATE_ENABLED) {
+        if (!gateOn) {
           return res.json(await executePendingActionResult(session, mcp, message, sessionId));
         }
         const ackText =

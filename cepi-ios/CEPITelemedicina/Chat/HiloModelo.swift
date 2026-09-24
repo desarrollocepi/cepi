@@ -77,8 +77,9 @@ final class HiloModelo {
     }
 
     /// Envía un mensaje (con la foto adjunta, si hay). Devuelve si el bot lo procesó.
+    /// `accionExplicita`: lo disparó un botón (derivar), así que el bot no pide sí/no.
     @discardableResult
-    func enviar(_ texto: String, api: CEPIAPI) async -> Bool {
+    func enviar(_ texto: String, api: CEPIAPI, accionExplicita: Bool = false) async -> Bool {
         let limpio = texto.trimmingCharacters(in: .whitespacesAndNewlines)
         var mensaje = limpio
         if let adjunto {
@@ -87,7 +88,7 @@ final class HiloModelo {
         guard !mensaje.isEmpty, !ocupado else { return false }
         adjunto = nil
         return await turno(eco: mensaje, explicito: false, api: api) { sesion in
-            try await api.chat(mensaje, sesion: sesion)
+            try await api.chat(mensaje, sesion: sesion, explicito: accionExplicita)
         }
     }
 
