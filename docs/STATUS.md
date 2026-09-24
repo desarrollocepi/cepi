@@ -92,10 +92,12 @@ Para completar el corte, **en este orden**:
   cuyo único `add_header` era Cache-Control. Los assets sí las traían, que es lo que despistaba.
   Se repiten los tres en ese location.
 - El certificado renueva solo: `certbot.timer` activo y `certbot renew --dry-run` en verde.
-- **Pendiente (necesita la cuenta de Google)**: agregar `https://console.cepi.ec` a *Authorized
-  JavaScript origins* del cliente OAuth web (`cepi-500221`). Hasta entonces GIS responde `The
-  given origin is not allowed for the given client ID` y solo entra el login por email y
-  contraseña.
+- **Origen OAuth agregado** (2026-09-24): `https://console.cepi.ec` está en *Authorized
+  JavaScript origins* del cliente web de `cepi-500221`, junto a `telemedicina` y `casos`.
+  Verificado recargando la página del cliente desde cero. Google avisa que la configuración
+  tarda **de 5 minutos a algunas horas** en aplicarse, así que el botón de Google puede seguir
+  respondiendo `The given origin is not allowed` un rato; el login por email y contraseña
+  funciona mientras tanto.
 - **Pendiente (riesgo abierto)**: `admin@erp.com` / `Admin123!` —la cuenta seed de
   `002_seed.sql`, con la contraseña escrita en ese archivo y en `TodoERP/CLAUDE.md`— es
   **superadmin activo en producción** y entra desde internet. El seed inserta con `ON CONFLICT
