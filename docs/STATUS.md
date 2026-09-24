@@ -41,15 +41,31 @@ El deploy **no toca** `/opt/cepi/ecosystem.config.cjs`, así que en prod los bot
 `admin@erp.com` hasta que se cambie a mano. El seed 020 es seguro de desplegar igual: crea rol
 y cuenta nuevos y baja el rol de `bot-telegram@cepi.local`, que hoy no usa nadie.
 
-Para completar el corte, **en este orden**:
+El corte está automatizado en **`scripts/corte-bots-cuentas-servicio.sh`**, que corre **en el
+servidor** y lo hace todo en un paso seguro:
 
-1. Poner contraseña a `bot-whatsapp@cepi.local` y `bot-telegram@cepi.local` (el seed las deja
-   con un hash inválido a propósito) y guardarlas en el vault.
-2. Editar `/opt/cepi/ecosystem.config.cjs`: `*_BOT_EMAIL` a las cuentas nuevas, más
-   `*_BOT_ORG: 'cepi'` y `*_BOT_AUTOALTA: '1'`. El repo ya tiene esa forma como referencia.
-3. `pm2 restart cepi-bot` y probar un mensaje real por cada canal.
-4. **Recién entonces** desactivar `admin@erp.com`. Antes de eso, desactivarla deja mudos los
-   dos bots.
+```bash
+scp scripts/corte-bots-cuentas-servicio.sh prod:/tmp/
+ssh prod 'bash /tmp/corte-bots-cuentas-servicio.sh'
+```
+
+Qué garantiza, y por qué está escrito así:
+
+- Las contraseñas **se generan en el servidor** y no se imprimen nunca.
+- **Verifica que las cuentas nuevas pueden entrar ANTES de tocar el ecosystem.** Si no pueden,
+  el archivo no se toca y los bots siguen andando con lo de siempre.
+- Backup del ecosystem, chequeo de que el archivo quedó sintácticamente válido, y
+  **restauración automática** si `cepi-bot` no vuelve a responder tras el restart.
+- Idempotente: si ya está aplicado, no vuelve a rotar nada.
+
+Lo pendiente no es el script sino ejecutarlo: el agente tiene bloqueada la escritura de
+secretos en producción, así que **lo corre una persona**.
+
+Después de correrlo y probar un mensaje real por cada canal, **recién entonces** desactivar
+`admin@erp.com`. Antes de eso, desactivarla deja mudos los dos bots.
+
+Siguiente paso, aparte: las contraseñas siguen en claro en el ecosystem, que es el patrón
+actual. Moverlas al vault (`dotrino-env --ns cepi-prod`) es una mejora que este script no hace.
 - ⚠️ **TodoERP `main` ya lleva la migración.** El próximo push a `master` de cepi la aplica en
   producción. Es aditiva (una columna nullable) y el código viejo no la usa, pero conviene
   saberlo antes de desplegar cualquier otra cosa.
