@@ -22,13 +22,20 @@ Estado del proyecto al cierre de la sesión actual.
   `api.js` que solo ellos usaban. El botón **Admin ↗** se queda y abre la consola en otra
   pestaña; deshabilitado con el motivo para quien no administra nada.
 - **Deploy**: push a `master` de `cepi-console` → `/opt/cepi/console/dist` en el EC2, con
-  server block de nginx aparte. Primer deploy **verde**; sirviendo por IP con `Host:
-  console.cepi.ec`.
+  server block de nginx aparte. Deploy **verde**; sirviendo por IP con `Host: console.cepi.ec`.
+  cepi y TodoERP también **publicados en prod**: la PWA ya trae el botón `Admin ↗` y
+  `/api/orgs` devuelve `sandbox`.
+- **Se rotó la deploy key de TodoERP.** El deploy de cepi empezó a fallar en el paso que clona
+  TodoERP (`git@github.com: Permission denied (publickey)`) con GitHub operativo y la key aún
+  registrada. Se generó un par nuevo, se registró como deploy key de solo lectura
+  (`cepi CI (solo lectura) 2026-09-24`) y se actualizó el secret `TODOERP_DEPLOY_KEY`. Copia
+  privada en `~/.ssh/todoerp_ci_deploy_ed25519`. **La key vieja sigue registrada y no
+  autentica**: conviene borrarla.
 - **Pendiente para que sea usable**: el registro A `console.cepi.ec → 3.23.236.49` en Rackspace
   Cloud DNS, y después `certbot --nginx -d console.cepi.ec`. Hoy la consola responde por HTTP,
   sin certificado.
-- Tests: TodoERP 444 (2 fallos **previos** y ajenos a este cambio, por base local
-  desactualizada), cepi-bot 130, 4 nuevos de `orgs_list_all`.
+- Tests: verdes en el CI (base desde cero). En local, TodoERP da 2 fallos **previos** y ajenos
+  a este cambio, por base desactualizada; cepi-bot 130; 4 nuevos de `orgs_list_all`.
 
 ---
 
