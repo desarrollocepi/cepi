@@ -55,6 +55,10 @@ Administra, con `--delete`: `TodoERP/backend/src`, `TodoERP/database`, `TodoERP/
 `cepi-bot/src`, `cepi-frontend/dist`, más los `package.json`, `package-lock.json` y
 `tsconfig.json` de cada paquete.
 
+La **config de nginx** ahora está versionada como foto en `deploy/nginx/` (no la administra
+el deploy: se aplica a mano). Ahí está también la trampa del `add_header`, que hizo que las
+cabeceras de seguridad no llegaran al HTML aunque sí a los assets.
+
 No toca: `/opt/cepi/uploads`, `/opt/cepi/ota`, `.env`, `.secrets*`, `backups`, `node_modules`
 (salvo por `npm ci`), la config de nginx, los procesos de PM2 ni el vault (`dotrino-env
 --ns cepi-prod`). Un cambio en cualquiera de esas cosas sigue siendo manual.
