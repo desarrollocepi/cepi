@@ -31,9 +31,16 @@ Estado del proyecto al cierre de la sesión actual.
   (`cepi CI (solo lectura) 2026-09-24`) y se actualizó el secret `TODOERP_DEPLOY_KEY`. Copia
   privada en `~/.ssh/todoerp_ci_deploy_ed25519`. **La key vieja sigue registrada y no
   autentica**: conviene borrarla.
-- **Pendiente para que sea usable**: el registro A `console.cepi.ec → 3.23.236.49` en Rackspace
-  Cloud DNS, y después `certbot --nginx -d console.cepi.ec`. Hoy la consola responde por HTTP,
-  sin certificado.
+- **`https://console.cepi.ec` en vivo**: DNS agregado en Rackspace, certificado de Let's
+  Encrypt emitido (vence 2026-12-23, renovación automática) y redirect 80→443.
+- **GOTCHA de nginx**: las cabeceras de seguridad del server **no llegaban al HTML**. Un
+  `add_header` en un nivel más específico no se suma a los del padre, los reemplaza; como
+  `location /` sirve la página por `try_files … /index.html`, caía en `location = /index.html`,
+  cuyo único `add_header` era Cache-Control. Los assets sí las traían, que es lo que despistaba.
+  Se repiten los tres en ese location.
+- **Pendiente**: agregar `https://console.cepi.ec` a *Authorized JavaScript origins* del cliente
+  OAuth web (`cepi-500221`). Hasta entonces GIS responde `The given origin is not allowed for
+  the given client ID` y solo entra el login por email y contraseña.
 - Tests: verdes en el CI (base desde cero). En local, TodoERP da 2 fallos **previos** y ajenos
   a este cambio, por base desactualizada; cepi-bot 130; 4 nuevos de `orgs_list_all`.
 
