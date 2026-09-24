@@ -62,6 +62,17 @@ Qué garantiza, y por qué está escrito así:
   **restauración automática** si `cepi-bot` no vuelve a responder tras el restart.
 - Idempotente: si ya está aplicado, no vuelve a rotar nada.
 
+**Primer intento, 2026-09-24 21:06 — revirtió solo por un bug del script.** El corte llegó a
+aplicarse y el script lo deshizo: esperaba **8 s** fijos a que `cepi-bot` volviera, y el bot
+tarda **~20 s** porque carga sus secretos del vault al arrancar. El chequeo cayó en mitad del
+arranque, dio por fallado un corte que estaba bien y restauró el ecosystem.
+
+Lo importante: **el rollback funcionó como debía**. El ecosystem quedó byte a byte igual al
+backup, el bot volvió solo y WhatsApp siguió atendiendo. Nadie se quedó sin servicio.
+
+Ya está corregido: ahora **sondea** hasta 90 s en vez de esperar un rato fijo. Se puede volver
+a correr tal cual — es idempotente.
+
 Lo pendiente no es el script sino ejecutarlo: el agente tiene bloqueada la escritura de
 secretos en producción, así que **lo corre una persona**.
 

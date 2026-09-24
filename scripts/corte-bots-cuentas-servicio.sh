@@ -105,14 +105,26 @@ node --check "$ECO" 2>/dev/null || sudo node -e "require('$ECO')" >/dev/null 2>&
 }
 
 # ── 6. Reiniciar y comprobar que vuelve ──────────────────────────────────────
+# Se SONDEA en vez de esperar un rato fijo. cepi-bot tarda ~20 s en levantar
+# porque carga sus secretos del vault al arrancar; con una espera fija de 8 s
+# el chequeo caía en mitad del arranque, daba por fallado un corte que estaba
+# bien y revertía solo. Pasó de verdad el 2026-09-24.
+esperar_bot() {
+  local limite=${1:-90} t=0
+  while (( t < limite )); do
+    curl -fsS -o /dev/null --max-time 3 "http://localhost:3002/health" && return 0
+    sleep 3; t=$((t+3))
+  done
+  return 1
+}
+
 pm2 restart cepi-bot --update-env >/dev/null
-sleep 8
-if ! curl -fsS -o /dev/null "http://localhost:3002/health"; then
-  log "ERROR: cepi-bot no responde. Restaurando el ecosystem y reiniciando."
-  sudo cp "$BK" "$ECO"; pm2 restart cepi-bot --update-env >/dev/null; sleep 6
-  curl -fsS -o /dev/null "http://localhost:3002/health" && log "revertido, el bot volvió" || log "revertido, PERO el bot sigue sin responder"
+if ! esperar_bot 90; then
+  log "ERROR: cepi-bot no respondió en 90 s. Restaurando el ecosystem y reiniciando."
+  sudo cp "$BK" "$ECO"; pm2 restart cepi-bot --update-env >/dev/null
+  esperar_bot 90 && log "revertido, el bot volvió" || log "revertido, PERO el bot sigue sin responder"
   exit 1
 fi
 
-log "cepi-bot arriba con las cuentas de servicio"
+log "cepi-bot arriba con las cuentas de servicio (respondió en menos de 90 s)"
 log "LISTO. admin@erp.com ya no la usa ningún bot."
