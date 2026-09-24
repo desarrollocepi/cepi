@@ -4,6 +4,37 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-23 — Derivar: solo la gente de tu organización
+
+- **El alcance de personas es la org activa, no solo la sandbox.** Los miembros de un círculo,
+  sus conteos y los destinos de una derivación, asignación, revisión o recordatorio se
+  filtraban por org **solo** desde una sandbox; en `cepi` la lista traía a los médicos de todas
+  las orgs, a los que el backend igual les rechazaba la derivación. `reachableOrgId` en
+  TodoERP (PAPER §13.7). Sin org activa (API key) no se filtra.
+- **El círculo "todos" es toda la gente de la org**, esté o no en un círculo: quien no está en
+  ninguno tiene que ser alcanzable desde algún lado. `/api/groups/:slug/members` resuelve
+  también el grupo virtual, así que la lista que se ve es a quién le va a llegar. Las apps ya
+  lo despliegan como a cualquier círculo.
+- **Cuentas de servicio**: `users.data.service = true` (seeds 010, 011 y 014 — Espejo DrPro,
+  Bot Telegram, Importador de patología). No se listan ni reciben derivaciones. Tampoco se
+  listan usuarios inactivos.
+- **Un círculo sin miembros de la org no se ofrece** en iOS, Android y web. Excepción
+  consciente a "nunca ocultes un botón": derivar ahí no llega a nadie.
+- **Limpieza de membresías en prod** (a mano, con respaldo en `respaldo_membresias_cepi_20260923`):
+  `cepi` tenía 30 de los 32 usuarios activos —la carga de médicos del 2026-07-01 y las 5 cuentas
+  demo `@cepi.local`—, así que Dermatología mostraba 13 personas. Quedaron los que interactuaron
+  desde el 16/09: Santiago Andrade, Gabriela Ramon, Claudia Guillén, Maria Basantes, Desarrollo
+  CEPI, System Administrator, más el Bot Telegram. Nadie perdió datos ni su cuenta, y siguen en
+  `cepi-drpro`. Dermatología 13 → 2, Comité 5 → 1, Medicina interna 6 → 1.
+  - **Pendiente**: el seed 007 vuelve a meter a las 5 demo en `cepi` en cada deploy. En local
+    hacen falta (el stack de desarrollo entra como `primario@cepi.local`), así que hay que
+    distinguir dev de prod antes de tocarlo.
+- Tests de TodoERP: 437 pasan (dos nuevos: el círculo "todos" y las cuentas de servicio).
+- **Publicado**: web en prod (dos deploys verdes), Android **5 (2.1.0)** en la pista interna de
+  Play y iOS build **9** en TestFlight.
+
+---
+
 ## Sesión 2026-09-22 — Estado de la ficha en la lista (iOS y Android)
 
 - Cada fila de Pacientes lleva a la derecha un **LED** con el estado de la consulta más
