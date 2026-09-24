@@ -18,7 +18,6 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import ChatShell from './components/ChatShell.vue';
 import CasosShell from './components/CasosShell.vue';
 import Profile from './components/Profile.vue';
-import AdminShell from './components/AdminShell.vue';
 import Galeria from './components/Galeria.vue';
 
 /** Con qué arranca quien entra sin ruta: lo decide el dominio por el que llegó. */
@@ -37,7 +36,6 @@ const routes = [
   { path: '/casos/paciente/:patientId', name: 'paciente', component: CasosShell, props: true, meta: { auth: true, marca: 'Casos' } },
   { path: '/galeria', name: 'galeria', component: Galeria, meta: { auth: true, marca: 'Galería' } },
   { path: '/perfil', name: 'perfil', component: Profile, meta: { auth: true, marca: 'Mi perfil' } },
-  { path: '/admin', name: 'admin', component: AdminShell, meta: { auth: true, admin: true, marca: 'Admin' } },
   // Sin sesión no hay ruta propia: el login lo pinta App.vue por encima de todo. Se
   // deja el catch-all para que una URL vieja o mal escrita no deje la pantalla vacía.
   { path: '/:pathMatch(.*)*', redirect: () => inicioSegunHost() },

@@ -1228,6 +1228,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-18** | Portal de casos | `casos.cepi.ec`: segunda superficie del frontend médico para **revisar, buscar y consolidar**, no para capturar. Comparte usuarios y componentes con telemedicina; **sin chat** en v1. Reusa los 27 grupos de `FICHA_GROUP_SPEC` en vez del formulario del ERP, que es estructurado por entidad y no tiene forma de ficha. Ver §22. |
 | **D-Aux-17** | Materialización lazy | No se baja el histórico completo de DrPro (17.990 citas/año). El espejo indexa la agenda desde el mes en curso y materializa la ficha de un paciente **bajo demanda**. Ver §21.4. |
 | **D-Aux-21** | Registros por organización | Todo lo clínico es de **una** org (paciente e informe de patología incluidos): una persona atendida en dos orgs tiene un registro por org, sin deduplicación. Sin org activa no se ve ningún paciente. Integraciones en vivo y bandeja de patología por `organizations.data.features`. Las personas alcanzables (derivar, asignar, recordar) son las de la org activa. Org sandbox (`data.sandbox`): nadie entra por defecto. Orgs: `cepi` (telemedicina), `cepi-drpro` (consultorio), `cepi-testing` (sandbox). Ver §13.7 y §24.7. |
+| **D-Aux-25** | Consola de administración | La administración (usuarios, roles, permisos, organizaciones) sale de la PWA médica a `console.cepi.ec`: app propia, dominio propio y **repositorio propio** (`desarrollocepi/cepi-console`), con su propio CI. Backend compartido (TodoERP), despliegue independiente. La consola **no muestra datos clínicos**, lo que alinea D-1 por construcción. En la PWA queda el botón Admin, que abre la consola en otra pestaña. Ver §26. |
 
 ---
 
@@ -2335,6 +2336,94 @@ notificaciones se pide en tiempo de ejecución. `google-services.json` es el mis
 | 5 | push, bandeja, abrir desde la notificación | una derivación hecha en la web llega al teléfono y tocarla abre el paciente |
 | 6 | Macrobenchmark contra §25.5, release firmado, pista interna de Play | la app nativa reemplaza a la APK Capacitor en la pista interna (hecho el 2026-09-22, versión 4) |
 
+
+
+---
+
+## 26. Consola de administración (`console.cepi.ec`)
+
+**D-Aux-25.** La administración del sistema sale de la PWA médica y vive en una
+app propia, en su propio dominio y su propio repositorio
+(`desarrollocepi/cepi-console`).
+
+### 26.1 Por qué se separa
+
+La pestaña *Admin* de la PWA (`AdminShell` + `AdminUsers` + `AdminOrgs`, 405 LOC)
+era un injerto: para cambiarle el rol a alguien había que cargar la app clínica
+entera —chat, ficha, galería, el bundle de imágenes— y navegar hasta una pestaña
+que el 95% de los usuarios nunca abre. Tres consecuencias:
+
+- **Mezcla de oficios.** Atender un paciente y administrar el sistema son dos
+  trabajos, con dos cabezas distintas y dos perfiles de riesgo distintos. La app
+  clínica está pensada para el teléfono, en la consulta, con una mano; la consola
+  es de escritorio, con tablas densas.
+- **Techo de alcance.** Roles y permisos nunca entraron ahí porque no había dónde
+  ponerlos: la PWA solo administraba usuarios y organizaciones. Editar un rol
+  exigía entrar al ERP, que es otra app y otro público (D-Aux-4).
+- **Superficie innecesaria.** El código que otorga permisos viajaba en el bundle
+  que se instala en el teléfono de cada médico.
+
+La consola **no muestra datos clínicos** y no habla con `cepi-bot`. Solo la capa
+de identidad: usuarios, roles, permisos y organizaciones. Eso la alinea con D-1
+(el admin no tiene acceso clínico por defecto) por construcción y no por permiso.
+
+### 26.2 Alcance
+
+| Pantalla | Backend | Qué administra |
+|---|---|---|
+| Usuarios | `/api/admin/*` | rol, alta/baja, organizaciones y círculos |
+| Roles | `/api/security?type=role` | qué bundle de permisos lleva cada rol |
+| Permisos | `/api/security?type=permission` | el mapa plano de capacidades del bundle |
+| Organizaciones | `/api/orgs/*` | crear, activar/desactivar, repartir miembros |
+
+«Perfil» y «rol» son la misma cosa en este modelo: `users.role_id → roles →
+role_permissions → permissions`, donde cada permiso es un **bundle** con un mapa
+plano `{"recurso:accion": true}` que `flattenPermissionRows` expande. No se
+inventa una entidad «perfil» aparte; la consola nombra rol a lo que la base llama
+rol.
+
+Las dos guardas del backend se ven en la UI en vez de sorprender:
+
+- **`assertCanGrant`** — nadie otorga lo que no tiene. Un 403 al guardar un rol se
+  muestra con esa explicación, no como error genérico.
+- **Alcance por organización** — el superadmin (`*:*:*:*`) ve todo; el admin de
+  una org solo ve a la gente de sus orgs y no toca una cuenta con el comodín
+  (§13.7). Lo que no puede usar se ve **deshabilitado con el motivo**.
+
+### 26.3 Arquitectura
+
+Vue 3 + Vite, sin estado global ni store: cuatro vistas que leen y escriben
+directo contra TodoERP (`:3001`), proxeado por nginx en el mismo origen. El token
+vive en `cepi.console.jwt` — clave propia, porque es otro dominio y conviene que
+una sesión de consola no se confunda con una de la app clínica.
+
+Router con `history` y no `hash`, al revés que la PWA: esto no corre como app
+nativa y nginx reescribe a `index.html`, así que la URL queda limpia.
+
+**La consola no tiene backend propio.** Si le falta un endpoint, se agrega en
+TodoERP. El único cambio que necesitó al nacer fue `GET /api/orgs?all=1`: sin él
+una organización desactivada desaparecía de la lista y «Desactivar» no tenía
+vuelta atrás. Es opt-in para no meter orgs apagadas en el selector de la app
+médica, y solo responde al superadmin.
+
+### 26.4 Despliegue
+
+Repo propio con CI propio: push a `master` de `cepi-console` → build en el runner
+→ `/opt/cepi/console/dist` en el mismo EC2 de prod. Es solo estáticos: no hay SQL,
+ni `npm ci`, ni restart de PM2, así que el script remoto guarda una foto del build
+anterior y nada más. `console.cepi.ec` es un server block de nginx aparte, que no
+expone `/api/bot` ni los webhooks.
+
+Que el backend sea compartido y el despliegue no, es deliberado: un cambio en la
+consola no puede tumbar la app clínica, y al revés el deploy de `cepi` no arrastra
+la consola.
+
+### 26.5 Qué queda en la PWA
+
+El botón **Admin** sigue en el menú de la cuenta — es el camino que la gente ya
+conoce — pero abre `console.cepi.ec` en otra pestaña. Quien no administra nada lo
+ve deshabilitado con el motivo, no un hueco. La ruta `/admin`, sus tres
+componentes y las doce funciones de `api.js` que solo ellos usaban se eliminaron.
 
 ---
 

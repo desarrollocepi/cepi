@@ -16,7 +16,7 @@
       <div class="header-right">
         <Notifications v-if="user && !isPending" :user="user" @open="onNotifOpen" />
         <button
-          v-if="user && (showAdmin || showProfile || !chatHeadActive)" type="button" class="top-burger"
+          v-if="user && (showProfile || !chatHeadActive)" type="button" class="top-burger"
           @click="showTopMenu = !showTopMenu" aria-label="Opciones" :aria-expanded="showTopMenu"
         >☰</button>
         <span v-if="user" class="user" :class="{ open: showTopMenu }">
@@ -35,8 +35,15 @@
           <button v-if="!isPending && !showCasos" @click="abrirCasos">🗂️ Casos</button>
           <button v-if="!isPending && !showGaleria" @click="abrirGaleria">🖼️ Galería</button>
           <button v-if="showCasos" @click="goChat">💬 Telemedicina</button>
-          <button v-if="isAdmin && !showAdmin" @click="showTopMenu = false; $router.push('/admin')">Admin</button>
-          <button v-if="showAdmin || showProfile" @click="goChat">Volver</button>
+          <!-- La administración vive en console.cepi.ec, no acá (PAPER §26). El botón
+               se queda: es el camino conocido. Quien no administra nada lo ve
+               deshabilitado con el motivo, no un hueco. -->
+          <button
+            :disabled="!isAdmin"
+            :title="isAdmin ? 'Abrir la consola de administración en otra pestaña' : 'Solo el superadministrador o el admin de una organización'"
+            @click="abrirConsola"
+          >Admin ↗</button>
+          <button v-if="showProfile" @click="goChat">Volver</button>
         </span>
       </div>
     </header>
@@ -95,9 +102,8 @@ const user = ref(null);
 const authed = ref(false);
 const route = useRoute();
 const router = useRouter();
-// La vista la manda la RUTA: `showAdmin`/`showProfile`/`showCasos` eran tres banderas
-// que había que mantener en sincronía a mano, y ninguna dejaba enlazar nada.
-const showAdmin = computed(() => route.name === 'admin');
+// La vista la manda la RUTA: `showProfile`/`showCasos` eran banderas que había que
+// mantener en sincronía a mano, y ninguna dejaba enlazar nada.
 const showProfile = computed(() => route.name === 'perfil');
 const showCasos = computed(() => String(route.name || '').startsWith('caso') || route.name === 'paciente');
 const showGaleria = computed(() => route.name === 'galeria');
@@ -137,6 +143,22 @@ function onNotifOpen({ id, name }) {
 const isAdmin = computed(() =>
   !!user.value?.permissions?.includes('*:*:*:*') ||
   (user.value?.orgs || []).some(o => o.role_in_org === 'admin'));
+
+/** La consola es otra app, en otro dominio y con su propio repo (PAPER §26). Se
+ *  abre en una pestaña nueva: administrar no es una escala del camino clínico, y
+ *  volver no debería costar perder el paciente abierto.
+ *
+ *  El host se deriva del actual para que el mismo build sirva en prod, en
+ *  develop y en local sin variable de entorno. En local (sin dominio) apunta a
+ *  la consola en :5175. */
+function abrirConsola() {
+  showTopMenu.value = false;
+  const h = location.hostname;
+  const destino = /^(casos|telemedicina)\./i.test(h)
+    ? `${location.protocol}//console.${h.replace(/^[^.]+\./, '')}`
+    : (h === 'localhost' || h === '127.0.0.1' ? 'http://localhost:5175' : 'https://console.cepi.ec');
+  window.open(destino, '_blank', 'noopener');
+}
 const isPending = computed(() => authed.value && user.value?.role === 'pendiente');
 
 // ── Notificaciones push (opt-in) ────────────────────────────────────────────
@@ -237,13 +259,6 @@ function goLogin() {
   verifyEmailAddr.value = '';
   view.value = 'login';
 }
-
-// Guarda de ruta: el botón de Admin se oculta a quien no lo es, pero la URL se
-// puede teclear. Sin esto, un no-admin llegaba a /admin y veía una pantalla rota a
-// base de 403 — el backend deniega bien, pero el usuario no entiende qué pasó.
-watch([() => route.name, isAdmin, authed], ([nombre, admin, hayCuenta]) => {
-  if (nombre === 'admin' && hayCuenta && !admin) router.replace(inicioSegunHost());
-}, { immediate: true });
 
 // Device/browser Back navigates within the app (register/verify/admin) instead
 // of leaving the page. The chat list↔detail Back is handled inside ChatShell.

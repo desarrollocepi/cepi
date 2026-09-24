@@ -4,6 +4,34 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-24 — La administración se muda a su propia consola
+
+- **`console.cepi.ec`**: repo propio (`desarrollocepi/cepi-console`, privado), app Vue 3 propia
+  y CI propio. Cuatro pantallas: **Usuarios** y **Organizaciones** (migradas de la PWA) más
+  **Roles** y **Permisos**, que no existían en ninguna superficie salvo el ERP. La consola no
+  muestra datos clínicos ni habla con cepi-bot. PAPER §26, D-Aux-25.
+- **Roles y permisos, por fin editables fuera del ERP**: la consola lee el modelo real
+  (`users.role_id → roles → role_permissions → permissions`, un bundle con mapa plano por rol)
+  y muestra los **permisos efectivos** que resultan de los bundles elegidos. Un bundle que
+  además lleva matrices del ERP queda en solo lectura, porque `PUT /api/security/:id` pisa
+  `data` entero.
+- **Backend**: `GET /api/orgs?all=1` (TodoERP) incluye las orgs desactivadas y expone
+  `sandbox`. Sin eso, "Desactivar" una organización era irreversible por UI: desaparecía de la
+  lista. Opt-in, y solo para el superadmin.
+- **En la PWA** se fueron la ruta `/admin`, sus tres componentes (405 LOC) y doce funciones de
+  `api.js` que solo ellos usaban. El botón **Admin ↗** se queda y abre la consola en otra
+  pestaña; deshabilitado con el motivo para quien no administra nada.
+- **Deploy**: push a `master` de `cepi-console` → `/opt/cepi/console/dist` en el EC2, con
+  server block de nginx aparte. Primer deploy **verde**; sirviendo por IP con `Host:
+  console.cepi.ec`.
+- **Pendiente para que sea usable**: el registro A `console.cepi.ec → 3.23.236.49` en Rackspace
+  Cloud DNS, y después `certbot --nginx -d console.cepi.ec`. Hoy la consola responde por HTTP,
+  sin certificado.
+- Tests: TodoERP 444 (2 fallos **previos** y ajenos a este cambio, por base local
+  desactualizada), cepi-bot 130, 4 nuevos de `orgs_list_all`.
+
+---
+
 ## Sesión 2026-09-24 — Derivar a varios, y saber a quién
 
 - **Multiderivación**: se marcan círculos y personas —mezclados— y un botón los manda en una

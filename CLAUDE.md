@@ -15,6 +15,7 @@ cepi/
 ├── TodoERP/              repo aparte, ignorado por cepi: ERP genérico + MCP server
 ├── cepi-bot/             agente conversacional (HTTP + MCP client)
 ├── cepi-frontend/        UI de chat (Vue 3 + Vite) — web + APK Android (Capacitor, hasta que la nativa la reemplace)
+├── cepi-console/         repo aparte, ignorado por cepi: consola de admin (console.cepi.ec) — PAPER §26
 ├── cepi-ios/             app nativa iPhone/iPad (SwiftUI) — PAPER §24
 ├── cepi-android/         app nativa Android (Kotlin + Compose) — PAPER §25
 ├── cepi-isic/            servicio Python de embeddings/clasificación
@@ -44,7 +45,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
 - **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).
   Nada de rsync ni scp a mano. Todo SQL tiene que ser idempotente y transaccional, y un seed
   médico nuevo se agrega a `medical-seed/apply.sh` o el deploy no lo aplica.
-- **Git**: los remotes viven en la cuenta `desarrollocepi` (`desarrollocepi/cepi` público, `desarrollocepi/TodoERP` privado). `TodoERP/` es un repo independiente que vive dentro de la carpeta de cepi: no es submódulo, cepi lo ignora (`/TodoERP/` en `.gitignore`) y se commitea y pushea por separado. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
+- **Git**: los remotes viven en la cuenta `desarrollocepi` (`desarrollocepi/cepi` público, `desarrollocepi/TodoERP` privado, `desarrollocepi/cepi-console` privado). `TodoERP/` y `cepi-console/` son repos independientes que viven dentro de la carpeta de cepi: no son submódulos, cepi los ignora (`/TodoERP/`, `/cepi-console/` en `.gitignore`) y se commitean y pushean por separado. `cepi-console` tiene su **propio** workflow de deploy: un push a su `master` publica la consola sin tocar el resto del stack. Hay una rama feature por concern (`feat/generic-fase1` en TodoERP, `feat/medical-assistant` en cepi).
 
 ## Cuando agregás...
 

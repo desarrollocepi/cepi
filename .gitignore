@@ -77,5 +77,8 @@ msp-002-lleno.png
 # TodoERP es un repo independiente (desarrollocepi/TodoERP) que vive dentro de esta carpeta.
 /TodoERP/
 
+# La consola de administración también (desarrollocepi/cepi-console, PAPER §26).
+/cepi-console/
+
 # Perfil de navegador del MCP de Playwright de este proyecto (sesiones de Google, Play Console)
 .pw-profile/

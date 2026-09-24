@@ -91,15 +91,9 @@ export async function googleLogin(credential) {
   return res;
 }
 
-// ── Admin (user management) ────────────────────────────────────────────────
-export async function adminListUsers(role) {
-  const q = role ? `?role=${encodeURIComponent(role)}` : '';
-  return call(`/api/admin/users${q}`, { method: 'GET' });
-}
-
-export async function adminListRoles() {
-  return call('/api/admin/roles', { method: 'GET' });
-}
+// La administración de usuarios, roles, permisos y organizaciones se mudó a
+// console.cepi.ec, que tiene su propio cliente (PAPER §26). Acá no queda nada de
+// /api/admin ni del CRUD de /api/orgs: esta app es clínica.
 
 // ── Telemedicina: destinos de derivación (círculos + sus miembros) ──────────────
 export async function listGroups(kind) {
@@ -116,26 +110,8 @@ export async function listEntityDerivations(entityId) {
   return call(`/api/review-queue/entity/${encodeURIComponent(entityId)}`, { method: 'GET' });
 }
 
-export async function adminUpdateUser(id, patch) {
-  return call(`/api/admin/users/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
-  });
-}
 
-export async function adminSetUserGroups(id, slugs) {
-  return call(`/api/admin/users/${encodeURIComponent(id)}/groups`, {
-    method: 'PUT',
-    body: JSON.stringify({ slugs }),
-  });
-}
 
-export async function adminSetUserOrgs(id, orgIds) {
-  return call(`/api/admin/users/${encodeURIComponent(id)}/orgs`, {
-    method: 'PUT',
-    body: JSON.stringify({ org_ids: orgIds }),
-  });
-}
 
 // ── Notificaciones (recordatorios del usuario) ──────────────────────────────
 // Backed by TodoERP /api/reminders. Clinical roles have `reminders:read_own`,
@@ -269,10 +245,8 @@ export async function updateProfile(patch) {
   return res;
 }
 
-// Multi-tenancy: organizaciones del usuario + cambio de org activa.
-export async function listOrgs() {
-  return call('/api/orgs', { method: 'GET' });
-}
+// Multi-tenancy: cambio de org activa. La LISTA de orgs llega en whoami()
+// (`user.orgs`); el selector del topbar lee de ahí.
 export async function switchOrg(orgId) {
   const res = await call('/api/orgs/switch', { method: 'POST', body: JSON.stringify({ org_id: orgId }) });
   if (res?.token) localStorage.setItem('cepi.jwt', res.token);  // nueva org activa
@@ -309,24 +283,6 @@ export async function switchOrgToRecord(entityId, recordId) {
 export const switchOrgToEpisodio = (id) => switchOrgToRecord(DEF_EPISODE, id);
 export const switchOrgToPaciente = (id) => switchOrgToRecord(DEF_PATIENT, id);
 
-export async function createOrg(slug, name) {
-  return call('/api/orgs', { method: 'POST', body: JSON.stringify({ slug, name }) });
-}
-export async function updateOrg(id, patch) {
-  return call(`/api/orgs/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
-}
-export async function listOrgMembers(id) {
-  return call(`/api/orgs/${encodeURIComponent(id)}/members`, { method: 'GET' });
-}
-export async function addOrgMember(id, userId, roleInOrg) {
-  return call(`/api/orgs/${encodeURIComponent(id)}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId, role_in_org: roleInOrg }) });
-}
-export async function removeOrgMember(id, userId) {
-  return call(`/api/orgs/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
-}
-export async function listUsers() {
-  return call('/api/security?type=user&active=all', { method: 'GET' });
-}
 
 // List patients (entity_definition 11000000-…) for the WhatsApp-style chat list.
 // PII is redacted server-side per the caller's role.
