@@ -29,8 +29,9 @@ Estado del proyecto al cierre de la sesión actual.
   TodoERP (`git@github.com: Permission denied (publickey)`) con GitHub operativo y la key aún
   registrada. Se generó un par nuevo, se registró como deploy key de solo lectura
   (`cepi CI (solo lectura) 2026-09-24`) y se actualizó el secret `TODOERP_DEPLOY_KEY`. Copia
-  privada en `~/.ssh/todoerp_ci_deploy_ed25519`. **La key vieja sigue registrada y no
-  autentica**: conviene borrarla.
+  privada en `~/.ssh/todoerp_ci_deploy_ed25519`. La key vieja (`163557273`) quedó registrada
+  sin autenticar y **se borró**. Sigue viva `cepi-vps` (de junio, sin uso desde el 2026-06-30):
+  no se tocó por si el ambiente develop la usa.
 - **`https://console.cepi.ec` en vivo**: DNS agregado en Rackspace, certificado de Let's
   Encrypt emitido (vence 2026-12-23, renovación automática) y redirect 80→443.
 - **GOTCHA de nginx**: las cabeceras de seguridad del server **no llegaban al HTML**. Un
@@ -38,9 +39,17 @@ Estado del proyecto al cierre de la sesión actual.
   `location /` sirve la página por `try_files … /index.html`, caía en `location = /index.html`,
   cuyo único `add_header` era Cache-Control. Los assets sí las traían, que es lo que despistaba.
   Se repiten los tres en ese location.
-- **Pendiente**: agregar `https://console.cepi.ec` a *Authorized JavaScript origins* del cliente
-  OAuth web (`cepi-500221`). Hasta entonces GIS responde `The given origin is not allowed for
-  the given client ID` y solo entra el login por email y contraseña.
+- El certificado renueva solo: `certbot.timer` activo y `certbot renew --dry-run` en verde.
+- **Pendiente (necesita la cuenta de Google)**: agregar `https://console.cepi.ec` a *Authorized
+  JavaScript origins* del cliente OAuth web (`cepi-500221`). Hasta entonces GIS responde `The
+  given origin is not allowed for the given client ID` y solo entra el login por email y
+  contraseña.
+- **Pendiente (riesgo abierto)**: `admin@erp.com` / `Admin123!` —la cuenta seed de
+  `002_seed.sql`, con la contraseña escrita en ese archivo y en `TodoERP/CLAUDE.md`— es
+  **superadmin activo en producción** y entra desde internet. El seed inserta con `ON CONFLICT
+  DO NOTHING`, así que desactivarla o rotarle la clave **no se revierte** en el próximo deploy.
+  Antes de desactivarla hay que confirmar que exista otro superadmin real, o se pierde el
+  acceso administrativo.
 - Tests: verdes en el CI (base desde cero). En local, TodoERP da 2 fallos **previos** y ajenos
   a este cambio, por base desactualizada; cepi-bot 130; 4 nuevos de `orgs_list_all`.
 
