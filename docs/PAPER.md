@@ -1229,6 +1229,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-17** | Materialización lazy | No se baja el histórico completo de DrPro (17.990 citas/año). El espejo indexa la agenda desde el mes en curso y materializa la ficha de un paciente **bajo demanda**. Ver §21.4. |
 | **D-Aux-21** | Registros por organización | Todo lo clínico es de **una** org (paciente e informe de patología incluidos): una persona atendida en dos orgs tiene un registro por org, sin deduplicación. Sin org activa no se ve ningún paciente. Integraciones en vivo y bandeja de patología por `organizations.data.features`. Las personas alcanzables (derivar, asignar, recordar) son las de la org activa. Org sandbox (`data.sandbox`): nadie entra por defecto. Orgs: `cepi` (telemedicina), `cepi-drpro` (consultorio), `cepi-testing` (sandbox). Ver §13.7 y §24.7. |
 | **D-Aux-25** | Consola de administración | La administración (usuarios, roles, permisos, organizaciones) sale de la PWA médica a `console.cepi.ec`: app propia, dominio propio y **repositorio propio** (`desarrollocepi/cepi-console`), con su propio CI. Backend compartido (TodoERP), despliegue independiente. La consola **no muestra datos clínicos**, lo que alinea D-1 por construcción. En la PWA queda el botón Admin, que abre la consola en otra pestaña. Ver §26. |
+| **D-Aux-26** | Identidades de chat | Quien escribe por WhatsApp/Telegram es una **cuenta hijo**: fila de `users` que **no inicia sesión** y cuelga de una cuenta padre por `parent_user_id`. Vincular es apuntar, no fusionar — se descartó el merge destructivo al medir las **34 FKs** que apuntan a `users(id)` (reescribir `created_by` de la historia clínica, sin vuelta atrás). Un desconocido que escribe crea una identidad sin padre en rol `pendiente`, sin acceso clínico. El token de chat pasa a llevar `org_id` y el bot queda acotado a una organización, con cuenta de servicio propia y permiso granular `auth:external:resolve` en vez del comodín. Ver §27. |
 
 ---
 
@@ -2424,6 +2425,120 @@ El botón **Admin** sigue en el menú de la cuenta — es el camino que la gente
 conoce — pero abre `console.cepi.ec` en otra pestaña. Quien no administra nada lo
 ve deshabilitado con el motivo, no un hueco. La ruta `/admin`, sus tres
 componentes y las doce funciones de `api.js` que solo ellos usaban se eliminaron.
+
+---
+
+## 27. Identidades de chat: cuentas padre e hijo
+
+**D-Aux-26.** Quien escribe por WhatsApp o Telegram es un dato de primera clase. Una
+identidad de chat es una **cuenta hijo**: una fila de `users` que **no puede iniciar
+sesión** y que puede colgar de una **cuenta padre**. Vincularla es apuntar, no fusionar.
+
+### 27.1 El problema
+
+Hoy el remitente solo existe si un admin lo enlazó a mano:
+`users.data.whatsapp_phone` / `telegram_id`, escrito por `/auth/external/link`. Un
+número que no figura recibe «no estás registrado» y ahí muere. No hay forma de que
+alguien empiece por WhatsApp, ni de reconciliar después ese número con su cuenta real.
+
+Y lo que sí existe está mal cerrado. `tokenForExternalIdentity` busca el teléfono en
+`users` **sin filtrar por organización** y emite un token **sin `org_id`**:
+
+```ts
+const token = generateToken({ sub, name, email, role_id, role });  // sin org_id
+```
+
+Sin org activa no hay alcance: las definiciones de `ORG_REQUIRED_DEFS` quedan invisibles,
+pero las personas alcanzables **no se filtran** (§13.7). El turno de WhatsApp corre en
+una tierra de nadie que no es ninguna org y las ve a todas.
+
+### 27.2 Por qué padre-hijo y no un merge
+
+La primera idea fue fusionar: mover todo de la cuenta de WhatsApp a la real y borrar la
+vieja. Se descartó al medirlo. `users(id)` tiene **34 claves foráneas** apuntándole
+—`created_by` de pacientes, episodios, diagnósticos, adjuntos y chatter, más la
+proyección `entity_user` (migración 020) y las relaciones que nombran personas—. Fusionar
+es reescribir *quién hizo qué* en una historia clínica, de una sola vez y sin vuelta atrás.
+
+El modelo padre-hijo no mueve **ninguna** fila:
+
+| | merge destructivo | padre-hijo |
+|---|---|---|
+| Vincular | reapuntar 34 FKs | un `UPDATE` de una columna |
+| Desvincular | no existe | poner la columna en `NULL` |
+| Historial | se reescribe | intacto |
+| Si se vinculó mal | se perdió | se revierte |
+
+El hijo no puede loguearse, así que tampoco es una puerta: una cuenta creada sola por un
+mensaje entrante no agrega superficie de acceso.
+
+### 27.3 El modelo
+
+```sql
+ALTER TABLE users ADD COLUMN parent_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+```
+
+- **`parent_user_id IS NULL`** → cuenta normal. Entra por email o por Google.
+- **`parent_user_id` con valor** → identidad. **No inicia sesión por ningún camino**
+  (`/auth/login`, `/auth/google`). Solo actúa cuando llega un mensaje del canal que la
+  identifica, y entonces el turno corre **como el padre**.
+
+**Un solo nivel.** Un hijo no puede ser padre de nadie, y nadie puede colgar de un hijo:
+así no hay cadenas ni ciclos que resolver en cada consulta. Se valida al vincular.
+
+**Transparente para el padre.** El padre no administra dos cuentas: tiene identidades. Su
+token es el suyo, con su rol, su organización y sus permisos, escriba desde donde escriba.
+
+**Cuenta solo-WhatsApp.** `users.email` es `NOT NULL UNIQUE` y `password_hash` también, así
+que una identidad se crea con un **email sintético** (`wa-593999123456@whatsapp.local`) y un
+hash imposible. No se toca el esquema base del ERP. Ese email no se muestra nunca: la UI
+enseña el teléfono. Al vincularla a un padre deja de importar; si esa persona después se
+registra con email real, se vincula como hijo y el email sintético queda de lado.
+
+### 27.4 Qué pasa cuando llega un mensaje
+
+1. El bot resuelve el remitente contra `/auth/external/resolve`, pasando **su organización**
+   (la del bot, por configuración: `cepi` para telemedicina).
+2. Si el remitente es una identidad **con padre** → token del padre.
+3. Si es una identidad **sin padre** → token de ella misma: rol `pendiente`, sin acceso
+   clínico. Puede conversar, no puede ver un paciente.
+4. Si **no existe** → se crea como identidad sin padre, rol `pendiente`, miembro de la org
+   del bot. Es el mismo camino del auto-registro web, que ya termina en una pantalla de
+   aprobación del admin. El número es público: que escribir no otorgue nada es el punto.
+5. El token que sale **siempre lleva `org_id`**, y el remitente tiene que ser alcanzable
+   desde la org del bot. Un médico que no es de telemedicina no entra por este número.
+
+### 27.5 Vincular y desvincular
+
+Lo hace un admin desde la consola (`console.cepi.ec`, §26), que es donde vive la
+administración de personas y donde queda auditado con un responsable humano. Fusionar
+historia clínica no es una acción que se dispare sola.
+
+- `POST /api/admin/users/:id/parent { parent_user_id }` — vincula. Rechaza si el hijo ya
+  tiene hijos, si el padre es hijo de alguien, o si son el mismo.
+- `DELETE /api/admin/users/:id/parent` — desvincula. La identidad vuelve a valerse sola.
+
+Lo que el hijo creó antes de vincularse **sigue siendo suyo**, y eso es a propósito: el
+registro dice quién lo hizo en el momento en que se hizo. Lo que cambia hacia adelante es
+quién actúa. Las sesiones de bot del hijo se muestran en el hilo del padre, porque son la
+misma conversación.
+
+### 27.6 El bot deja de ser superadmin
+
+`/auth/external/resolve` y `/external/link` exigen hoy el comodín `*:*:*:*`, y por eso los
+bots corren con la cuenta `admin@erp.com`: **la de los seeds, con la contraseña escrita en
+el repo**. Cualquiera que comprometa un webhook tiene el sistema entero.
+
+Se corrige en tres partes:
+
+1. Permiso propio y genérico, `auth:external:resolve`, que el endpoint acepta además del
+   comodín.
+2. Cuenta de servicio por canal (`bot-whatsapp@cepi.local`), con **solo** ese permiso y
+   miembro de una sola organización. Se crea por seed idempotente.
+3. La organización del bot es configuración de cepi (`WHATSAPP_BOT_ORG`), no una constante
+   del ERP: TodoERP no aprende la palabra telemedicina (regla del repo).
+
+Recién cuando los bots dejan de usarla, `admin@erp.com` se puede desactivar.
 
 ---
 
