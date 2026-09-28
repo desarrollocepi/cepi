@@ -130,7 +130,7 @@ describe('WhatsApp identity gate', () => {
     await inbound('593990000099', 'hola');
     expect(turns).toHaveLength(0);
     expect(sent).toHaveLength(1);
-    expect(sent[0].text).toContain('no está registrado');
+    expect(sent[0].text).toContain('tiene que quedar registrado');
     expect(sent[0].text).toContain('+593990000099');
   });
 
@@ -172,7 +172,7 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
     await inbound('593990000098', 'hola');
     expect(resoluciones.every(r => r.ruta === 'resolve')).toBe(true);
     expect(turns).toHaveLength(0);
-    expect(sent[0].text).toContain('no está registrado');
+    expect(sent[0].text).toContain('tiene que quedar registrado');
   });
 
   it('con alta automática usa /ensure, avisa una vez y el pendiente no llega al cerebro', async () => {
@@ -185,7 +185,7 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
       expect(resoluciones[0].body.name).toBe('Juana Pérez');
       expect(turns).toHaveLength(0);
       expect(sent).toHaveLength(1);
-      expect(sent[0].text).toContain('Registramos tu número');
+      expect(sent[0].text).toContain('solicitud de registro');
 
       // Cada mensaje siguiente cuesta: silencio hasta que lo aprueben.
       sent.length = 0;
@@ -207,7 +207,11 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
       await inbound('593990000001', 'hola');
       expect(resoluciones).toHaveLength(0);   // ni siquiera se intenta
       expect(turns).toHaveLength(0);          // el cerebro no se toca
-      expect(sent[0].text).toContain('No pude validar tu identidad');
+      expect(sent[0].text).toContain('no pudimos verificar el registro');
+      // Error de configuración: se repite en cada mensaje, se avisa una vez por hora.
+      sent.length = 0;
+      await inbound('593990000001', 'hola?');
+      expect(sent).toHaveLength(0);
     } finally {
       if (org) process.env.TELEGRAM_BOT_ORG = org;
     }

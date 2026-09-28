@@ -220,6 +220,20 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
  */
 const yaAvisados = new Set<string>();
 
+/**
+ * Último aviso de «no pude verificar» por número. Ese error suele ser de
+ * configuración (org o cuenta de servicio) y se repite en cada mensaje: sin
+ * esto, cada mensaje entrante recibe una respuesta. Uno por hora basta.
+ */
+const avisosDeError = new Map<string, number>();
+const AVISO_ERROR_CADA_MS = 60 * 60 * 1000;
+
+/** Saludo con el nombre del perfil de WhatsApp cuando viene. */
+function saludo(nombre?: string): string {
+  const n = nombre?.trim().split(/\s+/)[0];
+  return n ? `👋 Hola, ${n}.` : '👋 Hola.';
+}
+
 /** Process one inbound message object from the webhook payload. */
 async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string): Promise<void> {
   const from = msg?.from;
@@ -231,14 +245,25 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   const auth = await resolveUserAuth(from, nombre);
   if (!auth.ok) {
     if (auth.reason === 'error') {
-      await sendWhatsappText(from, 'No pude validar tu identidad ahora mismo. Prueba de nuevo en un rato.');
+      const ultimo = avisosDeError.get(from) || 0;
+      if (Date.now() - ultimo < AVISO_ERROR_CADA_MS) {
+        console.log(`[whatsapp] ${from} sin verificar, ya avisado en la última hora: sin respuesta`);
+        return;
+      }
+      avisosDeError.set(from, Date.now());
+      await sendWhatsappText(from,
+        `${saludo(nombre)} Recibimos tu mensaje.\n\n` +
+        `Ahora mismo no pudimos verificar el registro de este número (+${from}) en CEPI Telemedicina. ` +
+        `Ya lo estamos revisando; escríbenos de nuevo en un rato.`);
       return;
     }
     if (yaAvisados.has(from)) { console.log(`[whatsapp] ${from} sin registro, ya avisado: sin respuesta`); return; }
     yaAvisados.add(from);
     await sendWhatsappText(from,
-      `🔒 Este número no está registrado para usar el asistente de CEPI.\n\n` +
-      `Tu número es +${from}. Pásaselo al administrador para que te dé acceso.`);
+      `${saludo(nombre)} Recibimos tu mensaje en CEPI Telemedicina.\n\n` +
+      `Para usar el asistente, tu número (+${from}) tiene que quedar registrado. ` +
+      `Para gestionar tu registro, comparte este número con el equipo de CEPI. ` +
+      `Cuando esté activo podrás escribir por este mismo chat; mientras tanto no responderemos a nuevos mensajes.`);
     return;
   }
   // Identidad pendiente de aprobación: una sola respuesta, la del alta. Nunca
@@ -246,9 +271,9 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   if (auth.pendiente) {
     if (!auth.creada) { console.log(`[whatsapp] ${from} pendiente de aprobación: sin respuesta`); return; }
     await sendWhatsappText(from,
-      `📝 Registramos tu número (+${from}) en CEPI.\n\n` +
-      `Un administrador tiene que aprobarlo antes de que puedas usar el asistente. ` +
-      `Hasta entonces no voy a responder a tus mensajes.`);
+      `${saludo(nombre)} Recibimos tu solicitud de registro en CEPI Telemedicina con el número +${from}.\n\n` +
+      `Un médico administrador la va a revisar. Cuando esté aprobada podrás enviar tus fichas ` +
+      `por este mismo chat; mientras tanto no responderemos a nuevos mensajes.`);
     return;
   }
 
