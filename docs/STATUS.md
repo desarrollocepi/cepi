@@ -15,11 +15,14 @@ Estado del proyecto al cierre de la sesión actual.
   en rol `pendiente` y el segundo mensaje no recibe respuesta.
 - **Caída de cepi-bot (~17:43→21:00 UTC)** causada por el corte: en prod los procesos corren
   envueltos en `dotrino-env run --ns cepi-prod`, y `pm2 restart ecosystem…` mezcló ese script
-  con los args del archivo. Ahora el corte relanza con `scripts/levantar-cepi-bot-prod.sh`.
+  con los args del archivo. Ahora el corte relanza con `scripts/levantar-servicio-prod.sh`.
 - **El vault pisa el ecosystem**: `TELEGRAM_BOT_PASSWORD` del vault no coincidía con la de la
   base (401). `scripts/alinear-clave-telegram.sh` pone en la base la del vault, sin imprimirla.
-- **Pendiente**: el «te contestaremos cuando esté listo» todavía no se cumple: aprobar o
-  vincular en la consola no le escribe a la persona.
+- **«Tu registro está listo»**: al aprobar (rol distinto de `pendiente`) o vincular una
+  identidad pendiente, TodoERP hace POST a `EXTERNAL_IDENTITY_WEBHOOK_URL`
+  (`127.0.0.1:9997/interno/identidad-activada`); cepi-bot vuelve a resolver el número y, si de
+  verdad ya tiene acceso, le escribe. Solo dentro de las 24 h de Meta: fuera de esa ventana
+  el texto libre falla (131047) y haría falta una plantilla de utilidad, que se cobra.
 
 ## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
 

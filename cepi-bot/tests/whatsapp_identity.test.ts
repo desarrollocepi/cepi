@@ -60,8 +60,12 @@ function mockFetch(): void {
       const b = JSON.parse(init.body);
       resoluciones.push({ ruta: u.split('/api/auth/external/')[1], body: b });
       const who = b.platform === 'whatsapp' ? linked[b.external_id] : undefined;
-      if (who) return json(200, { token: jwtFor(who) });
+      if (who) return json(200, { token: jwtFor(who), user: { role: 'medico', name: 'Ana María Pérez' } });
       // `ensure` da de alta al desconocido; `resolve` lo rechaza.
+      // Ya dado de alta y todavía sin aprobar: `resolve` lo devuelve pendiente.
+      if (u.endsWith('/resolve') && altas.has(b.external_id)) {
+        return json(200, { token: jwtFor(`nuevo:${b.external_id}`), user: { role: 'pendiente' } });
+      }
       // La primera vez nace en rol `pendiente`; las siguientes ya existe.
       if (u.endsWith('/ensure')) {
         const creada = !altas.has(b.external_id);
@@ -214,5 +218,43 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
     } finally {
       if (org) process.env.TELEGRAM_BOT_ORG = org;
     }
+  });
+});
+
+describe('aviso de registro listo (TodoERP → /interno/identidad-activada)', () => {
+  const avisar = (external_id: string, platform = 'whatsapp') =>
+    realFetch(`${base}/interno/identidad-activada`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ event: 'identity.activated', platform, external_id }),
+    }).then(r => r.json());
+
+  it('al aprobado le escribe una vez, por su nombre', async () => {
+    expect((await avisar('+593990000001')).resultado).toBe('enviado');
+    expect(sent).toEqual([{ to: '593990000001',
+      text: expect.stringContaining('Hola, Ana. Tu registro en CEPI Telemedicina está listo') }]);
+    sent.length = 0;
+    expect((await avisar('593990000001')).resultado).toBe('omitido');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('no le cree al aviso: si el número sigue pendiente, no escribe', async () => {
+    altas.add('593990000066');
+    expect((await avisar('593990000066')).resultado).toBe('omitido');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('ni a un número que no existe, ni por otro canal', async () => {
+    expect((await avisar('593990000011')).resultado).toBe('omitido');
+    expect((await avisar('12345', 'telegram')).resultado).toBe('omitido');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('rechaza lo que llega por nginx (con X-Forwarded-For)', async () => {
+    const r = await realFetch(`${base}/interno/identidad-activada`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4' },
+      body: JSON.stringify({ platform: 'whatsapp', external_id: '593990000001' }),
+    });
+    expect(r.status).toBe(403);
   });
 });

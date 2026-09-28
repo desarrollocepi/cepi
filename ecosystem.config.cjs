@@ -29,6 +29,9 @@ module.exports = {
         STAGE: 'DEVELOP',
         PORT: 3001,
         CEPI_MEDICAL: '1',
+        // Aprobar una identidad de chat pendiente le avisa a cepi-bot, que le
+        // escribe «tu registro está listo» (PAPER §27.4).
+        EXTERNAL_IDENTITY_WEBHOOK_URL: 'http://127.0.0.1:9997/interno/identidad-activada',
       },
       max_memory_restart: '500M',
     },

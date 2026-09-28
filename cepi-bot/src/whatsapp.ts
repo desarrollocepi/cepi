@@ -78,7 +78,7 @@ async function getServiceJwt(): Promise<string> {
 
 type ResolveResult =
   /** `pendiente`: identidad sin aprobar (rol `pendiente`, sin padre). `creada`: nació en esta llamada. */
-  | { ok: true; jwt: string; pendiente: boolean; creada: boolean }
+  | { ok: true; jwt: string; pendiente: boolean; creada: boolean; nombre?: string }
   | { ok: false; reason: 'unregistered' | 'error' };
 
 /** Rol con el que `/auth/external/ensure` da de alta al desconocido (PAPER §27.4). */
@@ -97,7 +97,9 @@ export function phoneCandidates(from: string): string[] {
  * Resolve the TodoERP user linked to a WhatsApp phone and return a JWT to act
  * AS that user. `unregistered` ⇒ no active user has this number.
  */
-async function resolveUserAuth(from: string, nombre?: string): Promise<ResolveResult> {
+async function resolveUserAuth(
+  from: string, nombre?: string, soloResolver = false,
+): Promise<ResolveResult> {
   const adminJwt = await getServiceJwt();
   if (!adminJwt) {
     console.error('[whatsapp] no service account configured to resolve identity');
@@ -118,7 +120,7 @@ async function resolveUserAuth(from: string, nombre?: string): Promise<ResolveRe
   // Con alta automática, el remitente desconocido pasa a existir como identidad
   // en rol `pendiente` (sin acceso clínico) y un admin la vincula después a su
   // cuenta real. Sin el flag se mantiene el «no estás registrado» de siempre.
-  const daDeAlta = process.env.WHATSAPP_BOT_AUTOALTA === '1';
+  const daDeAlta = !soloResolver && process.env.WHATSAPP_BOT_AUTOALTA === '1';
   const ruta = daDeAlta ? 'ensure' : 'resolve';
   try {
     for (const externalId of phoneCandidates(from)) {
@@ -136,6 +138,7 @@ async function resolveUserAuth(from: string, nombre?: string): Promise<ResolveRe
         jwt: data.token,
         pendiente: data?.user?.role === ROL_PENDIENTE,
         creada: data?.creada === true,
+        nombre: data?.user?.name,
       };
     }
     return { ok: false, reason: 'unregistered' };
@@ -237,6 +240,39 @@ function avisoRegistro(nombre?: string): string {
   const n = nombre?.trim().split(/\s+/)[0];
   return `👋 Hola${n ? `, ${n}` : ''}. Recibimos tu mensaje.\n\n` +
     `Estamos procesando tu registro en CEPI Telemedicina; te contestaremos cuando esté listo.`;
+}
+
+/** Números a los que ya se les avisó que su registro está listo (en este proceso). */
+const yaActivados = new Set<string>();
+
+/**
+ * «Tu registro está listo»: lo pide TodoERP cuando un admin aprueba o vincula
+ * una identidad pendiente (EXTERNAL_IDENTITY_WEBHOOK_URL). El aviso no trae
+ * secreto, así que no se le cree: se vuelve a resolver el número y solo se
+ * escribe si de verdad ya tiene acceso. Una vez por número y proceso.
+ *
+ * Meta solo deja mandar texto libre dentro de las 24 h desde el último mensaje
+ * de la persona; fuera de esa ventana el envío falla (131047) y queda en el log.
+ */
+export async function avisarRegistroListo(from: string): Promise<'enviado' | 'omitido'> {
+  if (yaActivados.has(from)) return 'omitido';
+  const auth = await resolveUserAuth(from, undefined, true);
+  if (!auth.ok || auth.pendiente) return 'omitido';
+  yaActivados.add(from);
+  yaAvisados.delete(from);
+  avisosDeError.delete(from);
+  const n = auth.nombre?.trim().split(/\s+/)[0];
+  await sendWhatsappText(from,
+    `✅ Hola${n ? `, ${n}` : ''}. Tu registro en CEPI Telemedicina está listo: ` +
+    `ya puedes escribir por este chat.`);
+  return 'enviado';
+}
+
+/** El aviso interno solo se acepta desde la propia máquina y sin pasar por nginx. */
+function esLocal(req: Request): boolean {
+  const ip = req.socket.remoteAddress || '';
+  const local = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  return local && !req.get('x-forwarded-for');
 }
 
 /** Process one inbound message object from the webhook payload. */
@@ -343,6 +379,20 @@ export function startWhatsapp(invokeChat: InvokeChat) {
       return res.status(200).send(String(challenge ?? ''));
     }
     return res.sendStatus(403);
+  });
+
+  // TodoERP avisa que una identidad pendiente fue aprobada (ver avisarRegistroListo).
+  app.post('/interno/identidad-activada', async (req: Request, res: Response) => {
+    if (!esLocal(req)) return res.sendStatus(403);
+    const { platform, external_id } = req.body || {};
+    if (platform !== 'whatsapp' || !external_id) return res.json({ ok: true, resultado: 'omitido' });
+    const digitos = String(external_id).replace(/\D/g, '');
+    try {
+      res.json({ ok: true, resultado: await avisarRegistroListo(digitos) });
+    } catch (e: any) {
+      console.error('[whatsapp] aviso de registro listo:', e?.message || e);
+      res.status(500).json({ ok: false });
+    }
   });
 
   // Inbound messages + status callbacks.

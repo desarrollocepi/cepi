@@ -21,7 +21,7 @@ API=http://localhost:3001
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
 # Lanzador real de cepi-bot en prod (ver más abajo). Se exige antes de tocar nada.
-LEVANTAR="$(dirname "$0")/levantar-cepi-bot-prod.sh"
+LEVANTAR="$(dirname "$0")/levantar-servicio-prod.sh"
 [[ -f "$LEVANTAR" ]] || { log "ERROR: falta $LEVANTAR (copiarlo junto a este script)"; exit 1; }
 
 if sudo grep -q 'bot-whatsapp@cepi.local' "$ECO"; then
@@ -126,7 +126,7 @@ esperar_bot() {
 # ecosystem.config.cjs` mezcla el script viejo (dotrino-env) con los args del
 # archivo y el bot no arranca (2026-09-28). Se relanza con el lanzador real,
 # que vive en el script hermano: hay que copiar los dos a /tmp.
-reiniciar_bot() { bash "$LEVANTAR" >/dev/null || true; }
+reiniciar_bot() { bash "$LEVANTAR" cepi-bot >/dev/null || true; }
 
 # Qué cuenta usa de verdad el proceso vivo (sin imprimir el env: lleva claves).
 usa_cuenta_nueva() { pm2 env "$(pm2 id cepi-bot | tr -dc '0-9')" 2>/dev/null | grep -q 'bot-whatsapp@cepi.local'; }
