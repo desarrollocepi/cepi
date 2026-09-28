@@ -40,6 +40,8 @@ const sent: Array<{ to: string; text: string }> = [];
 const turns: Array<{ auth: string; message: string }> = [];
 /** Lo que el bot le mandó al endpoint de identidad, para poder afirmar sobre org y ruta. */
 const resoluciones: Array<{ ruta: string; body: any }> = [];
+/** Números dados de alta por el mock de `/ensure`. */
+const altas = new Set<string>();
 let brainReply: { status: number; body: any } = { status: 200, body: { text: 'hola doctor' } };
 
 const realFetch = globalThis.fetch;
@@ -60,7 +62,12 @@ function mockFetch(): void {
       const who = b.platform === 'whatsapp' ? linked[b.external_id] : undefined;
       if (who) return json(200, { token: jwtFor(who) });
       // `ensure` da de alta al desconocido; `resolve` lo rechaza.
-      if (u.endsWith('/ensure')) return json(200, { creada: true, token: jwtFor(`nuevo:${b.external_id}`) });
+      // La primera vez nace en rol `pendiente`; las siguientes ya existe.
+      if (u.endsWith('/ensure')) {
+        const creada = !altas.has(b.external_id);
+        altas.add(b.external_id);
+        return json(200, { creada, token: jwtFor(`nuevo:${b.external_id}`), user: { role: 'pendiente' } });
+      }
       return json(404, { error: 'not linked' });
     }
     return realFetch(url, init);
@@ -127,6 +134,15 @@ describe('WhatsApp identity gate', () => {
     expect(sent[0].text).toContain('+593990000099');
   });
 
+  it('al desconocido le contesta una sola vez', async () => {
+    await inbound('593990000055', 'hola');
+    expect(sent).toHaveLength(1);
+    sent.length = 0;
+    await inbound('593990000055', 'hola otra vez');
+    expect(sent).toHaveLength(0);
+    expect(turns).toHaveLength(0);
+  });
+
   it('says the turn failed instead of answering "…"', async () => {
     brainReply = { status: 500, body: { ok: false, error: 'boom' } };
     await inbound('593990000001', 'hola');
@@ -153,13 +169,13 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
 
   it('sin alta automática usa /resolve y el desconocido no entra', async () => {
     delete process.env.WHATSAPP_BOT_AUTOALTA;
-    await inbound('593990000099', 'hola');
+    await inbound('593990000098', 'hola');
     expect(resoluciones.every(r => r.ruta === 'resolve')).toBe(true);
     expect(turns).toHaveLength(0);
     expect(sent[0].text).toContain('no está registrado');
   });
 
-  it('con alta automática usa /ensure y el desconocido llega al cerebro', async () => {
+  it('con alta automática usa /ensure, avisa una vez y el pendiente no llega al cerebro', async () => {
     process.env.WHATSAPP_BOT_AUTOALTA = '1';
     try {
       await inbound('593990000077', 'hola', 'Juana Pérez');
@@ -167,7 +183,16 @@ describe('el canal queda acotado a una organización (PAPER §27.4)', () => {
       // El nombre del perfil viaja para bautizar la identidad: en la pantalla
       // de aprobación se ve un nombre y no solo un número.
       expect(resoluciones[0].body.name).toBe('Juana Pérez');
-      expect(turns).toHaveLength(1);
+      expect(turns).toHaveLength(0);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].text).toContain('Registramos tu número');
+
+      // Cada mensaje siguiente cuesta: silencio hasta que lo aprueben.
+      sent.length = 0;
+      await inbound('593990000077', 'sigo acá');
+      await inbound('593990000077', 'hola??');
+      expect(sent).toHaveLength(0);
+      expect(turns).toHaveLength(0);
     } finally {
       delete process.env.WHATSAPP_BOT_AUTOALTA;
     }

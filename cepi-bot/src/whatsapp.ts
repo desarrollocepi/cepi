@@ -24,7 +24,9 @@
  *   WHATSAPP_BOT_AUTOALTA   '1' ⇒ un remitente desconocido se da de alta como
  *                           identidad en rol `pendiente`, sin acceso clínico,
  *                           para que un admin la vincule a su cuenta. Sin esto,
- *                           se mantiene el "no estás registrado".
+ *                           se mantiene el "no estás registrado". En los dos
+ *                           casos el desconocido recibe UNA respuesta y después
+ *                           silencio: ni LLM ni mensaje saliente.
  *
  * Auth model (same as the Telegram adapter): cada número entrante se resuelve
  * contra /api/auth/external/{resolve,ensure} y el turno corre COMO esa persona,
@@ -75,8 +77,12 @@ async function getServiceJwt(): Promise<string> {
 }
 
 type ResolveResult =
-  | { ok: true; jwt: string }
+  /** `pendiente`: identidad sin aprobar (rol `pendiente`, sin padre). `creada`: nació en esta llamada. */
+  | { ok: true; jwt: string; pendiente: boolean; creada: boolean }
   | { ok: false; reason: 'unregistered' | 'error' };
+
+/** Rol con el que `/auth/external/ensure` da de alta al desconocido (PAPER §27.4). */
+const ROL_PENDIENTE = 'pendiente';
 
 /**
  * The forms a WhatsApp `from` (digits, no "+") may have been typed in when an
@@ -124,7 +130,13 @@ async function resolveUserAuth(from: string, nombre?: string): Promise<ResolveRe
       if (r.status === 404) continue;
       if (!r.ok) { console.error('[whatsapp] resolve failed', r.status); return { ok: false, reason: 'error' }; }
       const data: any = await r.json().catch(() => ({}));
-      return data?.token ? { ok: true, jwt: data.token } : { ok: false, reason: 'error' };
+      if (!data?.token) return { ok: false, reason: 'error' };
+      return {
+        ok: true,
+        jwt: data.token,
+        pendiente: data?.user?.role === ROL_PENDIENTE,
+        creada: data?.creada === true,
+      };
     }
     return { ok: false, reason: 'unregistered' };
   } catch (e: any) {
@@ -199,24 +211,51 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * Números sin acceso a los que ya se les contestó una vez en este proceso. El
+ * número es público: cada respuesta a un desconocido es un mensaje saliente
+ * más, así que se contesta una sola vez y después se calla. Para la identidad
+ * dada de alta vale `creada`, que viene de la base y sobrevive reinicios; este
+ * conjunto cubre el caso sin alta (`unregistered`) y se vacía al reiniciar.
+ */
+const yaAvisados = new Set<string>();
+
 /** Process one inbound message object from the webhook payload. */
 async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string): Promise<void> {
   const from = msg?.from;
   if (!from) return;
+
+  // Identity gate: the turn runs AS the user linked to this phone, or not at all.
+  // Va antes que el filtro de texto: un desconocido que manda un audio tampoco
+  // debe recibir respuesta más de una vez.
+  const auth = await resolveUserAuth(from, nombre);
+  if (!auth.ok) {
+    if (auth.reason === 'error') {
+      await sendWhatsappText(from, 'No pude validar tu identidad ahora mismo. Prueba de nuevo en un rato.');
+      return;
+    }
+    if (yaAvisados.has(from)) { console.log(`[whatsapp] ${from} sin registro, ya avisado: sin respuesta`); return; }
+    yaAvisados.add(from);
+    await sendWhatsappText(from,
+      `🔒 Este número no está registrado para usar el asistente de CEPI.\n\n` +
+      `Tu número es +${from}. Pásaselo al administrador para que te dé acceso.`);
+    return;
+  }
+  // Identidad pendiente de aprobación: una sola respuesta, la del alta. Nunca
+  // llega al cerebro: cada turno es un mensaje saliente y una llamada al LLM.
+  if (auth.pendiente) {
+    if (!auth.creada) { console.log(`[whatsapp] ${from} pendiente de aprobación: sin respuesta`); return; }
+    await sendWhatsappText(from,
+      `📝 Registramos tu número (+${from}) en CEPI.\n\n` +
+      `Un administrador tiene que aprobarlo antes de que puedas usar el asistente. ` +
+      `Hasta entonces no voy a responder a tus mensajes.`);
+    return;
+  }
+
   // Only plain text is routed for now (images/audio would map to attachments).
   const text = msg?.text?.body;
   if (typeof text !== 'string' || !text.trim()) {
     await sendWhatsappText(from, 'Por ahora solo proceso mensajes de texto.');
-    return;
-  }
-
-  // Identity gate: the turn runs AS the user linked to this phone, or not at all.
-  const auth = await resolveUserAuth(from, nombre);
-  if (!auth.ok) {
-    await sendWhatsappText(from, auth.reason === 'unregistered'
-      ? `🔒 Este número no está registrado para usar el asistente de CEPI.\n\n` +
-        `Tu número es +${from}. Pásaselo al administrador para que te dé acceso.`
-      : 'No pude validar tu identidad ahora mismo. Prueba de nuevo en un rato.');
     return;
   }
   const sessionId = phoneSessions.get(from) || undefined;
