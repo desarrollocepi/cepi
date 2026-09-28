@@ -118,13 +118,22 @@ esperar_bot() {
   return 1
 }
 
-pm2 restart cepi-bot --update-env >/dev/null
-if ! esperar_bot 90; then
-  log "ERROR: cepi-bot no respondió en 90 s. Restaurando el ecosystem y reiniciando."
-  sudo cp "$BK" "$ECO"; pm2 restart cepi-bot --update-env >/dev/null
+# `pm2 restart cepi-bot --update-env` NO relee el ecosystem: toma el env del
+# shell que lo llama. Hay que reiniciar desde el archivo, o el corte queda
+# escrito pero el bot sigue con la cuenta vieja.
+reiniciar_bot() { (cd /opt/cepi && pm2 restart ecosystem.config.cjs --only cepi-bot --update-env >/dev/null); }
+
+# Qué cuenta usa de verdad el proceso vivo (sin imprimir el env: lleva claves).
+usa_cuenta_nueva() { pm2 env "$(pm2 id cepi-bot | tr -dc '0-9')" 2>/dev/null | grep -q 'bot-whatsapp@cepi.local'; }
+
+reiniciar_bot
+if ! esperar_bot 90 || ! usa_cuenta_nueva; then
+  log "ERROR: cepi-bot no volvió con la cuenta nueva. Restaurando el ecosystem y reiniciando."
+  sudo cp "$BK" "$ECO"; reiniciar_bot
   esperar_bot 90 && log "revertido, el bot volvió" || log "revertido, PERO el bot sigue sin responder"
   exit 1
 fi
 
+pm2 save >/dev/null
 log "cepi-bot arriba con las cuentas de servicio (respondió en menos de 90 s)"
 log "LISTO. admin@erp.com ya no la usa ningún bot."
