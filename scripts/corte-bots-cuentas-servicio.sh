@@ -20,6 +20,10 @@ ECO=/opt/cepi/ecosystem.config.cjs
 API=http://localhost:3001
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
+# Lanzador real de cepi-bot en prod (ver más abajo). Se exige antes de tocar nada.
+LEVANTAR="$(dirname "$0")/levantar-cepi-bot-prod.sh"
+[[ -f "$LEVANTAR" ]] || { log "ERROR: falta $LEVANTAR (copiarlo junto a este script)"; exit 1; }
+
 if sudo grep -q 'bot-whatsapp@cepi.local' "$ECO"; then
   log "el ecosystem ya apunta a las cuentas de servicio — nada que hacer"
   exit 0
@@ -118,10 +122,11 @@ esperar_bot() {
   return 1
 }
 
-# `pm2 restart cepi-bot --update-env` NO relee el ecosystem: toma el env del
-# shell que lo llama. Hay que reiniciar desde el archivo, o el corte queda
-# escrito pero el bot sigue con la cuenta vieja.
-reiniciar_bot() { (cd /opt/cepi && pm2 restart ecosystem.config.cjs --only cepi-bot --update-env >/dev/null); }
+# `pm2 restart cepi-bot --update-env` NO relee el ecosystem, y `pm2 restart
+# ecosystem.config.cjs` mezcla el script viejo (dotrino-env) con los args del
+# archivo y el bot no arranca (2026-09-28). Se relanza con el lanzador real,
+# que vive en el script hermano: hay que copiar los dos a /tmp.
+reiniciar_bot() { bash "$LEVANTAR" >/dev/null || true; }
 
 # Qué cuenta usa de verdad el proceso vivo (sin imprimir el env: lleva claves).
 usa_cuenta_nueva() { pm2 env "$(pm2 id cepi-bot | tr -dc '0-9')" 2>/dev/null | grep -q 'bot-whatsapp@cepi.local'; }
