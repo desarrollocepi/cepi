@@ -4,6 +4,23 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-09-28 — WhatsApp: una sola respuesta al que no tiene acceso; corte de bots hecho
+
+- **Presupuesto de WhatsApp**: quien no tiene acceso (sin registro, `pendiente` o sin poder
+  verificarse) recibe UN aviso, «Estamos procesando tu registro… te contestaremos cuando esté
+  listo», y después silencio. El pendiente ya no pasa por el LLM. El aviso por error de
+  verificación se repite como mucho una vez por hora por número.
+- **Corte de bots aplicado en prod**: WhatsApp y Telegram entran con `bot-whatsapp@` y
+  `bot-telegram@`, org `cepi`, `AUTOALTA=1`. Probado por WhatsApp Web: el número nuevo queda
+  en rol `pendiente` y el segundo mensaje no recibe respuesta.
+- **Caída de cepi-bot (~17:43→21:00 UTC)** causada por el corte: en prod los procesos corren
+  envueltos en `dotrino-env run --ns cepi-prod`, y `pm2 restart ecosystem…` mezcló ese script
+  con los args del archivo. Ahora el corte relanza con `scripts/levantar-cepi-bot-prod.sh`.
+- **El vault pisa el ecosystem**: `TELEGRAM_BOT_PASSWORD` del vault no coincidía con la de la
+  base (401). `scripts/alinear-clave-telegram.sh` pone en la base la del vault, sin imprimirla.
+- **Pendiente**: el «te contestaremos cuando esté listo» todavía no se cumple: aprobar o
+  vincular en la consola no le escribe a la persona.
+
 ## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
 
 - **Modelo nuevo (PAPER §27, D-Aux-26)**: el remitente de WhatsApp/Telegram es una **cuenta
