@@ -862,7 +862,7 @@ Las organizaciones (migración 016, plan en `docs/ORGANIZACIONES_PLAN.md`) separ
 - **Las personas también son de la org activa** (desde el 2026-09-23): `/groups/:slug/members` y sus conteos, el grupo `all`, `request_review`, `POST /reminders` y `assign` solo alcanzan a miembros de la org activa, sea cual sea. Antes esto valía solo desde una sandbox, y en una org normal la lista de destinos de una derivación traía a gente de todas las orgs —los médicos del consultorio aparecían en telemedicina— a la que el backend después le rechazaba la derivación, porque los revisores ya se filtraban por la org del caso. Sin org activa (API key, token sin org) no se filtra.
 - **Org sandbox** (`data.sandbox = true`): los datos ya los aísla la org, y con lo anterior las personas también; lo propio de la marca es que `assignDefaultOrgs` nunca agrega a una sandbox. La org activa por defecto de quien está en una real y una sandbox es la real (`getUserOrgs` las ordena al final); entre reales, la más antigua, no la primera por nombre. El superadmin ve en el selector todas las orgs activas, con las suyas primero (`getSelectableOrgs`), y puede quedarse en una de la que no es miembro.
 - **Membresía de la sandbox: manual.** Seed 017 saca de `cepi-testing`, **una sola vez** (marca `data.membresias_depuradas_at`), a todo el que además es miembro de una org no sandbox: los médicos reales que entraron por el default de registro. Desde entonces solo un admin agrega o quita miembros, y re-aplicar 017 no vuelve a depurar. 007 no se tocó (cambiarlo haría que el deploy re-aplique 007–013 sobre producción) y sigue sumando a los usuarios demo a la sandbox: 017 los saca en cada aplicación, por su lista de emails. En desarrollo, `seeder/006` crea dos colegas ficticios solo de la sandbox, en `dermatologia`.
-- **Admin de organización.** `user_organizations.role_in_org = 'admin'` administra a la gente de esa org sin ser superadmin: `/api/admin/*` acota el listado a los usuarios de sus orgs, solo ofrece roles que el llamador podría otorgar (`assertCanGrant`, la misma regla que `/api/security`), nunca toca una cuenta cuyo rol concede el comodín —aunque sea miembro de su org— y al repartir membresías solo agrega o quita las orgs que administra. El superadmin (`*:*:*:*`) sigue viendo todo. En la UI el botón Admin aparece con cualquiera de los dos; los controles que el admin de org no puede usar se ven deshabilitados con el motivo, no escondidos. Antes el rol existía en la base y en `/api/orgs/:id/members`, pero no abría ninguna pantalla: administrar usuarios exigía el comodín, que además ve todas las organizaciones.
+- **Admin de organización.** `user_organizations.role_in_org = 'admin'` administra a la gente de esa org sin ser superadmin: `/api/admin/*` acota el listado a los usuarios de sus orgs, solo ofrece roles que el llamador podría otorgar (`assertCanGrant`, la misma regla que `/api/security`), nunca toca una cuenta cuyo rol concede el comodín —aunque sea miembro de su org— y al repartir membresías solo agrega o quita las orgs que administra. El superadmin (`*:*:*:*`) sigue viendo todo. En la UI el botón Admin aparece con cualquiera de los dos. Lo que el admin de org **nunca** va a poder hacer —crear o desactivar organizaciones, editar roles y permisos— se **oculta** (excepción de permisos de CLAUDE.md, 2026-09-28): un botón muerto por falta de permiso es ruido. Lo que hoy no aplica pero sí podría se sigue deshabilitando con el motivo. Antes el rol existía en la base y en `/api/orgs/:id/members`, pero no abría ninguna pantalla: administrar usuarios exigía el comodín, que además ve todas las organizaciones.
 - **Orgs de cepi**: `cepi` "CEPI Telemedicina", `cepi-drpro` "CEPI Consultorio" con features `drpro`, `doctopro`, `patologia` (seed 018), `cepi-testing` "CEPI Testing", sandbox con 6 pacientes ficticios (seed 017). Los nombres los fija el seed 019 y no nombran el sistema de origen; los slugs y las features sí, porque no se muestran como nombre. `doctopro` es la cuenta sandbox vieja de la misma plataforma (read/write, "degradada a tipo directorio"); `drpro` es el espejo de producción.
 - Punto único: `TodoERP/backend/src/services/orgScope.ts`. Las lecturas por SQL directo (`review-queue`, `patient-assignments`, `patient-thread`, importador de patología) usan los mismos predicados. El bot y el MCP llegan a los datos solo por la API con el token del usuario.
 
@@ -957,6 +957,62 @@ SELECT u.email, u.active, r.name AS rol,
                 WHERE uo2.user_id = u.id AND o2.id <> o.id AND COALESCE(o2.data->>'sandbox','') <> 'true')
  ORDER BY u.email;
 ```
+
+
+### 13.8 Roles por organización y roles de sistema (D-Aux-27) — capacidad genérica
+
+**Problema.** El rol era uno por persona (`users.role_id`) y valía igual en todas sus
+organizaciones. En producción 9 personas están en más de una org, y cada org usa roles
+distintos: telemedicina solo necesita supermédico y médico primario; el consultorio usa
+además médico, especialista y residente. Un admin de org tampoco podía corregir el rol de
+alguien sin cambiárselo en las demás.
+
+**Decisión: dos clases de rol.**
+
+- **De organización** (los clínicos): viven en la membresía, `user_organizations.role_id`
+  (migración 023). La misma persona puede ser supermédico en una org y médico en otra.
+  NULL = hereda el rol general, así que el día del despliegue nada cambia.
+- **De sistema** (`roles.global_scope`; todo rol con `allow_grant_all` lo es): crear y
+  administrar organizaciones, cuentas de servicio de canales y espejos (`bot_canal`,
+  `espejo_drpro`, `espejo_patologia`, seed 021). No pertenecen a ninguna org: viven en
+  `users.role_id` y se **suman** al rol de la org activa, en todas. Nunca se asignan por
+  membresía — ni siquiera el superadmin puede (400) —, porque un comodín por org sería un
+  superadmin por la puerta de atrás; y si una membresía tuviera uno, se ignora.
+
+**Rol efectivo** (`rolEfectivo(user, org)` en `authService.ts`): el de la membresía en la
+org activa; si no hay, el general cuando no es de sistema; más el general cuando es de
+sistema. Los permisos se calculan en cada request con la org del token
+(`getUserPermissions(user, org)`, caché por usuario **y** org; invalidar a un usuario
+limpia todas sus orgs). El `role` del token, de `/auth/me`, del cambio de org y del token
+de un canal es el de la org activa: cambiar de org puede cambiar el rol, y las apps ya
+reaccionan a `role === 'pendiente'` sin cambios. Sin org activa (API keys, tokens viejos)
+vale el general, como antes.
+
+**Qué ofrece cada org.** `organizations.data.roles` (ids) acota los roles de organización
+que se **ofrecen** al asignar; sin la lista, todos. La fija el superadmin (`PUT
+/api/orgs/:id {roles}`, consola → Organizaciones). No le quita el rol a nadie: quien ya
+tenía otro lo conserva y la consola lo muestra «fuera de la lista». Telemedicina (`cepi`)
+arranca con supermédico y médico primario (seed 021, una sola vez).
+
+**Quién asigna.** `PUT /api/admin/users/:id/orgs/:orgId/role {role_id|null}`: el
+superadmin en cualquier org, el admin de org solo en las suyas, a miembros de esa org, con
+roles de la lista y con la regla de siempre medida en esa org — nadie otorga lo que no
+tiene **ahí** (`assertCanGrant(user, perms, orgId)`). El rol general (`PATCH
+/admin/users/:id {role_id}`) solo lo cambia el superadmin. El listado filtra por el rol que
+la persona tiene en alguna org visible: aprobar a un pendiente en telemedicina lo saca de
+«Pendientes», y lo avisa por su canal (§27, «tu registro está listo»).
+
+**Otorgar exige los permisos, no el nombre del bundle.** Al medir qué podía dar un
+supermédico apareció que el nombre del bundle (`medico_perms`) entraba como permiso, así
+que un admin de org solo podía dar su propio rol. Ahora el nombre cuenta solo en registros
+granulares, y `supermedico_perms` contiene a todos los roles clínicos (test en
+`medical_seed.test.ts`).
+
+**`role_in_org` sigue aparte.** `admin`/`member` dice quién administra la org, no qué
+permisos clínicos tiene: son ejes distintos y no se mezclan.
+
+Tests: `tests/auth/roles_por_org.test.ts` (rol distinto por org, token del canal y cambio
+de org, lista de la org, rol de sistema sumado y no asignable por org, filtro de pendientes).
 
 ---
 
@@ -1230,6 +1286,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-21** | Registros por organización | Todo lo clínico es de **una** org (paciente e informe de patología incluidos): una persona atendida en dos orgs tiene un registro por org, sin deduplicación. Sin org activa no se ve ningún paciente. Integraciones en vivo y bandeja de patología por `organizations.data.features`. Las personas alcanzables (derivar, asignar, recordar) son las de la org activa. Org sandbox (`data.sandbox`): nadie entra por defecto. Orgs: `cepi` (telemedicina), `cepi-drpro` (consultorio), `cepi-testing` (sandbox). Ver §13.7 y §24.7. |
 | **D-Aux-25** | Consola de administración | La administración (usuarios, roles, permisos, organizaciones) sale de la PWA médica a `console.cepi.ec`: app propia, dominio propio y **repositorio propio** (`desarrollocepi/cepi-console`), con su propio CI. Backend compartido (TodoERP), despliegue independiente. La consola **no muestra datos clínicos**, lo que alinea D-1 por construcción. En la PWA queda el botón Admin, que abre la consola en otra pestaña. Ver §26. |
 | **D-Aux-26** | Identidades de chat | Quien escribe por WhatsApp/Telegram es una **cuenta hijo**: fila de `users` que **no inicia sesión** y cuelga de una cuenta padre por `parent_user_id`. Vincular es apuntar, no fusionar — se descartó el merge destructivo al medir las **34 FKs** que apuntan a `users(id)` (reescribir `created_by` de la historia clínica, sin vuelta atrás). Un desconocido que escribe crea una identidad sin padre en rol `pendiente`, sin acceso clínico. El token de chat pasa a llevar `org_id` y el bot queda acotado a una organización, con cuenta de servicio propia y permiso granular `auth:external:resolve` en vez del comodín. Ver §27. |
+| **D-Aux-27** | Roles por organización | El rol clínico vive en la membresía (`user_organizations.role_id`, NULL = hereda el general): la misma persona puede tener roles distintos en cada org, y cada org acota cuáles ofrece (`organizations.data.roles`). Los roles de **sistema** (`roles.global_scope`: superadmin, gestión de orgs, cuentas de servicio) no pertenecen a ninguna org: viven en `users.role_id`, se suman en todas y no se asignan por org. Ver §13.8. |
 
 ---
 

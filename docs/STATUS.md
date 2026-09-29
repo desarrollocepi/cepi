@@ -31,6 +31,11 @@ Estado del proyecto al cierre de la sesión actual.
   (TodoERP `43936ff`); test de que supermedico contiene a los roles clínicos.
 - **Consola**: crear/activar organizaciones, Roles y Permisos se ocultan sin el permiso; la
   columna Chat pasa a «WhatsApp / Telegram» y la vista de pendientes explica cómo aprobar.
+- **Roles por organización (PAPER §13.8, D-Aux-27)**: el rol clínico vive en la membresía
+  (migración 023; NULL = hereda el general, así el despliegue no cambia nada). Roles de
+  sistema (`global_scope`: admin, bot_canal, espejos) se suman en todas las orgs y no se
+  asignan por org. Telemedicina ofrece supermédico y médico primario (seed 021). Consola:
+  «Rol en <org>» en Usuarios; lista de roles por org en Organizaciones (superadmin).
 
 ## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
 
