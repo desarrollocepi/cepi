@@ -23,6 +23,14 @@ Estado del proyecto al cierre de la sesión actual.
   (`127.0.0.1:9997/interno/identidad-activada`); cepi-bot vuelve a resolver el número y, si de
   verdad ya tiene acceso, le escribe. Solo dentro de las 24 h de Meta: fuera de esa ventana
   el texto libre falla (131047) y haría falta una plantilla de utilidad, que se cobra.
+- **Tarifa de Meta desde el 2026-10-01**: toda respuesta (service message) se cobra a tarifa
+  de utilidad, con 1.000 gratis al mes por número. Uso interno: no se espera superarlo.
+- **El supermédico solo podía dar su propio rol**: `flattenPermissionRows` metía el nombre del
+  bundle (`medico_perms`) como permiso y `assertCanGrant` lo exigía. Además a
+  `supermedico_perms` le faltaban `episode:read_all` y `reminders:read_own`. Corregido
+  (TodoERP `43936ff`); test de que supermedico contiene a los roles clínicos.
+- **Consola**: crear/activar organizaciones, Roles y Permisos se ocultan sin el permiso; la
+  columna Chat pasa a «WhatsApp / Telegram» y la vista de pendientes explica cómo aprobar.
 
 ## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
 
