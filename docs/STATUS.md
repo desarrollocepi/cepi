@@ -36,6 +36,9 @@ Estado del proyecto al cierre de la sesión actual.
   sistema (`global_scope`: admin, bot_canal, espejos) se suman en todas las orgs y no se
   asignan por org. Telemedicina ofrece supermédico y médico primario (seed 021). Consola:
   «Rol en <org>» en Usuarios; lista de roles por org en Organizaciones (superadmin).
+- **El rol general es solo de sistema**: admin, `user` (nuevo, migración 024, sin permisos)
+  y las cuentas de servicio. Seed 022 pasa los roles clínicos generales a las membresías.
+  Registro, alta por WhatsApp y agregar a una org dejan `pendiente` en la membresía.
 - **Aprobar pendientes desde la consola**: «vincular» salía vacío en la vista de pendientes
   (solo cargaba pendientes); ahora ofrece todas las cuentas de personas, sin bots. En
   pendientes la columna es «Aprobar como» y «Activo» pasó a «Habilitada»: una identidad de

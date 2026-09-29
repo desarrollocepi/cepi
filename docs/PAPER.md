@@ -969,19 +969,24 @@ alguien sin cambiárselo en las demás.
 
 **Decisión: dos clases de rol.**
 
-- **De organización** (los clínicos): viven en la membresía, `user_organizations.role_id`
-  (migración 023). La misma persona puede ser supermédico en una org y médico en otra.
-  NULL = hereda el rol general, así que el día del despliegue nada cambia.
-- **De sistema** (`roles.global_scope`; todo rol con `allow_grant_all` lo es): crear y
-  administrar organizaciones, cuentas de servicio de canales y espejos (`bot_canal`,
-  `espejo_drpro`, `espejo_patologia`, seed 021). No pertenecen a ninguna org: viven en
-  `users.role_id` y se **suman** al rol de la org activa, en todas. Nunca se asignan por
+- **De organización** (los clínicos, y `pendiente`): viven en la membresía,
+  `user_organizations.role_id` (migración 023). La misma persona puede ser supermédico en
+  una org y médico en otra. Quien entra a una org —registro, alta por WhatsApp, agregarlo
+  desde la consola— entra `pendiente` en ella; aprobarlo es darle un rol ahí.
+- **De sistema** (`roles.global_scope`; todo rol con `allow_grant_all` lo es): **admin**
+  (superadmin), **user** (migración 024: el de toda persona, sin permisos) y las cuentas de
+  servicio (`bot_canal`, `espejo_drpro`, `espejo_patologia`, seed 021; se dejan separadas
+  y no fundidas en un solo «bot» para que cada una tenga solo lo suyo). Son los **únicos**
+  que van en `users.role_id`: `PATCH /admin/users/:id {role_id}` rechaza uno clínico (400).
+  Se **suman** al rol de la org activa, en todas. Nunca se asignan por
   membresía — ni siquiera el superadmin puede (400) —, porque un comodín por org sería un
   superadmin por la puerta de atrás; y si una membresía tuviera uno, se ignora.
 
 **Rol efectivo** (`rolEfectivo(user, org)` en `authService.ts`): el de la membresía en la
-org activa; si no hay, el general cuando no es de sistema; más el general cuando es de
-sistema. Los permisos se calculan en cada request con la org del token
+org activa, más el general (de sistema). El seed 022 movió los roles clínicos que eran
+generales a cada membresía sin rol propio y dejó el general en `user`; quien no era
+miembro de ninguna org conserva el suyo (el cálculo todavía acepta un general clínico como
+respaldo cuando la membresía no tiene rol). Los permisos se calculan en cada request con la org del token
 (`getUserPermissions(user, org)`, caché por usuario **y** org; invalidar a un usuario
 limpia todas sus orgs). El `role` del token, de `/auth/me`, del cambio de org y del token
 de un canal es el de la org activa: cambiar de org puede cambiar el rol, y las apps ya
