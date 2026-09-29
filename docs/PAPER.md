@@ -2583,6 +2583,13 @@ hash imposible. No se toca el esquema base del ERP. Ese email no se muestra nunc
 enseña el teléfono. Al vincularla a un padre deja de importar; si esa persona después se
 registra con email real, se vincula como hijo y el email sintético queda de lado.
 
+**Por ahora los canales son de telemedicina.** WhatsApp y Telegram dan de alta y
+resuelven identidades solo en `cepi` (`*_BOT_ORG`), y una identidad pertenece solo a la org
+de su canal: ni el superadmin la agrega a otra (`PUT /admin/users/:id/orgs` y `POST
+/orgs/:id/members` responden 400; en la consola sus orgs se ven sin controles). Vincularla
+a una cuenta de otra org le pasa la solicitud a esa cuenta, pendiente en telemedicina
+(§13.8). Otra org con canal propio sería otro número y otro bot con su `*_BOT_ORG`.
+
 ### 27.4 Qué pasa cuando llega un mensaje
 
 1. El bot resuelve el remitente contra `/auth/external/resolve`, pasando **su organización**
