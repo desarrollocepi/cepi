@@ -36,6 +36,10 @@ Estado del proyecto al cierre de la sesión actual.
   sistema (`global_scope`: admin, bot_canal, espejos) se suman en todas las orgs y no se
   asignan por org. Telemedicina ofrece supermédico y médico primario (seed 021). Consola:
   «Rol en <org>» en Usuarios; lista de roles por org en Organizaciones (superadmin).
+- **Aprobar pendientes desde la consola**: «vincular» salía vacío en la vista de pendientes
+  (solo cargaba pendientes); ahora ofrece todas las cuentas de personas, sin bots. En
+  pendientes la columna es «Aprobar como» y «Activo» pasó a «Habilitada»: una identidad de
+  WhatsApp nace habilitada (el bot la reconoce) pero sin rol, y eso es estar pendiente.
 
 ## Sesión 2026-09-24 (2) — Identidades de chat: cuentas padre e hijo
 
