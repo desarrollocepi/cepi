@@ -39,6 +39,10 @@ Estado del proyecto al cierre de la sesión actual.
 - **El rol general es solo de sistema**: admin, `user` (nuevo, migración 024, sin permisos)
   y las cuentas de servicio. Seed 022 pasa los roles clínicos generales a las membresías.
   Registro, alta por WhatsApp y agregar a una org dejan `pendiente` en la membresía.
+- **Pertenencia solo del superadmin; entrar a otra org pide aprobación**: el admin de org no
+  mete ni saca gente. Iniciar sesión por `telemedicina.cepi.ec` (seed 023, `data.hosts`)
+  deja pendiente en telemedicina a quien no es miembro; si está aprobado en otra org, entra
+  ahí. Vincular un número a una cuenta de otra org le pasa la solicitud (pendiente).
 - **Aprobar pendientes desde la consola**: «vincular» salía vacío en la vista de pendientes
   (solo cargaba pendientes); ahora ofrece todas las cuentas de personas, sin bots. En
   pendientes la columna es «Aprobar como» y «Activo» pasó a «Habilitada»: una identidad de

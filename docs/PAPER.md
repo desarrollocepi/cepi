@@ -862,7 +862,7 @@ Las organizaciones (migración 016, plan en `docs/ORGANIZACIONES_PLAN.md`) separ
 - **Las personas también son de la org activa** (desde el 2026-09-23): `/groups/:slug/members` y sus conteos, el grupo `all`, `request_review`, `POST /reminders` y `assign` solo alcanzan a miembros de la org activa, sea cual sea. Antes esto valía solo desde una sandbox, y en una org normal la lista de destinos de una derivación traía a gente de todas las orgs —los médicos del consultorio aparecían en telemedicina— a la que el backend después le rechazaba la derivación, porque los revisores ya se filtraban por la org del caso. Sin org activa (API key, token sin org) no se filtra.
 - **Org sandbox** (`data.sandbox = true`): los datos ya los aísla la org, y con lo anterior las personas también; lo propio de la marca es que `assignDefaultOrgs` nunca agrega a una sandbox. La org activa por defecto de quien está en una real y una sandbox es la real (`getUserOrgs` las ordena al final); entre reales, la más antigua, no la primera por nombre. El superadmin ve en el selector todas las orgs activas, con las suyas primero (`getSelectableOrgs`), y puede quedarse en una de la que no es miembro.
 - **Membresía de la sandbox: manual.** Seed 017 saca de `cepi-testing`, **una sola vez** (marca `data.membresias_depuradas_at`), a todo el que además es miembro de una org no sandbox: los médicos reales que entraron por el default de registro. Desde entonces solo un admin agrega o quita miembros, y re-aplicar 017 no vuelve a depurar. 007 no se tocó (cambiarlo haría que el deploy re-aplique 007–013 sobre producción) y sigue sumando a los usuarios demo a la sandbox: 017 los saca en cada aplicación, por su lista de emails. En desarrollo, `seeder/006` crea dos colegas ficticios solo de la sandbox, en `dermatologia`.
-- **Admin de organización.** `user_organizations.role_in_org = 'admin'` administra a la gente de esa org sin ser superadmin: `/api/admin/*` acota el listado a los usuarios de sus orgs, solo ofrece roles que el llamador podría otorgar (`assertCanGrant`, la misma regla que `/api/security`), nunca toca una cuenta cuyo rol concede el comodín —aunque sea miembro de su org— y al repartir membresías solo agrega o quita las orgs que administra. El superadmin (`*:*:*:*`) sigue viendo todo. En la UI el botón Admin aparece con cualquiera de los dos. Lo que el admin de org **nunca** va a poder hacer —crear o desactivar organizaciones, editar roles y permisos— se **oculta** (excepción de permisos de CLAUDE.md, 2026-09-28): un botón muerto por falta de permiso es ruido. Lo que hoy no aplica pero sí podría se sigue deshabilitando con el motivo. Antes el rol existía en la base y en `/api/orgs/:id/members`, pero no abría ninguna pantalla: administrar usuarios exigía el comodín, que además ve todas las organizaciones.
+- **Admin de organización.** `user_organizations.role_in_org = 'admin'` administra a la gente de esa org sin ser superadmin: `/api/admin/*` acota el listado a los usuarios de sus orgs, solo ofrece roles que el llamador podría otorgar (`assertCanGrant`, la misma regla que `/api/security`), nunca toca una cuenta cuyo rol concede el comodín —aunque sea miembro de su org— y **no decide la pertenencia**: no agrega ni quita gente de ninguna org, ni nombra admins (§13.8, desde el 2026-09-29; antes podía repartir las orgs que administraba). El superadmin (`*:*:*:*`) sigue viendo todo. En la UI el botón Admin aparece con cualquiera de los dos. Lo que el admin de org **nunca** va a poder hacer —crear o desactivar organizaciones, editar roles y permisos— se **oculta** (excepción de permisos de CLAUDE.md, 2026-09-28): un botón muerto por falta de permiso es ruido. Lo que hoy no aplica pero sí podría se sigue deshabilitando con el motivo. Antes el rol existía en la base y en `/api/orgs/:id/members`, pero no abría ninguna pantalla: administrar usuarios exigía el comodín, que además ve todas las organizaciones.
 - **Orgs de cepi**: `cepi` "CEPI Telemedicina", `cepi-drpro` "CEPI Consultorio" con features `drpro`, `doctopro`, `patologia` (seed 018), `cepi-testing` "CEPI Testing", sandbox con 6 pacientes ficticios (seed 017). Los nombres los fija el seed 019 y no nombran el sistema de origen; los slugs y las features sí, porque no se muestran como nombre. `doctopro` es la cuenta sandbox vieja de la misma plataforma (read/write, "degradada a tipo directorio"); `drpro` es el espejo de producción.
 - Punto único: `TodoERP/backend/src/services/orgScope.ts`. Las lecturas por SQL directo (`review-queue`, `patient-assignments`, `patient-thread`, importador de patología) usan los mismos predicados. El bot y el MCP llegan a los datos solo por la API con el token del usuario.
 
@@ -1012,6 +1012,32 @@ supermédico apareció que el nombre del bundle (`medico_perms`) entraba como pe
 que un admin de org solo podía dar su propio rol. Ahora el nombre cuenta solo en registros
 granulares, y `supermedico_perms` contiene a todos los roles clínicos (test en
 `medical_seed.test.ts`).
+
+**La pertenencia no la decide el admin de la org.** El admin de una org manda dentro de
+ella —aprueba, asigna y cambia roles, vincula números— pero no mete ni saca a nadie:
+`PUT /admin/users/:id/orgs` y `POST|DELETE /orgs/:id/members` son del superadmin (403 para
+el resto). En la consola ve las orgs de cada persona y los miembros de la suya, sin
+controles para cambiarlos.
+
+**Entrar a una org pide aprobación en ella.** Se entra a una org solo por un acto de la
+persona, y siempre queda `pendiente` ahí:
+- registrarse (email o Google): en las orgs por defecto (`REGISTER_DEFAULT_ORG_SLUGS`, sin
+  sandbox) y en la del dominio;
+- escribirle al canal de la org (WhatsApp/Telegram, §27): en la org del bot;
+- iniciar sesión por el **dominio** de una org de la que no es miembro. El backend reconoce
+  la org por el `Host` (`organizations.data.hosts`; seed 023: `telemedicina.cepi.ec` →
+  `cepi`; `casos.cepi.ec` no, es una vista para todas). Las apps nativas llaman a ese
+  mismo dominio, así que no cambian. Quien ya está aprobado en otra org no queda trabado en
+  «pendiente»: la sesión arranca en la primera org donde tiene rol (`elegirOrgActiva`) y la
+  solicitud espera en la del dominio.
+
+Ser médico en el consultorio, entonces, no aprueba en telemedicina: cada org aprueba lo suyo.
+
+**Vincular no aprueba.** Al vincular un número a una cuenta que no es miembro de la org de
+ese número, la solicitud pasa a la cuenta con el mismo rol que tenía (pendiente): la cuenta
+queda pendiente ahí y el admin la aprueba. El acceso de una identidad se mide en sus orgs y
+con el rol de quien actúa (el padre); el aviso «tu registro está listo» sale cuando ese rol
+deja de ser pendiente, y llega también a los números vinculados de la cuenta aprobada.
 
 **`role_in_org` sigue aparte.** `admin`/`member` dice quién administra la org, no qué
 permisos clínicos tiene: son ejes distintos y no se mezclan.
