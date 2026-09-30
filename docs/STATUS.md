@@ -43,6 +43,10 @@ Estado del proyecto al cierre de la sesión actual.
   mete ni saca gente. Iniciar sesión por `telemedicina.cepi.ec` (seed 023, `data.hosts`)
   deja pendiente en telemedicina a quien no es miembro; si está aprobado en otra org, entra
   ahí. Vincular un número a una cuenta de otra org le pasa la solicitud (pendiente).
+- **Invitaciones por email con rol preasignado** (migración 025, consola → Invitaciones): se
+  aceptan al verificar el registro o al iniciar sesión con ese email. **Registro**: sí
+  verifica el email (código de 6 dígitos por Brevo); ahora con tests (17 en
+  `registro_e_invitaciones.test.ts`).
 - **Aprobar pendientes desde la consola**: «vincular» salía vacío en la vista de pendientes
   (solo cargaba pendientes); ahora ofrece todas las cuentas de personas, sin bots. En
   pendientes la columna es «Aprobar como» y «Activo» pasó a «Habilitada»: una identidad de

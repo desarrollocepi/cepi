@@ -1033,6 +1033,22 @@ persona, y siempre queda `pendiente` ahí:
 
 Ser médico en el consultorio, entonces, no aprueba en telemedicina: cada org aprueba lo suyo.
 
+**Invitar por email con rol preasignado** (migración 025, `invitations`). El admin de una
+org invita a la suya —el superadmin a cualquiera— un email con un rol que esa org usa y que
+él podría dar ahí (`POST /admin/invitations`; consola → Invitaciones). El correo sale por
+Brevo **sin enlaces**, con el dominio como texto, igual que el código de verificación. La
+invitación **no crea la membresía**: se acepta cuando la persona verifica el email de su
+registro o inicia sesión con ese email (contraseña o Google), y entonces entra a la org con
+ese rol, sin pasar por pendiente; si ya tenía un rol de verdad ahí, no se le baja. Vence a
+los 30 días; se puede revocar y reenviar; invitar de nuevo reemplaza la anterior.
+
+**Registro con verificación.** `POST /auth/register` crea la cuenta **inactiva** (rol
+general `user`, pendiente en las orgs por defecto y en la del dominio) y manda por Brevo un
+código de 6 dígitos (sin enlace). `POST /auth/verify-email` la activa; el código vence a los
+30 minutos, admite 5 intentos y no se reutiliza. Hasta verificar no entra; registrarse de
+nuevo con el mismo email y `resend-code` responden lo mismo exista o no la cuenta
+(anti-enumeración). Tests: `tests/auth/registro_e_invitaciones.test.ts`.
+
 **Vincular no aprueba.** Al vincular un número a una cuenta que no es miembro de la org de
 ese número, la solicitud pasa a la cuenta con el mismo rol que tenía (pendiente): la cuenta
 queda pendiente ahí y el admin la aprueba. El acceso de una identidad se mide en sus orgs y
