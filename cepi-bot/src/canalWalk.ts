@@ -37,6 +37,19 @@ export function walkOptions(f: BotFormField): Array<{ label: string; value: any 
 }
 
 /**
+ * Pregunta cerrada contestada por escrito («f», «otro», «sí») en vez de tocando
+ * el botón: la opción que nombra, o `null` si no nombra ninguna. Un texto que no
+ * es una opción no se guarda: la columna lo rechaza y se pierde la sección.
+ */
+export function opcionEscrita(f: BotFormField, texto: string): { value: any } | null {
+  const plano = (x: unknown) => String(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const t = plano(texto);
+  if (!t) return null;
+  const o = walkOptions(f).find(x => plano(x.label) === t || plano(x.value) === t);
+  return o ? { value: o.value } : null;
+}
+
+/**
  * ¿El campo ya tiene valor guardado? El cerebro manda la sección con lo que ya
  * hay en la ficha (`form.values`). Un canal pregunta solo lo que falta: volver a
  * pedir lo ya contestado —por ejemplo tras guardar media sección— cansa y

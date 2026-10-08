@@ -237,6 +237,12 @@ describe('telegram new-patient walk', () => {
     expect(inbound.length).toBe(0);             // nothing reached the brain
   });
 
+  it('quien vuelve escribiendo lo que quiere no recibe el menú: se le atiende', async () => {
+    const OTRO = 7090;
+    await update(msgUpdate(OTRO, 'nuevo paciente'));
+    expect(lastTo(OTRO).text).toMatch(/^\(1\/3\)/);
+  });
+
   it('tapping "nuevo paciente" starts the field-by-field walk', async () => {
     await update(tapUpdate(CHAT, 'nuevo paciente'));
     const texts = textsTo(CHAT);
@@ -532,6 +538,17 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     await update(tapUpdate(CHAT, 'fs:0'));
     expect(lastTo(CHAT).text).toBe('(2/2) Sexo');
     expect(inbound.length).toBe(turnos);
+  });
+
+  it('una pregunta cerrada contestada por escrito: vale la opción, no cualquier texto', async () => {
+    await abrirFicha();
+    await update(tapUpdate(CHAT, 'fs:0'));            // ¿Fuma? → saltar
+    const turnos = inbound.length; const desde = sent.length;
+    await update(msgUpdate(CHAT, 'si'));              // «si» no es un sexo
+    expect(inbound.length).toBe(turnos);
+    expect(textsTo(CHAT, desde)).toEqual(['Elige una de las opciones.', '(2/2) Sexo']);
+    await update(msgUpdate(CHAT, 'otro'));            // la opción, sin mayúscula
+    expect(inbound.at(-1).form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { sexo: 'Otro' } });
   });
 
   it('«Omitir restante» con respuestas las GUARDA: envía la sección con lo contestado', async () => {

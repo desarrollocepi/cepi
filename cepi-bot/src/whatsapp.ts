@@ -44,7 +44,7 @@ import {
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
 import {
-  colaPorChat, cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
+  colaPorChat, cuerpoDeEnvio, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
@@ -908,6 +908,8 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     // campo no admite; se vuelve a preguntar.
     const f = walk.form.fields[walk.idx];
     if (f && (f.type === 'radio' || f.type === 'checkbox')) {
+      const escrita = opcionEscrita(f, texto);
+      if (escrita) { await applyWalkAnswer(ctx, escrita.value); return; }
       await sendWhatsappText(from, 'Elige una de las opciones.');
       await askWalkField(ctx);
       return;

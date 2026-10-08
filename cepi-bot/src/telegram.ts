@@ -34,7 +34,7 @@ import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
-import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
+import { cuerpoDeEnvio, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
@@ -616,12 +616,23 @@ async function resolveImageToken(message: any, jwt: string): Promise<string | nu
  * Show the "new chat" menu: New patient / Search patient / (Previous patient).
  * Resets the chat's session so the next turn starts fresh (unset mode).
  */
-async function sendWelcomeMenu(chatId: number): Promise<void> {
+/** Deja el chat como recién abierto: sesión nueva en el próximo turno. */
+function reiniciarChat(chatId: number): void {
   chatSessions.delete(chatId);   // fresh session on the next turn
   pacienteActivo.delete(chatId);
   eco.soltar(chatId);
   enPausa.delete(chatId);
   formWalks.delete(chatId);      // abandon any half-filled ficha walk
+}
+
+/**
+ * Lo que alguien escribe al volver y ya dice qué quiere: mostrarle el menú en
+ * vez de hacerlo lo obligaba a pedirlo dos veces.
+ */
+const YA_DICE_QUE_QUIERE = /^\s*\/?\s*(nuevo\s+paciente|buscar\s+paciente(\s+.+)?|help|ayuda|comandos)\s*$/i;
+
+async function sendWelcomeMenu(chatId: number): Promise<void> {
+  reiniciarChat(chatId);
   const buttons: QuickReply[] = [
     { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
     { label: '🔍 Buscar paciente', send: 'paciente' },
@@ -730,8 +741,8 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
   const fresh = isNewChat(chatId);
   touch(chatId);
   if (fresh && !conPaciente) {
-    await sendWelcomeMenu(chatId);
-    return;
+    if (!YA_DICE_QUE_QUIERE.test(escrito)) { await sendWelcomeMenu(chatId); return; }
+    reiniciarChat(chatId);
   }
   await procesarMensaje(invokeChat, message, jwt);
 }
@@ -800,9 +811,24 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
         return;
       }
       if (answer) {
+        const campo = activeWalk.form.fields[activeWalk.idx];
+        // Pregunta cerrada contestada por escrito: vale si nombra una opción;
+        // cualquier otra cosa no se guarda (la columna la rechaza con un 400).
+        if (campo && (campo.type === 'radio' || campo.type === 'checkbox')) {
+          const o = opcionEscrita(campo, answer);
+          if (o) { await applyWalkAnswer(invokeChat, chatId, o.value); return; }
+          await sendTelegramText(chatId, 'Elige una de las opciones.');
+          await askWalkField(invokeChat, chatId);
+          return;
+        }
+        // Un campo de imágenes no se contesta con texto: guardaría basura como id.
+        if (campo?.type === 'image_upload') {
+          await sendTelegramText(chatId, 'Aquí va una foto, no texto.');
+          await askWalkField(invokeChat, chatId);
+          return;
+        }
         // Campo con tipo (fecha, número): validador determinista, después IA, y
         // si ninguno lo entiende se dice y se vuelve a preguntar.
-        const campo = activeWalk.form.fields[activeWalk.idx];
         const tipo = campo ? tipoEsperado(campo) : null;
         if (campo && tipo) {
           const v = await validarRespuesta(campo, answer);
