@@ -29,6 +29,11 @@ export function inicioSegunHost() {
 const routes = [
   { path: '/', redirect: () => inicioSegunHost() },
   { path: '/chat', name: 'chat', component: ChatShell, meta: { auth: true, marca: 'Telemedicina' } },
+  // El paciente abierto va en la URL (y la sección, salvo Chat que es la de entrada):
+  //   #/chat/<uuid>   #/chat/<uuid>/ficha   #/chat/<uuid>/imagenes
+  // Mismo componente que `/chat`: el router reutiliza la instancia y ChatShell pinta
+  // lo que diga la ruta, igual que CasosShell.
+  { path: '/chat/:patientId/:seccion(ficha|imagenes)?', name: 'chat-paciente', component: ChatShell, meta: { auth: true, marca: 'Telemedicina' } },
   { path: '/casos', name: 'casos', component: CasosShell, meta: { auth: true, marca: 'Casos' } },
   // El caso y el paciente son la MISMA vista con distinto foco: el shell lee los
   // params. Rutas separadas y no una con query para que el enlace se lea solo.

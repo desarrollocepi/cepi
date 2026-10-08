@@ -77,7 +77,7 @@
            la propia ruta, que además deja el enlace compartible. -->
       <RouterView
         v-else :user="user"
-        @head="chatHeadActive = $event" @back="goChat"
+        @head="chatHeadActive = $event" @back="goChat" @aviso="flashNotif"
         @saved="onProfileSaved" @logout="onLogout"
       />
     </main>
@@ -134,9 +134,10 @@ function onProfileSaved(u) {
   if (u) user.value = { ...user.value, ...u };
 }
 // Click en una notificación → ir al chat y abrir el paciente que la origina.
-function onNotifOpen({ id, name }) {
-  // La notificación NAVEGA; ChatShell lee el paciente de la query al montar.
-  router.push({ path: '/chat', query: { paciente: id, ...(name ? { nombre: name } : {}) } });
+function onNotifOpen({ id }) {
+  // La notificación NAVEGA a la URL del paciente; ChatShell lo abre desde la ruta y
+  // resuelve el nombre por id (no viaja en la URL: es dato personal).
+  if (id) router.push({ name: 'chat-paciente', params: { patientId: id } });
 }
 // Superadmin, o admin de alguna organización: administra a la gente de sus orgs
 // (`/api/admin/*` acota el alcance). El botón vive en el menú de la cuenta.
