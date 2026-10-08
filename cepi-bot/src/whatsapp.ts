@@ -260,7 +260,9 @@ function renderForm(form: BotForm): string {
  */
 function composeReply(body: any): string {
   const header = String(body?.status_header || '').trim();
-  let text = String(body?.text || '').trim();
+  // `channel_text`: versión para canales de una respuesta que la web pinta con
+  // datos aparte. El cerebro escribe en Markdown (`**negrita**`); WhatsApp usa `*negrita*`.
+  let text = String(body?.channel_text || body?.text || '').trim().replace(/\*\*(.+?)\*\*/g, '*$1*');
   // El formulario de búsqueda es un solo cuadro de texto: en un chat ya es el
   // propio chat, y pintarlo solo mete ruido debajo de los resultados.
   if (body?.form && body.form.id !== 'patient_search') text += '\n' + renderForm(body.form);

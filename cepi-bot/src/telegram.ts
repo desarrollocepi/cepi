@@ -39,6 +39,7 @@ import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
 import { ayudaDeTipo, legible, tipoEsperado, validarRespuesta } from './validarCampo.js';
+import { crearEstado } from './canalEstado.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -256,11 +257,55 @@ const IDLE_MS = 5 * 60 * 1000;
  */
 function touch(chatId: number): void {
   lastSeen.set(chatId, Date.now());
+  armarInactividad(chatId, IDLE_MS);
+}
+
+/** (Re)arma el reloj que reinicia el chat por inactividad. */
+function armarInactividad(chatId: number, ms: number): void {
   const existing = idleTimers.get(chatId);
   if (existing) clearTimeout(existing);
-  const t = setTimeout(() => { void onIdle(chatId); }, IDLE_MS);
+  const t = setTimeout(() => { void onIdle(chatId).finally(persistir); }, ms);
   if (typeof (t as any).unref === 'function') (t as any).unref();  // don't keep the process alive
   idleTimers.set(chatId, t);
+}
+
+// ── Estado que sobrevive a un reinicio (canalEstado.ts) ─────────────────────
+
+const estado = crearEstado(() => `telegram-${process.env.TELEGRAM_WEBHOOK_PORT || '9998'}`);
+
+/** Foto de lo que el canal sabe de cada chat (sin credenciales). */
+function fotoDelEstado(): unknown {
+  return {
+    v: 1,
+    chatSessions: [...chatSessions], lastSeen: [...lastSeen], lastPatient: [...lastPatient],
+    pacienteActivo: [...pacienteActivo], formWalks: [...formWalks], chatFrom: [...chatFrom],
+    callbackSends: [...callbackSends], cbCounter, eco: eco.exportar(),
+  };
+}
+
+function persistir(): void { estado.guardar(fotoDelEstado); }
+
+/**
+ * Al arrancar: retoma donde quedó cada chat. Un deploy deja de notarse: la
+ * sesión, el paciente activo, la sección a medias y los botones ya enviados
+ * siguen sirviendo.
+ */
+function restaurarEstado(): void {
+  const e = estado.cargar();
+  if (!e || e.v !== 1) return;
+  const llenar = <V>(m: Map<number, V>, datos: any) => { for (const [k, v] of datos || []) m.set(Number(k), v); };
+  llenar(chatSessions, e.chatSessions); llenar(lastSeen, e.lastSeen); llenar(lastPatient, e.lastPatient);
+  llenar(pacienteActivo, e.pacienteActivo); llenar(formWalks, e.formWalks); llenar(chatFrom, e.chatFrom);
+  for (const [k, v] of e.callbackSends || []) callbackSends.set(String(k), String(v));
+  cbCounter = Math.max(cbCounter, Number(e.cbCounter) || 0);
+  eco.importar((e.eco || []).map(([k, v]: [any, any]) => [Number(k), v]));
+  // El reinicio por inactividad de quien todavía está dentro de su rato; a quien
+  // ya se le pasó se le muestra el menú cuando vuelva a escribir.
+  for (const [chatId, visto] of lastSeen) {
+    const falta = IDLE_MS - (Date.now() - visto);
+    if (falta > 0) armarInactividad(chatId, falta);
+  }
+  console.log(`[telegram] estado restaurado: ${chatSessions.size} sesión(es), ${formWalks.size} recorrido(s)`);
 }
 
 /** Idle timer fired: proactively show the menu and reset the chat's session. */
@@ -332,7 +377,11 @@ function buildKeyboard(qr: QuickReply[] | undefined): any | undefined {
  */
 function composeReply(body: any): string {
   const header = String(body?.status_header || '').trim();
-  let text = String(body?.text || '').trim();
+  // `channel_text`: versión para canales de una respuesta que la web pinta con
+  // datos aparte. Se manda sin parse_mode, así que el Markdown del cerebro
+  // (`**negrita**`, `código`) saldría con sus signos: se quitan.
+  let text = String(body?.channel_text || body?.text || '').trim()
+    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
   if (body?.form) text += '\n' + renderForm(body.form);
   text = text || '…';
   return header ? `${header}\n${text}` : text;
@@ -1138,6 +1187,9 @@ async function registerWebhook(): Promise<void> {
  */
 export function startTelegram(invokeChat: InvokeChat) {
   cerebro = invokeChat;
+  restaurarEstado();
+  // Al apagar (un deploy), lo último que cambió queda escrito.
+  for (const señal of ['SIGINT', 'SIGTERM'] as const) process.once(señal, () => estado.guardarYa(fotoDelEstado));
   const app = express();
   app.use(express.json({ limit: '5mb' }));
 
@@ -1161,14 +1213,14 @@ export function startTelegram(invokeChat: InvokeChat) {
         await handleCancelar(callback);
       } else if (callback) {
         if (typeof chatId === 'number') {
-          await serialize(chatId, () => handleCallback(invokeChat, callback));
+          await serialize(chatId, () => handleCallback(invokeChat, callback).finally(persistir));
         } else {
           await handleCallback(invokeChat, callback).catch(e =>
             console.error('[telegram] callback error:', e?.message || e));
         }
       } else if (message) {
         if (typeof chatId === 'number') {
-          await serialize(chatId, () => handleInbound(invokeChat, message));
+          await serialize(chatId, () => handleInbound(invokeChat, message).finally(persistir));
         } else {
           await handleInbound(invokeChat, message).catch(e =>
             console.error('[telegram] handle error:', e?.message || e));

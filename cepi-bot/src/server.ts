@@ -549,6 +549,30 @@ async function avisarHilo(jwt: string, patientId: string, sessionId: string): Pr
   }
 }
 
+/**
+ * El feed de actividad dicho en texto, para un canal de chat: las últimas
+ * entradas, cada una con fecha, autor y qué pasó. Los cambios de campo se
+ * cuentan por nombre de campo, sin volcar valores (pueden ser largos).
+ */
+export function resumenDeChatter(data: unknown, max = 10): string {
+  const lista: any[] = Array.isArray(data) ? data : Array.isArray((data as any)?.data) ? (data as any).data : [];
+  if (!lista.length) return 'Sin actividad registrada.';
+  const fecha = (v: any) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const orden = [...lista].sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+  const lineas = orden.slice(0, max).map(e => {
+    const quien = e?.author_name || 'Sistema';
+    const campos = e?.changes && typeof e.changes === 'object'
+      ? Object.values(e.changes).map((c: any) => c?.label).filter(Boolean) : [];
+    const que = e?.type === 'note' ? String(e?.body || '').trim()
+      : e?.type === 'create' ? 'creó el registro'
+      : campos.length ? `actualizó ${campos.slice(0, 6).join(', ')}${campos.length > 6 ? '…' : ''}`
+      : String(e?.body || 'cambio').trim();
+    return `• ${fecha(e?.created_at)} ${quien}: ${que}`.replace(/\s+/g, ' ').slice(0, 300);
+  });
+  const resto = orden.length - lineas.length;
+  return lineas.join('\n') + (resto > 0 ? `\n(y ${resto} entrada(s) anteriores)` : '');
+}
+
 /** La pregunta que queda abierta tras subir una imagen suelta (`pending_image`). */
 const PREGUNTA_IMAGEN = {
   text: '¿Esta imagen es de la lesión o un formulario de consentimiento?',
@@ -1303,12 +1327,14 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         }
         const r = await mcp.call('chatter.list', { entity_id: target });
         const text = r.ok ? `Feed de actividad del ${activeEpisodeId ? 'episodio' : 'paciente'}.` : `Error: ${r.error}`;
+        // La web pinta el feed desde `toolCalls`; un canal solo tiene texto.
+        const channelText = r.ok ? `${text}\n${resumenDeChatter(r.data)}` : text;
         session.turns = [...session.turns,
           { role: 'user', content: message },
           { role: 'tool', tool_name: 'chatter.list', content: JSON.stringify(r.ok ? r.data : { error: r.error }) },
           { role: 'assistant', content: text }];
         await saveSession(mcp, session);
-        return res.json({ ok: true, session_id: sessionId, text, history: session.turns,
+        return res.json({ ok: true, session_id: sessionId, text, channel_text: channelText, history: session.turns,
           toolCalls: [{ name: 'chatter.list', args: { entity_id: target }, result: r }],
           active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
       }
