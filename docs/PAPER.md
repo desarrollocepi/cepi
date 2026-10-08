@@ -2646,7 +2646,7 @@ Meta y una salida repetida sale una sola vez (un título duplicado hace que Meta
 mensaje entero). En WhatsApp, una búsqueda con un único resultado activa a ese paciente sin
 hacerle elegir. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
 En una sección de la ficha hay dos salidas con nombres distintos, en los dos canales:
-**Saltar** deja ese campo sin contestar y sigue, y **Omitir sección** termina la sección
+**Saltar** deja ese campo sin contestar y sigue, y **Omitir restante** termina la sección
 **guardando lo ya contestado**. Salir de una sección por cualquier otro camino (un comando,
 una foto, cambiar de paciente, el menú, el reinicio por inactividad de Telegram) también
 guarda antes lo contestado: una respuesta dada no se pierde. La excepción es un reinicio del
@@ -2744,6 +2744,15 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   del bot. El eco hacia los canales sigue la misma regla para cualquier sesión, así que **un
   eco nunca trae una respuesta del bot**. La sesión propia de la web se ve entera, como
   siempre: ahí las preguntas del bot sí son para quien mira.
+- **Aviso push de mensaje nuevo.** Al terminar un turno con paciente activo, el bot llama a
+  `POST /api/patient-thread/notify` con el JWT de quien escribió. Si ese turno fue
+  **contenido** (misma regla), se notifica por push —navegador y apps, los mismos drivers
+  de las derivaciones, sin crear un recordatorio— a los demás **participantes** del hilo:
+  quienes tienen una sesión sobre ese paciente en la misma org y pueden leer mensajes
+  ajenos. No a todo el que *puede* ver al paciente: sería ruido para la org entera. El
+  aviso dice quién y qué tipo de cosa («Dra. X: 📋 1.1 Datos de contacto», «📷 Envió una
+  imagen»), nunca el dato: cae en pantallas bloqueadas. Los avisos de un mismo paciente
+  se reemplazan entre sí, y tocar el aviso en las apps abre el chat de ese paciente.
 - **Vale mientras el paciente siga activo en el teléfono.** Al cambiar de paciente o
   soltarlo, el eco de ese hilo se corta. Solo se reenvía lo posterior a haberlo activado.
 - **Una sesión por paciente.** El hilo se arma con las sesiones que tienen activo al

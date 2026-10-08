@@ -529,6 +529,26 @@ const NOTA_SIN_PACIENTE =
   'PROHIBIDO pedir o recoger datos de un paciente (nombre, cédula, edad, motivo, síntomas, antecedentes) ' +
   'y PROHIBIDO crear el paciente tú. Si quiere registrar o atender a alguien, dile solo que escriba ' +
   '«nuevo paciente» para crearlo o «paciente» para buscarlo.';
+/**
+ * Pide a TodoERP que notifique por push a los demás participantes del hilo del
+ * paciente (`POST /api/patient-thread/notify`), con el JWT de quien escribió.
+ * De mejor esfuerzo: un aviso que no sale no rompe el turno.
+ */
+async function avisarHilo(jwt: string, patientId: string, sessionId: string): Promise<void> {
+  const base = process.env.TODOERP_API_URL || 'http://localhost:3001';
+  try {
+    const r = await fetch(`${base}/api/patient-thread/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ patient_id: patientId, session_id: sessionId }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) console.error(`[hilo] aviso push ${r.status}`);
+  } catch (e: any) {
+    console.error('[hilo] aviso push:', e?.message || e);
+  }
+}
+
 /** La pregunta que queda abierta tras subir una imagen suelta (`pending_image`). */
 const PREGUNTA_IMAGEN = {
   text: '¿Esta imagen es de la lesión o un formulario de consentimiento?',
@@ -800,7 +820,12 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       if (payload && payload.ok !== false && !payload.solo_registro
           && payload.session_id && payload.active_patient_id) {
         const ev = { patientId: String(payload.active_patient_id), sessionId: String(payload.session_id) };
-        const t = setTimeout(() => emitirTurnoDePaciente(ev), 400);
+        const t = setTimeout(() => {
+          emitirTurnoDePaciente(ev);
+          // Y el aviso push a los demás participantes del hilo. TodoERP decide
+          // si este turno fue contenido y a quién le llega; acá solo se avisa.
+          if (jwt) void avisarHilo(jwt, ev.patientId, ev.sessionId);
+        }, 400);
         if (typeof (t as any).unref === 'function') (t as any).unref();
       }
       return _json(payload);

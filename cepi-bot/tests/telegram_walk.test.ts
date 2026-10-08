@@ -514,12 +514,12 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     expect(lastTo(CHAT).text).toBe('(1/2) ¿Fuma?');
   }
 
-  it('cada pregunta ofrece «Saltar» y «Omitir sección», y la presentación lo explica', async () => {
+  it('cada pregunta ofrece «Saltar» y «Omitir restante», y la presentación lo explica', async () => {
     await update(msgUpdate(CHAT, 'hola'));            // menú de bienvenida
     const desde = sent.length;
     await update(msgUpdate(CHAT, 'ficha'));
-    expect(textsTo(CHAT, desde)[0]).toContain('«Saltar» deja un campo sin contestar. «Omitir sección» la termina: lo contestado se guarda.');
-    expect(datosDe(lastTo(CHAT))).toEqual(['Sí=fw:0:0', 'No=fw:0:1', 'Saltar=fs:0', 'Omitir sección=omitir ficha']);
+    expect(textsTo(CHAT, desde)[0]).toContain('«Saltar» deja un campo sin contestar. «Omitir restante» termina la sección: lo ya contestado se guarda.');
+    expect(datosDe(lastTo(CHAT))).toEqual(['Sí=fw:0:0', 'No=fw:0:1', 'Saltar=fs:0', 'Omitir restante=omitir ficha']);
   });
 
   it('«Saltar» deja ese campo sin contestar y sigue con el siguiente', async () => {
@@ -530,7 +530,7 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     expect(inbound.length).toBe(turnos);
   });
 
-  it('«Omitir sección» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
+  it('«Omitir restante» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
     await abrirFicha();
     await update(tapUpdate(CHAT, 'fw:0:0'));          // ¿Fuma? → Sí
     await update(tapUpdate(CHAT, 'omitir ficha'));
@@ -538,7 +538,7 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     expect(lastTo(CHAT).text).toContain('Antecedentes guardados.');
   });
 
-  it('«Omitir sección» sin ninguna respuesta la omite', async () => {
+  it('«Omitir restante» sin ninguna respuesta la omite', async () => {
     await abrirFicha();
     await update(tapUpdate(CHAT, 'omitir ficha'));
     expect(inbound.at(-1).message).toBe('omitir ficha');

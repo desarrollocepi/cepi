@@ -151,7 +151,7 @@ describe('WhatsApp: retomar una sesión con algo pendiente', () => {
     await manda('593990000007', 'sí');
     await new Promise(r => setTimeout(r, 80));
     expect(turnos).toHaveLength(0);
-    expect(sent.at(-1)).toEqual({ text: '(3/3) Ocupación', botones: ['Saltar', 'Omitir sección'] });
+    expect(sent.at(-1)).toEqual({ text: '(3/3) Ocupación', botones: ['Saltar', 'Omitir restante'] });
     await manda('593990000007', 'Ingeniero');
     expect(turnos.at(-1).form_submission).toEqual({ form_id: 'ficha_grp_g_1_1', data: { ocupacion: 'Ingeniero' } });
     estadoDeSesion = {};

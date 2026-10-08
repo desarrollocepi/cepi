@@ -883,10 +883,10 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
       await sendMenu(from);
       return;
     }
-    // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir sección»
+    // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir restante»
     // termina la sección. Ninguno es el valor de un campo.
     if (walk.form.submit_mode === 'structured' && /^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
-    if (/^\/?\s*omitir\s+(ficha|secci[oó]n)\s*$/i.test(texto)) { await omitirSeccion(ctx, walk); return; }
+    if (/^\/?\s*omitir\s+(restante|resto|ficha|secci[oó]n)\s*$/i.test(texto)) { await omitirSeccion(ctx, walk); return; }
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
     // quedaba guardado como dirección).
@@ -1077,7 +1077,7 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
     // La sección de la ficha se muestra entera como contexto; el alta de
     // paciente va directo a su primera pregunta.
     const intro = body.form.id.startsWith('ficha_grp_')
-      ? composeReply(body) + '\n\n_«Saltar» deja un campo sin contestar. Escribe «omitir sección» para terminarla: lo contestado se guarda._'
+      ? composeReply(body) + '\n\n_«Saltar» deja un campo sin contestar. «Omitir restante» (o escribirlo) termina la sección: lo ya contestado se guarda._'
       : composeReply({ ...body, form: null });
     formWalks.set(from, { form: body.form, idx: 0, answers: {} });
     await sendWhatsappText(from, intro);
@@ -1127,7 +1127,7 @@ async function guardarParcial(ctx: Turno, w: FormWalk): Promise<void> {
 }
 
 /**
- * «Omitir sección»: termina la sección. Con respuestas, se envía con lo que
+ * «Omitir restante»: termina la sección. Con respuestas, se envía con lo que
  * tiene (el cerebro guarda y pasa a la siguiente); sin ninguna, se omite.
  */
 async function omitirSeccion(ctx: Turno, w: FormWalk): Promise<void> {
@@ -1153,14 +1153,14 @@ async function askWalkField(ctx: Turno): Promise<void> {
   const f = w.form.fields[w.idx];
   const { pos, n } = posicion(w);
   // Dos salidas distintas, con nombres que no se confunden: «Saltar» deja ESTE
-  // campo sin contestar y sigue; «Omitir sección» termina la sección (lo ya
+  // campo sin contestar y sigue; «Omitir restante» termina la sección (lo ya
   // contestado se guarda). Un «Omitir» a secas se leía como lo primero y hacía
   // lo segundo, perdiendo las respuestas.
   // (En el alta de paciente no hay «Saltar»: sus tres campos son obligatorios.)
   const acciones: Opcion[] = [
     ...(w.form.submit_mode === 'structured' ? [{ label: 'Saltar', accion: 'saltar' as const }] : []),
     ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
-      ? { label: 'Omitir sección', send: 'omitir ficha' } : { label: a.label, send: a.send }),
+      ? { label: 'Omitir restante', send: 'omitir ficha' } : { label: a.label, send: a.send }),
   ];
   if (f.type === 'radio' || f.type === 'checkbox') {
     // Con Sí/No caben tres botones: las dos respuestas y «Saltar». «Omitir

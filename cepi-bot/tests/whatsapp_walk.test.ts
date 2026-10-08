@@ -206,13 +206,13 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     await manda({ text: 'no' });
     expect(tipos.at(-1)).toBe('list');
     expect(ultimo().text).toBe('(2/4) Fototipo');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'Saltar', 'Omitir sección']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'Saltar', 'Omitir restante']);
   });
 
   it('la fila elegida responde el campo, y el de imágenes pide la foto sin «Listo» todavía', async () => {
     await manda({ boton: boton('III') });
     expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\nEnvía la(s) imagen(es) como foto.');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['Saltar', 'Omitir sección']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Saltar', 'Omitir restante']);
   });
 
   it('texto en el campo de imágenes no se guarda como si fuera una foto', async () => {
@@ -226,7 +226,7 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(descargas).toEqual(['media-1']);
     expect(subidas).toEqual([{ auth: `Bearer ${jwt}`, nombre: 'whatsapp_media-1.jpg', tipo: 'image/jpeg', bytes: 4 }]);
     expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\n📷 1 imagen recibida. Envía otra o toca «Listo».');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['Listo', 'Saltar', 'Omitir sección']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Listo', 'Saltar', 'Omitir restante']);
     await manda({ imagen: 'media-2' });
     expect(ultimo().text).toContain('2 imágenes recibidas');
     expect(turnos).toHaveLength(0);                    // nada va al cerebro hasta enviar la sección
@@ -297,7 +297,7 @@ describe('WhatsApp: saltar un campo no es omitir la sección', () => {
     await manda({ text: '111' }); await manda({ text: 'A' });
     sent.length = 0;
     await manda({ text: 'B' });
-    expect(sent[0].text).toContain('«Saltar» deja un campo sin contestar. Escribe «omitir sección» para terminarla: lo contestado se guarda.');
+    expect(sent[0].text).toContain('«Saltar» deja un campo sin contestar. «Omitir restante» (o escribirlo) termina la sección: lo ya contestado se guarda.');
   });
 
   it('«Saltar» deja ese campo sin contestar y sigue con el siguiente', async () => {
@@ -307,18 +307,18 @@ describe('WhatsApp: saltar un campo no es omitir la sección', () => {
     expect(turnos).toHaveLength(0);
   });
 
-  it('«Omitir sección» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
+  it('«Omitir restante» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
     await abrirFicha();
     await manda({ boton: boton('Sí') });
-    await manda({ text: 'omitir sección' });
+    await manda({ text: 'omitir restante' });
     expect(turnos).toHaveLength(1);
     expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: true } });
     expect(ultimo().text).toBe('👤 Paciente Prueba\nAntecedentes guardados.');
   });
 
-  it('«Omitir sección» sin ninguna respuesta la omite', async () => {
+  it('«Omitir restante» sin ninguna respuesta la omite', async () => {
     await abrirFicha();
-    await manda({ text: 'omitir sección' });
+    await manda({ text: 'omitir restante' });
     expect(turnos.map(t => t.message)).toEqual(['omitir ficha']);
   });
 

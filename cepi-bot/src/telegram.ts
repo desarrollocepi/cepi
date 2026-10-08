@@ -622,14 +622,14 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
         await sendWelcomeMenu(chatId);
         return;
       }
-      // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir sección»
+      // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir restante»
       // termina la sección guardando lo contestado. Ninguno es el valor de un campo.
       if (fichaWalk && /^\/?\s*(saltar|omitir)\s*$/i.test(answer)) {
         activeWalk.idx++;
         await askWalkField(invokeChat, chatId);
         return;
       }
-      if (/^\/?\s*omitir\s+(ficha|secci[oó]n)\s*$/i.test(answer)) {
+      if (/^\/?\s*omitir\s+(restante|resto|ficha|secci[oó]n)\s*$/i.test(answer)) {
         await omitirSeccion(invokeChat, chatId, jwt);
         return;
       }
@@ -749,7 +749,7 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
     // rendering the field list + "Respondé con los datos" would contradict
     // the one-by-one walk that follows.
     const intro = body.form.id.startsWith('ficha_grp_')
-      ? composeReply(body) + '\n\n«Saltar» deja un campo sin contestar. «Omitir sección» la termina: lo contestado se guarda.'
+      ? composeReply(body) + '\n\n«Saltar» deja un campo sin contestar. «Omitir restante» termina la sección: lo ya contestado se guarda.'
       : composeReply({ ...body, form: null });
     formWalks.set(chatId, { form: body.form, idx: 0, answers: {} });
     await sendTelegramText(chatId, intro);
@@ -779,7 +779,7 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
   const f = w.form.fields[w.idx];
   const { pos, n } = posicion(w);
   // Dos salidas con nombres que no se confunden: «Saltar» deja ESTE campo sin
-  // contestar y sigue; «Omitir sección» termina la sección guardando lo ya
+  // contestar y sigue; «Omitir restante» termina la sección guardando lo ya
   // contestado. Un «Omitir» a secas se leía como lo primero y hacía lo segundo,
   // perdiendo las respuestas. `fs:<campo>` lleva el índice, como `fw:`, para
   // ignorar el toque en un teclado viejo.
@@ -787,7 +787,7 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
   const actions = [
     ...(w.form.submit_mode === 'structured' ? [{ text: 'Saltar', callback_data: `fs:${w.idx}` }] : []),
     ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
-      ? { text: 'Omitir sección', callback_data: 'omitir ficha' } : { text: a.label, callback_data: a.send }),
+      ? { text: 'Omitir restante', callback_data: 'omitir ficha' } : { text: a.label, callback_data: a.send }),
   ];
 
   if (f.type === 'radio' || f.type === 'checkbox') {
@@ -838,7 +838,7 @@ async function guardarParcial(chatId: number): Promise<void> {
 }
 
 /**
- * «Omitir sección»: termina la sección. Con respuestas, se envía con lo que
+ * «Omitir restante»: termina la sección. Con respuestas, se envía con lo que
  * tiene (el cerebro guarda y pasa a la siguiente); sin ninguna, se omite.
  */
 async function omitirSeccion(invokeChat: InvokeChat, chatId: number, jwt: string): Promise<void> {
@@ -931,7 +931,7 @@ async function handleCallback(invokeChat: InvokeChat, cq: any): Promise<void> {
     await askWalkField(invokeChat, chatId);
     return;
   }
-  // «Omitir sección» en medio de un recorrido: termina guardando lo contestado.
+  // «Omitir restante» en medio de un recorrido: termina guardando lo contestado.
   if (formWalks.has(chatId) && typeof data === 'string' && /^omitir/i.test(data)) {
     await omitirSeccion(invokeChat, chatId, jwt);
     return;
