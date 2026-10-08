@@ -50,12 +50,12 @@
             {{ acargoMeta(p).icon }} {{ acargoMeta(p).texto }}
           </span>
         </span>
-        <!-- Borrar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve:
-             es la excepción por permisos de la regla de no ocultar botones. -->
+        <!-- Las acciones del paciente, en un menú: lo que antes era un basurero suelto. -->
         <span
-          v-if="puedeBorrar" class="borrar" role="button" tabindex="0"
-          title="Eliminar paciente" @click.stop="pedirBorrado(p)" @keydown.enter.stop="pedirBorrado(p)"
-        >🗑</span>
+          class="acciones" role="button" tabindex="0" aria-haspopup="menu"
+          :aria-expanded="menu?.p.id === p.id" :aria-label="`Acciones de ${fullName(p)}`" title="Acciones"
+          @click.stop="alternarMenu(p, $event)" @keydown.enter.stop.prevent="alternarMenu(p, $event)"
+        >⋯</span>
         <span
           v-if="reviewQueue[p.id]"
           class="rev-badge"
@@ -77,6 +77,29 @@
       {{ error }}
       <button type="button" class="reintentar" :disabled="busy" @click="load()">Reintentar</button>
     </p>
+
+    <!-- Un solo menú para toda la lista, fuera de las filas (que son botones) y fijo a la
+         ventana: dentro de `.rows` lo recortaría el scroll. -->
+    <div
+      v-if="menu" class="menu" role="menu" :aria-label="`Acciones de ${fullName(menu.p)}`"
+      :style="menu.estilo" @click.stop
+    >
+      <button type="button" role="menuitem" @click="abrir('chat')">💬 Abrir el chat</button>
+      <button type="button" role="menuitem" @click="abrir('ficha')">📋 Ver la ficha</button>
+      <button type="button" role="menuitem" @click="abrir('imagenes')">🖼️ Ver las imágenes</button>
+      <button
+        type="button" role="menuitem" :disabled="!menu.p.data?.cedula"
+        :title="menu.p.data?.cedula ? '' : 'Este paciente no tiene cédula registrada'"
+        @click="copiarCedula()"
+      >📎 Copiar la cédula</button>
+      <!-- Archivar es de supermédico (D-Aux-23). Quien no puede, no lo ve: es la excepción
+           por permisos de la regla de no ocultar botones. -->
+      <button
+        v-if="puedeBorrar" type="button" role="menuitem" class="archivar"
+        :disabled="borrando === menu.p.id" @click="pedirArchivado()"
+      >🗄️ Archivar paciente</button>
+    </div>
+    <p v-if="aviso" class="aviso" role="status">{{ aviso }}</p>
   </aside>
 </template>
 
@@ -100,17 +123,63 @@ const puedeBorrar = computed(() => {
 });
 const borrando = ref('');
 
-/** Confirmar antes: el paciente desaparece de las listas (la historia clínica se conserva). */
-async function pedirBorrado(p) {
+// ── Menú de acciones de una fila ──
+const menu = ref(null);   // { p, estilo } | null
+const aviso = ref('');
+let avisoTimer = null;
+
+function alternarMenu(p, ev) {
+  if (menu.value?.p.id === p.id) { menu.value = null; return; }
+  const r = ev.currentTarget.getBoundingClientRect();
+  const right = `${Math.max(8, window.innerWidth - r.right)}px`;
+  // En las últimas filas no cabe hacia abajo: se abre hacia arriba.
+  const arriba = r.bottom + 240 > window.innerHeight;
+  menu.value = {
+    p,
+    estilo: arriba ? { bottom: `${window.innerHeight - r.top + 4}px`, right } : { top: `${r.bottom + 4}px`, right },
+  };
+}
+function cerrarMenu() { menu.value = null; }
+function alTeclear(e) { if (e.key === 'Escape') cerrarMenu(); }
+
+function abrir(seccion) {
+  const p = menu.value.p;
+  cerrarMenu();
+  emit('select', p, seccion);
+}
+
+function avisar(texto) {
+  aviso.value = texto;
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => { aviso.value = ''; }, 2500);
+}
+
+async function copiarCedula() {
+  const p = menu.value.p;
+  cerrarMenu();
+  try {
+    await navigator.clipboard.writeText(String(p.data.cedula));
+    avisar(`Cédula de ${fullName(p)} copiada`);
+  } catch {
+    error.value = `No se pudo copiar. La cédula es ${p.data.cedula}.`;
+  }
+}
+
+/** Archivar es el borrado suave del ERP: el paciente sale de las listas y la historia
+ *  clínica se conserva. Se confirma antes. */
+async function pedirArchivado() {
+  const p = menu.value.p;
+  cerrarMenu();
   const nombre = fullName(p);
-  const texto = `¿Eliminar a ${nombre}?\n\nDeja de aparecer en las listas. Su historia clínica se conserva, y si se lo crea de nuevo con la misma cédula vuelve con lo que tenía.`;
+  const texto = `¿Archivar a ${nombre}?\n\nDeja de aparecer en las listas. Su historia clínica se conserva, y si se lo crea de nuevo con la misma cédula vuelve con lo que tenía.`;
   if (!window.confirm(texto)) return;
   borrando.value = p.id;
   try {
     await eliminarPaciente(p.id);
     all.value = all.value.filter((x) => x.id !== p.id);
+    avisar(`${nombre} quedó archivado`);
   } catch (e) {
-    error.value = `No se pudo eliminar a ${nombre}: ${e?.message || e}`;
+    error.value = `No se pudo archivar a ${nombre}: ${e?.message || e}`;
   } finally {
     borrando.value = '';
   }
@@ -243,8 +312,21 @@ let pollTimer = null;
 onMounted(() => {
   load();
   pollTimer = setInterval(() => load(true), 20000);
+  // El menú se cierra al tocar fuera, con Escape o al desplazar la lista (va fijo a la
+  // ventana y se quedaría flotando lejos de su fila).
+  document.addEventListener('click', cerrarMenu);
+  document.addEventListener('keydown', alTeclear);
+  window.addEventListener('scroll', cerrarMenu, true);
+  window.addEventListener('resize', cerrarMenu);
 });
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
+  clearTimeout(avisoTimer);
+  document.removeEventListener('click', cerrarMenu);
+  document.removeEventListener('keydown', alTeclear);
+  window.removeEventListener('scroll', cerrarMenu, true);
+  window.removeEventListener('resize', cerrarMenu);
+});
 defineExpose({ reload: load });
 </script>
 
@@ -298,11 +380,29 @@ defineExpose({ reload: load });
 .row.active, .general.active { background: var(--accent-band, #e8f3f8); }
 .row.to-review { background: #fff7ed; box-shadow: inset 3px 0 0 #f97316; }
 .row.to-review.active { background: var(--accent-band, #e8f3f8); }
-.borrar {
-  flex-shrink: 0; padding: 2px 6px; font-size: 13px; line-height: 1.2; color: #b91c1c;
-  background: #fee2e2; border-radius: 6px; cursor: pointer; opacity: .65;
+.acciones {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; line-height: 1; color: var(--text-muted); cursor: pointer;
 }
-.borrar:hover { opacity: 1; }
+.acciones:hover, .acciones[aria-expanded="true"] { background: var(--border); color: var(--text); }
+.menu {
+  position: fixed; z-index: 1200; min-width: 200px; padding: 4px;
+  display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+}
+.menu button {
+  padding: 9px 12px; border: none; border-radius: 6px; background: transparent;
+  color: var(--text); font-size: 0.88rem; text-align: left; cursor: pointer;
+}
+.menu button:hover:not(:disabled) { background: var(--bg); }
+.menu button:disabled { opacity: .45; cursor: not-allowed; }
+.menu .archivar { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; color: #b45309; }
+.aviso {
+  margin: 0; padding: 8px 14px; border-top: 1px solid var(--border);
+  background: #f0fdf4; color: #166534; font-size: 0.82rem;
+}
 .rev-badge {
   flex-shrink: 0; margin-left: auto; align-self: center;
   background: #f97316; color: #fff; border-radius: 12px;

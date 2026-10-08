@@ -1956,6 +1956,13 @@ pierde y nada que la referencie queda colgando. Si después se crea un paciente 
 cédula en la misma organización, **reaparece el registro anterior** en vez de duplicarse. El
 botón solo lo ve quien tiene el permiso: es la excepción de la regla de no ocultar botones.
 
+En la web el borrado se llama **«Archivar paciente»** y vive en el menú de acciones de cada
+fila de la lista (`ChatList.vue`, botón «⋯»), no en un basurero suelto: es lo que hace —el
+paciente sale de las listas y su historia se conserva— y un basurero al lado de cada chat
+se leía como "cerrar el chat". El menú lo tiene todo usuario, con abrir el chat, ver la
+ficha, ver las imágenes y copiar la cédula; «Archivar» es la única entrada que depende del
+permiso. iOS (deslizar la fila) y Android (pulsación larga) siguen diciendo «Eliminar».
+
 Las dos reglas viven en TodoERP como capacidades **genéricas** que la definición del
 paciente enciende (`TodoERP/CLAUDE.md`), no como un caso especial del paciente:
 `config.delete_permission` hace que borrar deje de ser parte de editar y exija

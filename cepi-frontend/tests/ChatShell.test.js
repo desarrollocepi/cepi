@@ -76,6 +76,20 @@ describe('ChatShell — el paciente abierto lo manda la URL', () => {
     expect(router.currentRoute.value.fullPath).toBe(antes);
   });
 
+  it('el menú de acciones de la lista abre al paciente directo en la sección pedida', async () => {
+    const { w, router } = await montar();
+    lista(w).vm.$emit('select', paciente('p1', 'Ana'), 'ficha');
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/chat/p1/ficha');
+    expect(pestana(w, 'Ficha').attributes('aria-selected')).toBe('true');
+    expect(api.obtenerEntidad).not.toHaveBeenCalled();
+    // Con el paciente ya abierto solo cambia de sección.
+    lista(w).vm.$emit('select', paciente('p1', 'Ana'), 'imagenes');
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/chat/p1/imagenes');
+    expect(pestana(w, 'Imágenes').attributes('aria-selected')).toBe('true');
+  });
+
   it('un enlace directo valida el id y resuelve el nombre antes de abrir', async () => {
     const { w } = await montar('/chat/p9');
     expect(api.obtenerEntidad).toHaveBeenCalledWith('p9');

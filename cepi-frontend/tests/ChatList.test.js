@@ -215,33 +215,99 @@ describe('ChatList — filas y acciones', () => {
     expect(w.findAll('.row')[0].classes()).toContain('active');
   });
 
-  it('borrar solo lo ve quien tiene el permiso (excepción de "nunca ocultes un botón")', async () => {
-    expect((await montar({ user: { permissions: [] } })).find('.borrar').exists()).toBe(false);
-    expect((await montar({ user: { permissions: [`entity:${DEF_PACIENTE}:record:delete`] } })).findAll('.borrar')).toHaveLength(6);
-    expect((await montar({ user: { permissions: ['*:*:*:*'] } })).findAll('.borrar')).toHaveLength(6);
+  const abrirMenu = async (w, i = 0) => { await w.findAll('.acciones')[i].trigger('click'); };
+  const item = (w, texto) => w.findAll('.menu button').find((b) => b.text().includes(texto));
+
+  it('cada fila tiene su botón de acciones, para cualquier usuario; abre un menú sin abrir al paciente', async () => {
+    const w = await montar({ user: { permissions: [] } });
+    expect(w.findAll('.acciones')).toHaveLength(6);
+    expect(w.find('.menu').exists()).toBe(false);
+    await abrirMenu(w);
+    expect(w.find('.menu').attributes('aria-label')).toBe('Acciones de Marta Derivada');
+    expect(w.findAll('.acciones')[0].attributes('aria-expanded')).toBe('true');
+    expect(w.emitted('select')).toBeUndefined();
+    await abrirMenu(w);   // tocar otra vez lo cierra
+    expect(w.find('.menu').exists()).toBe(false);
   });
 
-  it('borrar pide confirmación; cancelada no borra, aceptada quita la fila sin abrirla', async () => {
+  it('el menú se cierra con Escape y al tocar fuera', async () => {
+    const w = await montar();
+    await abrirMenu(w);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flushPromises();
+    expect(w.find('.menu').exists()).toBe(false);
+    await abrirMenu(w);
+    document.dispatchEvent(new MouseEvent('click'));
+    await flushPromises();
+    expect(w.find('.menu').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('abrir chat, ficha o imágenes selecciona al paciente con su sección', async () => {
+    const w = await montar();
+    for (const [texto, seccion] of [['Abrir el chat', 'chat'], ['Ver la ficha', 'ficha'], ['Ver las imágenes', 'imagenes']]) {
+      await abrirMenu(w, 1);
+      await item(w, texto).trigger('click');
+      const ultimo = w.emitted('select').at(-1);
+      expect(ultimo[0].id).toBe('p2');
+      expect(ultimo[1]).toBe(seccion);
+      expect(w.find('.menu').exists()).toBe(false);
+    }
+  });
+
+  it('copiar la cédula la deja en el portapapeles y lo avisa; sin cédula va deshabilitado con su motivo', async () => {
+    const writeText = vi.fn().mockResolvedValue();
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    preparar({ pacientes: [paciente('p2', 'José', 'Curso', '0202'), paciente('p9', 'Sin', 'Cedula', '')] });
+    const w = await montar();
+    await abrirMenu(w, 0);
+    await item(w, 'Copiar la cédula').trigger('click');
+    await flushPromises();
+    expect(writeText).toHaveBeenCalledWith('0202');
+    expect(w.find('.aviso').text()).toBe('Cédula de José Curso copiada');
+    await abrirMenu(w, 1);
+    expect(item(w, 'Copiar la cédula').element.disabled).toBe(true);
+    expect(item(w, 'Copiar la cédula').attributes('title')).toBe('Este paciente no tiene cédula registrada');
+    vi.unstubAllGlobals();
+  });
+
+  it('archivar solo lo ve quien tiene el permiso (excepción de "nunca ocultes un botón")', async () => {
+    const con = async (permissions) => {
+      const w = await montar({ user: { permissions } });
+      await abrirMenu(w);
+      return !!item(w, 'Archivar paciente');
+    };
+    expect(await con([])).toBe(false);
+    expect(await con([`entity:${DEF_PACIENTE}:record:delete`])).toBe(true);
+    expect(await con(['*:*:*:*'])).toBe(true);
+  });
+
+  it('archivar pide confirmación; cancelada no archiva, aceptada quita la fila sin abrirla', async () => {
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     api.eliminarPaciente.mockResolvedValue({});
     const w = await montar({ user: { permissions: ['*:*:*:*'] } });
-    await w.find('.borrar').trigger('click');
+    await abrirMenu(w);
+    await item(w, 'Archivar paciente').trigger('click');
+    expect(confirmar.mock.calls[0][0]).toContain('¿Archivar a Marta Derivada?');
     expect(api.eliminarPaciente).not.toHaveBeenCalled();
     confirmar.mockReturnValue(true);
-    await w.find('.borrar').trigger('click');
+    await abrirMenu(w);
+    await item(w, 'Archivar paciente').trigger('click');
     await flushPromises();
     expect(api.eliminarPaciente).toHaveBeenCalledWith('p4');
     expect(nombres(w)).not.toContain('Marta Derivada');
+    expect(w.find('.aviso').text()).toBe('Marta Derivada quedó archivado');
     expect(w.emitted('select')).toBeUndefined();
   });
 
-  it('si el borrado falla lo dice y la fila sigue', async () => {
+  it('si archivar falla lo dice y la fila sigue', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     api.eliminarPaciente.mockRejectedValue(new Error('HTTP 403'));
     const w = await montar({ user: { permissions: ['*:*:*:*'] } });
-    await w.find('.borrar').trigger('click');
+    await abrirMenu(w);
+    await item(w, 'Archivar paciente').trigger('click');
     await flushPromises();
-    expect(w.find('.error').text()).toContain('No se pudo eliminar a Marta Derivada: HTTP 403');
+    expect(w.find('.error').text()).toContain('No se pudo archivar a Marta Derivada: HTTP 403');
     expect(nombres(w)).toHaveLength(6);
   });
 

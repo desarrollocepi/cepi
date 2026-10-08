@@ -129,8 +129,15 @@ function rutaDePaciente(id, s) {
   return { name: 'chat-paciente', params: { patientId: id, ...(s && s !== 'chat' ? { seccion: s } : {}) } };
 }
 
-function onSelect(p) {
+/** `s` llega del menú de acciones de la lista («Ver la ficha», «Ver las imágenes»); una
+ *  fila tocada a secas abre el chat. */
+function onSelect(p, s = 'chat') {
   conocidos.set(p.id, fullName(p));
+  if (s !== 'chat') {
+    if (p.id === selectedId.value) irASeccion(s);
+    else router.push(rutaDePaciente(p.id, s));
+    return;
+  }
   if (p.id === selectedId.value) {
     // Ya está abierto (en la lista del escritorio se puede volver a tocar): se recarga
     // el hilo como antes, sin sumar una entrada repetida al historial.
