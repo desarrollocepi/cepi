@@ -23,6 +23,7 @@ process.env.TELEGRAM_BOT_PASSWORD = 'secret';
 // La organización es obligatoria: sin ella el turno correría sin org activa,
 // o sea sin estar limitado a nadie (PAPER §27.4).
 process.env.TELEGRAM_BOT_ORG = 'cepi';
+process.env.CEPI_CANAL_REINTENTO_MS = '5';
 process.env.TELEGRAM_WEBHOOK_PORT = '0';            // random free port
 delete process.env.TELEGRAM_PUBLIC_URL;             // no webhook self-registration
 delete process.env.TELEGRAM_WEBHOOK_SECRET;         // no secret check
@@ -38,6 +39,9 @@ const fakeJwt = 'h.' +
 /** Outbound sendMessage payloads captured from the mocked Telegram API. */
 const sent: Array<{ chat_id: number; text: string; reply_markup?: any }> = [];
 
+/** Envíos a Telegram que van a fallar por red antes de que uno salga. */
+let fallosDeEnvio = 0;
+
 /** El hilo del paciente que devuelve TodoERP al eco. */
 let hiloTg: any[] = [];
 
@@ -51,6 +55,7 @@ function mockFetch(): void {
     if (String(url).startsWith('http://bot.test/') && !String(url).includes('/api/bot/sessions')) return new Response('{}', { status: 404 });
     const u = String(url);
     if (u.includes('api.telegram.org')) {
+      if (u.includes('/sendMessage') && fallosDeEnvio > 0) { fallosDeEnvio--; throw new TypeError('fetch failed'); }
       if (u.includes('/sendMessage')) sent.push(JSON.parse(init.body));
       return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
     }
@@ -241,6 +246,14 @@ describe('telegram new-patient walk', () => {
     const OTRO = 7090;
     await update(msgUpdate(OTRO, 'nuevo paciente'));
     expect(lastTo(OTRO).text).toMatch(/^\(1\/3\)/);
+  });
+
+  it('un envío que falla por red se reintenta: el mensaje llega igual', async () => {
+    const OTRO = 7091;
+    fallosDeEnvio = 2;
+    await update(msgUpdate(OTRO, 'hola'));
+    expect(lastTo(OTRO).text).toContain('¿Qué querés hacer?');
+    expect(fallosDeEnvio).toBe(0);
   });
 
   it('tapping "nuevo paciente" starts the field-by-field walk', async () => {

@@ -1349,7 +1349,11 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             toolCalls: [], active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
         }
         const r = await mcp.call('chatter.add_note', { entity_id: target, body: noteMatch[1] });
-        const text = r.ok ? `Nota agregada al ${activeEpisodeId ? 'episodio' : 'paciente'} ${target}.` : `No pude agregar nota: ${r.error}`;
+        // El acuse nombra al paciente: el uuid no le dice nada a quien lo lee en un chat.
+        const deQuien = nombreDelPaciente(session);
+        const text = !r.ok ? `No pude agregar nota: ${r.error}`
+          : deQuien ? `Nota agregada a ${activeEpisodeId ? 'la consulta' : 'la ficha'} de ${deQuien}.`
+          : `Nota agregada al ${activeEpisodeId ? 'episodio' : 'paciente'} ${target}.`;
         session.turns = [...session.turns,
           { role: 'user', content: message }, { role: 'assistant', content: text }];
         await saveSession(mcp, session);

@@ -33,6 +33,7 @@ import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
 import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
+  fetchConReintento,
 } from './canalAviso.js';
 import { cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
@@ -459,7 +460,7 @@ async function sendTelegramText(chatId: number, text: string, replyMarkup?: any)
     return;
   }
   try {
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const r = await fetchConReintento(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

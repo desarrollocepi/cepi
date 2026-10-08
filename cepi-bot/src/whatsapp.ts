@@ -42,6 +42,7 @@ import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
 import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
+  fetchConReintento,
 } from './canalAviso.js';
 import {
   colaPorChat, cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
@@ -393,7 +394,7 @@ async function sendWhatsappText(to: string, text: string, tipo = 'text'): Promis
     return;
   }
   try {
-    const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+    const r = await fetchConReintento(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -420,7 +421,7 @@ async function sendWhatsappInteractivo(
   const phoneId = process.env.WHATSAPP_PHONE_ID;
   if (!tok || !phoneId) return false;
   try {
-    const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+    const r = await fetchConReintento(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({

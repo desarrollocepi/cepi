@@ -2671,6 +2671,10 @@ Mientras una consulta está en pausa («¿Sigues con X?») se retienen **todos**
 que lleguen, en orden, y se procesan al contestar que sí. En Telegram, quien vuelve tras la
 inactividad escribiendo ya lo que quiere («nuevo paciente», «buscar paciente …», «ayuda»)
 es atendido sin pasar por el menú.
+Los envíos al proveedor (Telegram, Meta) se **reintentan** ante un fallo de red o un
+5xx/429 (`fetchConReintento` en `canalAviso.ts`): sin eso un mensaje se perdía en silencio.
+El aviso de «Continuando…» y el indicador de escritura no se reintentan: llegar tarde es
+peor que no llegar.
 En una sección de la ficha hay dos salidas con nombres distintos, en los dos canales:
 **Saltar** deja ese campo sin contestar y sigue, y **Omitir restante** termina la sección
 **guardando lo ya contestado**. Salir de una sección por cualquier otro camino (un comando,

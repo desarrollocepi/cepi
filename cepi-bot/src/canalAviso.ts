@@ -115,3 +115,26 @@ export function inactividadMs(): number {
   const n = Number(process.env.CEPI_CANAL_INACTIVIDAD_MS ?? 5 * 60 * 1000);
   return Number.isFinite(n) && n > 0 ? n : 5 * 60 * 1000;
 }
+
+/**
+ * `fetch` hacia el proveedor del canal con reintento. Un fallo de red o un
+ * 5xx/429 es pasajero: sin reintentar, el mensaje se perdía en silencio (pasó
+ * con el menú de Telegram tras «salir paciente») y el chat quedaba mudo. Un 4xx
+ * no se reintenta: el proveedor ya dijo que ese mensaje no va. Devuelve la
+ * última respuesta; si nunca hubo una, lanza el último error de red.
+ */
+export async function fetchConReintento(url: string, init: RequestInit, intentos = 3): Promise<Response> {
+  const espera = Number(process.env.CEPI_CANAL_REINTENTO_MS ?? 700);
+  let ultimoError: unknown = null;
+  for (let i = 1; i <= intentos; i++) {
+    try {
+      const r = await fetch(url, init);
+      if (r.ok || (r.status !== 429 && r.status < 500) || i === intentos) return r;
+    } catch (e) {
+      ultimoError = e;
+      if (i === intentos) break;
+    }
+    await new Promise(res => setTimeout(res, espera * i));
+  }
+  throw ultimoError ?? new Error('sin respuesta del proveedor');
+}
