@@ -30,6 +30,7 @@
  */
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
+import { avisoContinuando, pacienteDeRespuesta } from './canalAviso.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -152,6 +153,9 @@ const lastSeen = new Map<number, number>();
 
 /** chat_id → last active patient (to offer "paciente anterior" after a reset). */
 const lastPatient = new Map<number, { id: string; name: string }>();
+
+/** chat_id → nombre del paciente activo en la sesión en curso (aviso de «pensando»). */
+const pacienteActivo = new Map<number, string>();
 
 /** chat_id → pending idle timer that proactively sends the menu after IDLE_MS. */
 const idleTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -299,6 +303,29 @@ async function sendTelegramText(chatId: number, text: string, replyMarkup?: any)
   }
 }
 
+/**
+ * «Pensando», antes de llamar al cerebro: el mensaje que nombra al paciente con
+ * el que sigue la conversación y después el «escribiendo…» nativo (dura 5 s y
+ * no admite texto; cualquier mensaje saliente lo apaga, por eso va segundo).
+ */
+async function avisarPensando(chatId: number, mensaje: string): Promise<void> {
+  const aviso = avisoContinuando(
+    chatSessions.has(chatId) ? pacienteActivo.get(chatId) : undefined, mensaje);
+  if (aviso) await sendTelegramText(chatId, aviso);
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+    });
+    if (!r.ok) console.error(`[telegram] typing failed ${r.status}: ${await r.text()}`);
+  } catch (e: any) {
+    console.error('[telegram] typing error:', e?.message || e);
+  }
+}
+
 /** Acknowledge a tapped inline button so Telegram stops the loading spinner. */
 async function answerCallback(callbackQueryId: string): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -399,6 +426,7 @@ async function resolveImageToken(message: any, jwt: string): Promise<string | nu
  */
 async function sendWelcomeMenu(chatId: number): Promise<void> {
   chatSessions.delete(chatId);   // fresh session on the next turn
+  pacienteActivo.delete(chatId);
   formWalks.delete(chatId);      // abandon any half-filled ficha walk
   const buttons: QuickReply[] = [
     { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
@@ -558,6 +586,7 @@ async function routeTurn(
   else if (apiKey) headers['x-api-key'] = apiKey;
   const sessionId = chatSessions.get(chatId) || undefined;
 
+  await avisarPensando(chatId, turnText);
   const { body } = await invokeChat({
     headers,
     body: { message: turnText, session_id: sessionId },
@@ -581,10 +610,13 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
 
   // Cache the active patient so a later "new chat" can offer "paciente anterior".
   if (body?.active_patient_id) {
-    const hdr = String(body?.status_header || '');
-    const m = hdr.match(/^👤\s*(.+?)(?:\s+—\s+|\s+\(|$)/);
-    const name = (m ? m[1].trim() : '') || String(body.active_patient_id).slice(0, 8);
+    const name = pacienteDeRespuesta(body) || String(body.active_patient_id).slice(0, 8);
     lastPatient.set(chatId, { id: body.active_patient_id, name });
+  }
+  if (body?.session_id) {
+    const paciente = body?.session_closed ? '' : pacienteDeRespuesta(body);
+    if (paciente) pacienteActivo.set(chatId, paciente);
+    else pacienteActivo.delete(chatId);
   }
 
   // A staged pending_action means the brain is waiting for a sí/no, NOT for a
@@ -687,6 +719,7 @@ async function submitWalk(invokeChat: InvokeChat, chatId: number): Promise<void>
   if (jwt) headers['authorization'] = `Bearer ${jwt}`;
   const sessionId = chatSessions.get(chatId) || undefined;
 
+  await avisarPensando(chatId, w.form.submit_mode === 'structured' ? '' : (w.form.submit_send || ''));
   let body: any;
   if (w.form.submit_mode === 'structured') {
     ({ body } = await invokeChat({

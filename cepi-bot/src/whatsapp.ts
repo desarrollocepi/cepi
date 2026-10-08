@@ -39,6 +39,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
+import { avisoContinuando, pacienteDeRespuesta } from './canalAviso.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -156,6 +157,9 @@ type InvokeChat = (input: {
 /** phone (E.164, no +) → cepi-bot session_id. In-memory: fine for testing. */
 const phoneSessions = new Map<string, string>();
 
+/** phone → nombre del paciente activo en su sesión, para el aviso de «pensando». */
+const pacienteActivo = new Map<string, string>();
+
 /** Render a BotForm as plain text so a WhatsApp user can still answer it. */
 function renderForm(form: BotForm): string {
   const lines: string[] = ['', `📋 *${form.title}*`];
@@ -211,6 +215,32 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
     if (!r.ok) console.error(`[whatsapp] send failed ${r.status}: ${await r.text()}`);
   } catch (e: any) {
     console.error('[whatsapp] send error:', e?.message || e);
+  }
+}
+
+/**
+ * Indicador de «escribiendo…» mientras el cerebro arma la respuesta. Meta lo
+ * ata a marcar como leído el mensaje entrante, dura hasta 25 s o hasta la
+ * respuesta, y no admite texto propio (por eso existe `avisoContinuando`).
+ */
+async function sendWhatsappTyping(messageId: string | undefined): Promise<void> {
+  const token   = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!token || !phoneId || !messageId) return;
+  try {
+    const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    });
+    if (!r.ok) console.error(`[whatsapp] typing failed ${r.status}: ${await r.text()}`);
+  } catch (e: any) {
+    console.error('[whatsapp] typing error:', e?.message || e);
   }
 }
 
@@ -316,6 +346,12 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   }
   const sessionId = phoneSessions.get(from) || undefined;
 
+  // «Pensando»: primero el texto y después el indicador, porque cualquier
+  // mensaje saliente apaga el «escribiendo…».
+  const aviso = avisoContinuando(sessionId ? pacienteActivo.get(from) : undefined, text);
+  if (aviso) await sendWhatsappText(from, aviso);
+  await sendWhatsappTyping(msg?.id);
+
   const { status, body } = await invokeChat({
     headers: { authorization: `Bearer ${auth.jwt}` },
     body: { message: text, session_id: sessionId },
@@ -330,6 +366,9 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   if (body?.session_id) {
     if (body?.session_closed) phoneSessions.delete(from);
     else phoneSessions.set(from, body.session_id);
+    const paciente = body?.session_closed ? '' : pacienteDeRespuesta(body);
+    if (paciente) pacienteActivo.set(from, paciente);
+    else pacienteActivo.delete(from);
   }
 
   await sendWhatsappText(from, composeReply(body));

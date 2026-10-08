@@ -38,6 +38,8 @@ const linked: Record<string, string> = { '+593990000001': 'medico' };
 
 const sent: Array<{ to: string; text: string }> = [];
 const turns: Array<{ auth: string; message: string }> = [];
+/** Ids de mensaje para los que el bot encendió el «escribiendo…». */
+const typing: string[] = [];
 /** Lo que el bot le mandó al endpoint de identidad, para poder afirmar sobre org y ruta. */
 const resoluciones: Array<{ ruta: string; body: any }> = [];
 /** Números dados de alta por el mock de `/ensure`. */
@@ -52,6 +54,8 @@ function mockFetch(): void {
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (u.includes('graph.facebook.com')) {
       const b = JSON.parse(init.body);
+      // El «escribiendo…» va por el mismo endpoint y no es un mensaje.
+      if (b.typing_indicator) { typing.push(b.message_id); return json(200, { success: true }); }
       sent.push({ to: b.to, text: b.text.body });
       return json(200, { messages: [{ id: 'wamid.x' }] });
     }
@@ -103,11 +107,11 @@ beforeEach(() => {
 });
 
 /** POST a one-message webhook payload signed like Meta, then let it process. */
-async function inbound(from: string, text: string, perfil?: string): Promise<void> {
+async function inbound(from: string, text: string, perfil?: string, esperados = 1): Promise<void> {
   const raw = JSON.stringify({
     object: 'whatsapp_business_account',
     entry: [{ changes: [{ field: 'messages', value: {
-      messages: [{ from, type: 'text', text: { body: text } }],
+      messages: [{ from, id: `wamid.${from}`, type: 'text', text: { body: text } }],
       ...(perfil ? { contacts: [{ wa_id: from, profile: { name: perfil } }] } : {}),
     } }] }],
   });
@@ -119,7 +123,7 @@ async function inbound(from: string, text: string, perfil?: string): Promise<voi
   });
   expect(r.status).toBe(200);
   // The handler acks first and processes after; wait for the outbound send.
-  for (let i = 0; i < 50 && sent.length === 0; i++) await new Promise(r => setTimeout(r, 10));
+  for (let i = 0; i < 50 && sent.length < esperados; i++) await new Promise(r => setTimeout(r, 10));
 }
 
 describe('WhatsApp identity gate', () => {
@@ -151,6 +155,39 @@ describe('WhatsApp identity gate', () => {
     await inbound('593990000001', 'hola');
     expect(sent).toHaveLength(1);
     expect(sent[0].text).toContain('No pude procesar tu mensaje');
+  });
+});
+
+describe('aviso de «pensando» con el paciente activo', () => {
+  const conPaciente = (texto: string) => ({ status: 200, body: {
+    text: texto, session_id: 'sess-wa', active_patient_id: 'p-1',
+    status_header: '👤 Juan Pérez — ficha §2.1 Antecedentes',
+  } });
+
+  it('enciende el «escribiendo…» y, sin paciente conocido, no manda texto de más', async () => {
+    typing.length = 0;
+    await inbound('593990000001', 'hola');
+    expect(typing).toEqual(['wamid.593990000001']);
+    expect(sent.map(s => s.text)).toEqual(['hola doctor']);
+  });
+
+  it('desde el segundo turno avisa con quién continúa, antes de la respuesta', async () => {
+    brainReply = conPaciente('Paciente activo.');
+    await inbound('593990000001', 'ver paciente');
+    sent.length = 0;
+    brainReply = conPaciente('Anotado.');
+    await inbound('593990000001', 'tiene prurito hace dos semanas', undefined, 2);
+    expect(sent.map(s => s.text)).toEqual(['⏳ Continuando con Juan Pérez…', 'Anotado.']);
+  });
+
+  it('no lo dice cuando el mensaje suelta o cambia al paciente', async () => {
+    brainReply = { status: 200, body: { text: 'Listo.', session_id: 'sess-wa' } };
+    await inbound('593990000001', 'salir paciente');
+    expect(sent.map(s => s.text)).toEqual(['Listo.']);
+    // Y ya sin paciente activo, el turno siguiente tampoco.
+    sent.length = 0;
+    await inbound('593990000001', 'hola');
+    expect(sent.map(s => s.text)).toEqual(['Listo.']);
   });
 });
 

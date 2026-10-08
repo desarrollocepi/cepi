@@ -2619,6 +2619,14 @@ a una cuenta de otra org le pasa la solicitud a esa cuenta, pendiente en telemed
 5. El token que sale **siempre lleva `org_id`**, y el remitente tiene que ser alcanzable
    desde la org del bot. Un médico que no es de telemedicina no entra por este número.
 
+**Aviso de «pensando».** Antes de llamar al cerebro, el canal enciende su indicador nativo
+de «escribiendo…» y, si la sesión ya tiene paciente activo, manda un mensaje corto:
+`⏳ Continuando con <paciente>…`. Ni WhatsApp ni Telegram dejan ponerle texto al indicador,
+por eso el nombre va en un mensaje de verdad. El médico lee con quién sigue la conversación
+mientras espera, que es cuando todavía puede corregir. No sale si el mensaje suelta o cambia
+al paciente, ni en el primer turno de una sesión (el canal aún no sabe quién está activo).
+Vive en `cepi-bot/src/canalAviso.ts`.
+
 ### 27.5 Vincular y desvincular
 
 Lo hace un admin desde la consola (`console.cepi.ec`, §26), que es donde vive la
