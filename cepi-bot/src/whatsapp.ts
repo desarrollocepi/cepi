@@ -177,11 +177,11 @@ const ultimoEntrante = new Map<string, number>();
 const VENTANA_META_MS = 24 * 60 * 60 * 1000;
 
 /**
- * phone → mensaje retenido mientras se pregunta «¿Sigues con X?» (ver
- * `preguntarSiSigue`). `adoptar`: la sesión a retomar si contesta que sí, cuando
+ * phone → mensajes retenidos, en orden, mientras se pregunta «¿Sigues con X?»
+ * (ver `preguntarSiSigue`). `adoptar`: la sesión a retomar si contesta que sí, cuando
  * el paciente activo se recuperó de la base tras un reinicio.
  */
-interface EnEspera { entrada?: Entrada; nombre: string; adoptar?: { id: string; patientId: string }; }
+interface EnEspera { entradas?: Entrada[]; nombre: string; adoptar?: { id: string; patientId: string }; }
 const enEspera = new Map<string, EnEspera>();
 /** phone → reloj que avisa cuando el paciente activo se pausa por inactividad. */
 const relojesDePausa = new Map<string, ReturnType<typeof setTimeout>>();
@@ -812,9 +812,9 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
         eco.fijar(from, pend.adoptar.patientId);
         // La sesión se recuperó de la base: lo que el bot tenía preguntado ya
         // no está en memoria. Se vuelve a mostrar antes que nada.
-        if (await retomar(ctx, pend.entrada)) return true;
+        if (await retomar(ctx, pend.entradas?.at(-1))) return true;
       }
-      if (pend.entrada) { await procesar(ctx, pend.entrada); return true; }
+      if (pend.entradas?.length) { for (const e of pend.entradas) await procesar(ctx, e); return true; }
       // Contestó al aviso de pausa sin haber escrito nada más: se retoma donde
       // estaba, repitiendo la pregunta de la ficha que había quedado abierta.
       await sendWhatsappText(from, `▶️ Continuamos con *${pend.nombre}*.`);
@@ -824,12 +824,12 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
     if (opcion?.accion === 'cambiar' || /^no$/i.test(texto)) {
       const w = formWalks.get(from);
       if (w) await guardarParcial(ctx, w);
-      if (pend.entrada) await sendWhatsappText(from, 'No procesé tu mensaje anterior.');
+      if (pend.entradas?.length) await sendWhatsappText(from, pend.entradas.length > 1 ? 'No procesé tus mensajes anteriores.' : 'No procesé tu mensaje anterior.');
       await sendMenu(from);
       return true;
     }
-    // Otra cosa: pasa a ser el mensaje retenido y se vuelve a preguntar.
-    pend.entrada = entrada;
+    // Otra cosa: se retiene detrás de lo anterior y se vuelve a preguntar.
+    pend.entradas = [...(pend.entradas || []), entrada];
     await preguntar(pend.nombre);
     return true;
   }
@@ -838,7 +838,7 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
     const inactivo = previa !== undefined && Date.now() - previa > inactividadMs();
     if (!inactivo || !eco.pacienteDe(from)) return false;
     const nombre = nombreDelActivo(from);
-    enEspera.set(from, { entrada, nombre });
+    enEspera.set(from, { entradas: [entrada], nombre });
     await preguntar(nombre);
     return true;
   }
@@ -848,7 +848,7 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
   buscados.add(from);
   const anterior = await ultimaSesionDelCanal(ctx.jwt);
   if (!anterior) return false;
-  enEspera.set(from, { entrada, nombre: anterior.nombre, adoptar: { id: anterior.id, patientId: anterior.patientId } });
+  enEspera.set(from, { entradas: [entrada], nombre: anterior.nombre, adoptar: { id: anterior.id, patientId: anterior.patientId } });
   await preguntar(anterior.nombre);
   return true;
 }

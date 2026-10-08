@@ -79,6 +79,13 @@ describe('telegram: la inactividad pausa, no reinicia', () => {
     expect(sent.at(-1)!.text).toBe('¿Sigues con Juan Pérez?');
   });
 
+  it('tocar un botón viejo en pausa vuelve a preguntar sin perder lo retenido', async () => {
+    sent.length = 0;
+    await update(tap('fs:0'));
+    expect(turnos).toHaveLength(0);
+    expect(sent.at(-1)!.text).toBe('¿Sigues con Juan Pérez?');
+  });
+
   it('«Sí, continuar» procesa lo retenido como respuesta de la ficha, en la misma sesión', async () => {
     await update(tap('ps:si'));
     expect(turnos).toHaveLength(1);

@@ -327,10 +327,12 @@ async function onIdle(chatId: number): Promise<void> {
 }
 
 /**
- * chat_id → consulta en pausa por inactividad, con el mensaje que la persona
- * mandó mientras tanto (se procesa si contesta que sigue con el mismo paciente).
+ * chat_id → consulta en pausa por inactividad, con los mensajes que la persona
+ * mandó mientras tanto (se procesan en orden si contesta que sigue con el mismo
+ * paciente). Se guardan todos: quedarse con el último perdía la respuesta a la
+ * ficha de quien después escribía otra cosa.
  */
-const enPausa = new Map<number, { nombre: string; retenido?: any }>();
+const enPausa = new Map<number, { nombre: string; retenidos?: any[] }>();
 
 function nombreDelActivo(chatId: number): string {
   return pacienteActivo.get(chatId) || lastPatient.get(chatId)?.name || 'el mismo paciente';
@@ -338,8 +340,10 @@ function nombreDelActivo(chatId: number): string {
 
 /** Pausa la consulta y deja hecha la pregunta. `aviso`: si es el reloj quien la abre. */
 async function pausar(chatId: number, retenido?: any, aviso = true): Promise<void> {
-  const nombre = enPausa.get(chatId)?.nombre || nombreDelActivo(chatId);
-  enPausa.set(chatId, { nombre, ...(retenido ? { retenido } : {}) });
+  const previa = enPausa.get(chatId);
+  const nombre = previa?.nombre || nombreDelActivo(chatId);
+  const retenidos = [...(previa?.retenidos || []), ...(retenido ? [retenido] : [])];
+  enPausa.set(chatId, { nombre, ...(retenidos.length ? { retenidos } : {}) });
   await sendTelegramText(chatId,
     `${aviso && !retenido ? `⏸️ Pausé la consulta de ${nombre} por inactividad.\n` : ''}¿Sigues con ${nombre}?`,
     { inline_keyboard: [[
@@ -349,7 +353,7 @@ async function pausar(chatId: number, retenido?: any, aviso = true): Promise<voi
 }
 
 /**
- * Respuesta a «¿Sigues con X?». «Sí» retoma: procesa el mensaje retenido o, si no
+ * Respuesta a «¿Sigues con X?». «Sí» retoma: procesa lo retenido o, si no
  * lo hay, repite la pregunta de la ficha que estaba abierta. «No» guarda lo
  * contestado de la sección y muestra el menú.
  */
@@ -360,11 +364,14 @@ async function resolverPausa(invokeChat: InvokeChat, chatId: number, sigue: bool
   touch(chatId);
   if (!sigue) {
     await guardarParcial(chatId);
-    if (p.retenido) await sendTelegramText(chatId, 'No procesé tu mensaje anterior.');
+    if (p.retenidos?.length) await sendTelegramText(chatId, p.retenidos.length > 1 ? 'No procesé tus mensajes anteriores.' : 'No procesé tu mensaje anterior.');
     await sendWelcomeMenu(chatId);
     return;
   }
-  if (p.retenido) { await procesarMensaje(invokeChat, p.retenido, chatAuth.get(chatId) || ''); return; }
+  if (p.retenidos?.length) {
+    for (const m of p.retenidos) await procesarMensaje(invokeChat, m, chatAuth.get(chatId) || '');
+    return;
+  }
   await sendTelegramText(chatId, `▶️ Continuamos con ${p.nombre}.`);
   if (formWalks.has(chatId)) await askWalkField(invokeChat, chatId);
 }
