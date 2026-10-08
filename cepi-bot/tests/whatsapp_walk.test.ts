@@ -391,10 +391,16 @@ describe('WhatsApp: el paciente activo dura minutos', () => {
   const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
   afterAll(() => { delete process.env.CEPI_CANAL_INACTIVIDAD_MS; });
 
-  it('tras el rato de inactividad pregunta si sigue con el mismo, sin procesar el mensaje', async () => {
-    await manda({ text: 'nota control' });                 // p-1 activo
+  it('al cumplirse el rato de inactividad avisa de la pausa, sin esperar al mensaje siguiente', async () => {
     process.env.CEPI_CANAL_INACTIVIDAD_MS = '120';
-    await esperar(200);
+    await manda({ text: 'nota control' });                 // p-1 activo; arma el reloj
+    sent.length = 0;
+    await esperar(260);
+    expect(sent.map(s => s.text)).toEqual(['⏸️ Pausé la consulta de *Paciente Prueba* por inactividad.\n¿Sigues con *Paciente Prueba*?']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Sí, continuar', 'Cambiar paciente']);
+  });
+
+  it('un mensaje con la consulta en pausa se retiene y se vuelve a preguntar', async () => {
     turnos.length = 0; sent.length = 0;
     await manda({ text: 'tiene fiebre desde ayer' });
     expect(turnos).toHaveLength(0);
@@ -414,8 +420,16 @@ describe('WhatsApp: el paciente activo dura minutos', () => {
     expect(turnos.map(t => [t.message, t.session_id])).toEqual([['tiene fiebre desde ayer', 'sess-wa']]);
   });
 
+  it('«Sí» al aviso, sin mensaje retenido, retoma y no manda nada al cerebro', async () => {
+    await esperar(260);                                    // vuelve a pausarse
+    turnos.length = 0; sent.length = 0;
+    await manda({ boton: boton('Sí, continuar') });
+    expect(turnos).toHaveLength(0);
+    expect(sent.map(s => s.text)).toEqual(['▶️ Continuamos con *Paciente Prueba*.']);
+  });
+
   it('«Cambiar paciente» descarta el mensaje y muestra el menú', async () => {
-    await esperar(200);
+    await esperar(260);
     turnos.length = 0; sent.length = 0;
     await manda({ text: 'esto era de otro paciente' });
     await manda({ boton: boton('Cambiar paciente') });
@@ -426,7 +440,7 @@ describe('WhatsApp: el paciente activo dura minutos', () => {
 
   it('quien vuelve cambiando de paciente no recibe la pregunta', async () => {
     await manda({ text: 'nota x' });                       // p-1 activo otra vez
-    await esperar(200);
+    await esperar(260);
     turnos.length = 0;
     await manda({ text: 'salir paciente' });
     expect(turnos.map(t => t.message)).toEqual(['salir paciente']);

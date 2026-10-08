@@ -179,8 +179,10 @@ const VENTANA_META_MS = 24 * 60 * 60 * 1000;
  * `preguntarSiSigue`). `adoptar`: la sesión a retomar si contesta que sí, cuando
  * el paciente activo se recuperó de la base tras un reinicio.
  */
-interface EnEspera { entrada: Entrada; nombre: string; adoptar?: { id: string; patientId: string }; }
+interface EnEspera { entrada?: Entrada; nombre: string; adoptar?: { id: string; patientId: string }; }
 const enEspera = new Map<string, EnEspera>();
+/** phone → reloj que avisa cuando el paciente activo se pausa por inactividad. */
+const relojesDePausa = new Map<string, ReturnType<typeof setTimeout>>();
 /** Números a los que ya se les buscó la sesión anterior en este proceso. */
 const buscados = new Set<string>();
 
@@ -636,6 +638,7 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   jwtDe.set(from, auth.jwt);
   const previa = ultimoEntrante.get(from);
   ultimoEntrante.set(from, Date.now());
+  armarPausa(from);
   const img = imagenDe(msg);
   // El texto de una foto viaja en su `caption`.
   const texto = String(msg?.text?.body ?? msg?.image?.caption ?? msg?.document?.caption ?? '').trim();
@@ -661,6 +664,45 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   const entrada: Entrada = { texto, img, opcion };
   if (await preguntarSiSigue(ctx, entrada, previa)) return;
   await procesar(ctx, entrada);
+}
+
+/** Nombre del paciente activo de ese número, para nombrarlo en una pregunta. */
+function nombreDelActivo(from: string): string {
+  const previo = lastPatient.get(from);
+  return pacienteActivo.get(from)
+    || (previo && previo.id === eco.pacienteDe(from) ? previo.name : '')
+    || 'el mismo paciente';
+}
+
+/** Las dos salidas de «¿Sigues con X?». */
+const OPCIONES_DE_PAUSA: Opcion[] = [
+  { label: 'Sí, continuar', accion: 'seguir' },
+  { label: 'Cambiar paciente', accion: 'cambiar' },
+];
+
+/**
+ * (Re)arma el aviso de pausa. Cuando pasa el rato de inactividad con un
+ * paciente activo, el canal lo DICE en ese momento, sin esperar al mensaje
+ * siguiente: si no, el médico contesta una pregunta de la ficha y recién ahí
+ * se entera de que la consulta estaba en pausa. Deja la pregunta hecha.
+ */
+function armarPausa(from: string): void {
+  const previo = relojesDePausa.get(from);
+  if (previo) clearTimeout(previo);
+  const t = setTimeout(() => {
+    relojesDePausa.delete(from);
+    void enCola(from, async () => {
+      // Pudo escribir, cambiar de paciente o quedar ya preguntado mientras esperaba la cola.
+      // (Cada mensaje entrante rearma este reloj: si llegó a sonar, es que no hubo otro.)
+      if (!phoneSessions.has(from) || !eco.pacienteDe(from) || enEspera.has(from)) return;
+      const nombre = nombreDelActivo(from);
+      enEspera.set(from, { nombre });
+      await sendOpciones(from,
+        `⏸️ Pausé la consulta de *${nombre}* por inactividad.\n¿Sigues con *${nombre}*?`, OPCIONES_DE_PAUSA);
+    });
+  }, inactividadMs());
+  if (typeof (t as any).unref === 'function') (t as any).unref();
+  relojesDePausa.set(from, t);
 }
 
 /** Un mensaje entrante ya leído: su texto, su imagen y la opción que eligió. */
@@ -692,10 +734,12 @@ async function ultimaSesionDelCanal(jwt: string): Promise<{ id: string; patientI
 async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | undefined): Promise<boolean> {
   const { from } = ctx;
   const { texto, opcion } = entrada;
-  const preguntar = (nombre: string) => sendOpciones(from, `¿Sigues con *${nombre}*?`, [
-    { label: 'Sí, continuar', accion: 'seguir' },
-    { label: 'Cambiar paciente', accion: 'cambiar' },
-  ]);
+  const preguntar = (nombre: string) => sendOpciones(from, `¿Sigues con *${nombre}*?`, OPCIONES_DE_PAUSA);
+
+  // Quien llega cambiando de paciente ya contestó la pregunta, esté hecha o no.
+  const cambia = CAMBIA_PACIENTE.test(texto) || CAMBIA_PACIENTE.test(opcion?.send || '')
+    || /^\/?\s*men[uú]\s*$/i.test(texto);
+  if (cambia) { enEspera.delete(from); buscados.add(from); return false; }
 
   const pend = enEspera.get(from);
   if (pend) {
@@ -707,11 +751,15 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
         lastPatient.set(from, { id: pend.adoptar.patientId, name: pend.nombre });
         eco.fijar(from, pend.adoptar.patientId);
       }
-      await procesar(ctx, pend.entrada);
+      if (pend.entrada) { await procesar(ctx, pend.entrada); return true; }
+      // Contestó al aviso de pausa sin haber escrito nada más: se retoma donde
+      // estaba, repitiendo la pregunta de la ficha que había quedado abierta.
+      await sendWhatsappText(from, `▶️ Continuamos con *${pend.nombre}*.`);
+      if (formWalks.has(from)) await askWalkField(ctx);
       return true;
     }
     if (opcion?.accion === 'cambiar' || /^no$/i.test(texto)) {
-      await sendWhatsappText(from, 'No procesé tu mensaje anterior.');
+      if (pend.entrada) await sendWhatsappText(from, 'No procesé tu mensaje anterior.');
       await sendMenu(from);
       return true;
     }
@@ -721,15 +769,10 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
     return true;
   }
 
-  // Quien llega cambiando de paciente ya contestó la pregunta.
-  const cambia = CAMBIA_PACIENTE.test(texto) || CAMBIA_PACIENTE.test(opcion?.send || '')
-    || /^\/?\s*men[uú]\s*$/i.test(texto);
-  if (cambia) { buscados.add(from); return false; }
-
   if (phoneSessions.has(from)) {
     const inactivo = previa !== undefined && Date.now() - previa > inactividadMs();
     if (!inactivo || !eco.pacienteDe(from)) return false;
-    const nombre = pacienteActivo.get(from) || 'el mismo paciente';
+    const nombre = nombreDelActivo(from);
     enEspera.set(from, { entrada, nombre });
     await preguntar(nombre);
     return true;

@@ -2736,8 +2736,10 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   hilo del nuevo. En WhatsApp, activar a otro paciente o soltar al actual termina la sesión.
 - **El paciente activo dura minutos.** Sin mensajes de la persona durante
   `CEPI_CANAL_INACTIVIDAD_MS` (5 min por defecto) el canal deja de dar por hecho con quién
-  está: no le reenvía el hilo, y en WhatsApp **retiene** el mensaje siguiente y pregunta
-  «¿Sigues con X?». «Sí» lo procesa con ese paciente; «Cambiar paciente» lo descarta y
+  está: no le reenvía el hilo, y en WhatsApp **lo dice en ese momento** («⏸️ Pausé la
+  consulta de X por inactividad. ¿Sigues con X?») en vez de esperar al mensaje siguiente:
+  si no, el médico contesta una pregunta de la ficha y recién ahí se entera. Lo que escriba
+  con la consulta en pausa se **retiene** y se le vuelve a preguntar. «Sí» lo procesa con ese paciente; «Cambiar paciente» lo descarta y
   muestra el menú. Quien vuelve con un comando que cambia de paciente no recibe la pregunta.
   Telegram resuelve lo mismo con su menú de inicio, que sale solo a los 5 min y ofrece al
   paciente anterior.
