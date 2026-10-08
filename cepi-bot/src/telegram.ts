@@ -83,8 +83,12 @@ async function getServiceJwt(): Promise<string> {
 const chatAuth = new Map<number, string>();
 
 type ResolveResult =
-  | { ok: true; jwt: string }
+  /** `pendiente`: identidad sin aprobar (rol `pendiente`). `creada`: nació en esta llamada. */
+  | { ok: true; jwt: string; pendiente: boolean; creada: boolean; nombre?: string }
   | { ok: false; reason: 'unregistered' | 'error' };
+
+/** Rol con el que `/auth/external/ensure` da de alta al desconocido (PAPER §27.4). */
+const ROL_PENDIENTE = 'pendiente';
 
 /**
  * Resolve the TodoERP user linked to a chat identity and return a JWT to act
@@ -120,7 +124,13 @@ async function resolveUserAuth(
     if (r.status === 404) return { ok: false, reason: 'unregistered' };
     if (!r.ok) { console.error('[telegram] resolve failed', r.status); return { ok: false, reason: 'error' }; }
     const data: any = await r.json().catch(() => ({}));
-    return data?.token ? { ok: true, jwt: data.token } : { ok: false, reason: 'error' };
+    if (!data?.token) return { ok: false, reason: 'error' };
+    return {
+      ok: true, jwt: data.token,
+      pendiente: data?.user?.role === ROL_PENDIENTE,
+      creada: data?.creada === true,
+      nombre: data?.user?.name,
+    };
   } catch (e: any) {
     console.error('[telegram] resolve error:', e?.message || e);
     return { ok: false, reason: 'error' };
@@ -541,6 +551,19 @@ async function authorizeChat(chatId: number, fromId: number, nombre?: string): P
   // `nombre` solo bautiza una identidad nueva: ver un nombre en la pantalla de
   // aprobación es la diferencia entre reconocer a alguien y adivinar por el id.
   const auth = await resolveUserAuth('telegram', fromId, nombre);
+  // Identidad pendiente de aprobación: igual que en WhatsApp, una sola respuesta
+  // —la del alta— y después silencio. Nunca llega al cerebro: no puede ver un
+  // paciente, y dejarla entrar era un menú que no hacía nada y botones mudos.
+  if (auth.ok && auth.pendiente) {
+    if (auth.creada) {
+      const n = nombre?.trim().split(/\s+/)[0];
+      await sendTelegramText(chatId, `👋 Hola${n ? `, ${n}` : ''}. Recibimos tu mensaje.\n\n` +
+        `Estamos procesando tu registro en CEPI Telemedicina; te contestaremos cuando esté listo.`);
+    } else {
+      console.log(`[telegram] ${fromId} pendiente de aprobación: sin respuesta`);
+    }
+    return null;
+  }
   if (auth.ok) { chatAuth.set(chatId, auth.jwt); chatFrom.set(chatId, fromId); return auth.jwt; }
   if (auth.reason === 'unregistered') {
     await sendTelegramText(chatId,
@@ -747,14 +770,41 @@ async function routeTurn(
 
   if (!(await avisarPensando(chatId, turnText))) return;
   const eventos = crudo.tomar(chatId);
-  let body: any;
+  let status = 500; let body: any = null;
   try {
-    ({ body } = await invokeChat({
+    ({ status, body } = await invokeChat({
       headers,
       body: { message: turnText, session_id: sessionId, canal: 'telegram', canal_raw: eventos },
     }));
-  } catch (e) { crudo.devolver(chatId, eventos); throw e; }
+  } catch (e: any) { body = { ok: false, error: e?.message || String(e) }; }
+  // Un turno que falla se dice: antes el botón tocado simplemente no hacía nada.
+  if (status !== 200 || body?.ok === false) {
+    crudo.devolver(chatId, eventos);
+    console.error(`[telegram] chat turn failed ${status}: ${body?.error || 'no error message'}`);
+    await sendTelegramText(chatId, 'No pude procesar tu mensaje. Prueba de nuevo en un rato.');
+    return;
+  }
   await deliver(invokeChat, chatId, body);
+}
+
+/** Chats a los que ya se les avisó que su registro está listo (en este proceso). */
+const yaActivados = new Set<number>();
+
+/**
+ * «Tu registro está listo»: lo pide TodoERP cuando un admin aprueba una identidad
+ * pendiente. El aviso no trae secreto, así que no se le cree: se vuelve a
+ * resolver el id y solo se escribe si de verdad ya tiene acceso. En un chat
+ * privado de Telegram el id del chat es el id de la persona.
+ */
+export async function avisarRegistroListoTelegram(telegramId: number): Promise<'enviado' | 'omitido'> {
+  if (!Number.isFinite(telegramId) || yaActivados.has(telegramId)) return 'omitido';
+  const auth = await resolveUserAuth('telegram', telegramId);
+  if (!auth.ok || auth.pendiente) return 'omitido';
+  yaActivados.add(telegramId);
+  const n = auth.nombre?.trim().split(/\s+/)[0];
+  await sendTelegramText(telegramId,
+    `✅ Hola${n ? `, ${n}` : ''}. Tu registro en CEPI Telemedicina está listo: ya puedes escribir por este chat.`);
+  return 'enviado';
 }
 
 /**

@@ -1367,7 +1367,18 @@ export function startWhatsapp(invokeChat: InvokeChat) {
   app.post('/interno/identidad-activada', async (req: Request, res: Response) => {
     if (!esLocal(req)) return res.sendStatus(403);
     const { platform, external_id } = req.body || {};
-    if (platform !== 'whatsapp' || !external_id) return res.json({ ok: true, resultado: 'omitido' });
+    if (!external_id) return res.json({ ok: true, resultado: 'omitido' });
+    // El ERP avisa a una sola URL para todos los canales; Telegram cuelga de acá.
+    if (platform === 'telegram') {
+      try {
+        const { avisarRegistroListoTelegram } = await import('./telegram.js');
+        return res.json({ ok: true, resultado: await avisarRegistroListoTelegram(Number(external_id)) });
+      } catch (e: any) {
+        console.error('[telegram] aviso de registro listo:', e?.message || e);
+        return res.status(500).json({ ok: false });
+      }
+    }
+    if (platform !== 'whatsapp') return res.json({ ok: true, resultado: 'omitido' });
     const digitos = String(external_id).replace(/\D/g, '');
     try {
       res.json({ ok: true, resultado: await avisarRegistroListo(digitos) });
