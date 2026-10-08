@@ -964,6 +964,21 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
 
       if (setPatient) {
         const pid = setPatient[1];
+        // Un paciente borrado (o que ya no se alcanza) no se activa: el botón
+        // «Anterior» de un canal lo ofrecía igual y se le abría una consulta nueva.
+        let previo: any = null;
+        try { previo = await mcp.call('entities.get', { id: pid }); } catch { previo = null; }
+        if (!previo?.ok || previo?.data?.active === false) {
+          const ackText = 'Ese paciente ya no está disponible. Busca otro o registra uno nuevo.';
+          session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
+          await saveSession(mcp, session);
+          return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
+            active_patient_id: session.active_patient_id || null, active_episode_id: session.active_episode_id || null,
+            quick_replies: [
+              { label: '🔍 Buscar paciente', send: 'paciente' },
+              { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
+            ] });
+        }
         session.active_patient_id = pid;
 
         // Pull the patient record so the bot has the data in context and can
