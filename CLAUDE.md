@@ -41,7 +41,7 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
   permisos** — lo que el usuario nunca podrá hacer sí se oculta, porque un botón muerto por
   falta de permiso es ruido.
 - **PII**: campos con `pii: true` en `entity_definitions.config.fields` se redactan al cruzar dos fronteras: `cepi-bot → LLM` (PAPER §13.3.1) y `TodoERP → role sin pii:read:<slug>` (R4 de REFACTOR_PLAN). Ambas implementadas.
-- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend`, `cepi-bot` y `cepi-frontend`. Total actual ~202 tests de backend y bot, más ~130 de la web (`cepi-frontend/tests/`: componentes con Vitest + Vue Test Utils sobre un DOM simulado, con `src/api.js` mockeado; no necesitan el stack). Un componente o un estado nuevo en la web lleva su test ahí. Si tocaste `cepi-ios/`, también `xcodebuild test`; si tocaste `cepi-android/`, `./gradlew testDebugUnitTest` (ver Atajos).
+- **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend`, `cepi-bot` y `cepi-frontend`. Total actual ~202 tests de backend y bot, más ~320 de la web (`cepi-frontend/tests/`: componentes con Vitest + Vue Test Utils sobre un DOM simulado, con `src/api.js` mockeado; no necesitan el stack). Un componente o un estado nuevo en la web lleva su test ahí. Si tocaste `cepi-ios/`, también `xcodebuild test`; si tocaste `cepi-android/`, `./gradlew testDebugUnitTest` (ver Atajos).
 - **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).
   Nada de rsync ni scp a mano. Todo SQL tiene que ser idempotente y transaccional, y un seed
   médico nuevo se agrega a `medical-seed/apply.sh` o el deploy no lo aplica.

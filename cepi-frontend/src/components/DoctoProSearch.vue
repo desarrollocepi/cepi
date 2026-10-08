@@ -87,7 +87,8 @@ async function run(term) {
     results.value = r.pacientes || [];
   } catch (e) {
     if (mine !== seq) return;
-    error.value = /503/.test(e.message) ? 'Integración DoctoPro no configurada.' : 'No se pudo consultar DoctoPro.';
+    // El código viaja en el error; el mensaje del backend no siempre lo nombra.
+    error.value = (e?.status === 503 || /503/.test(e?.message || '')) ? 'Integración DoctoPro no configurada.' : 'No se pudo consultar DoctoPro.';
     results.value = [];
   } finally {
     if (mine === seq) loading.value = false;

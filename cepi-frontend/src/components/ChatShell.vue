@@ -29,7 +29,7 @@
         v-if="selectedId && seccion === 'ficha'"
         :key="selectedId" :patient-id="selectedId" :episode-id="episodioDeLaFicha"
         :visitas="visitas" :cargando-visitas="cargandoVisitas"
-        class="shell-chat"
+        class="shell-chat" @navegar="episodioElegido = $event"
       />
       <RejillaImagenes
         v-if="selectedId && seccion === 'imagenes'"
@@ -73,8 +73,14 @@ const seccion = ref('chat');
 const visitas = ref([]);
 const cargandoVisitas = ref(false);
 let visitasDe = null;
-/** La ficha abre en la consulta más reciente; dentro se navega entre visitas. */
-const episodioDeLaFicha = computed(() => visitas.value[0]?.id || null);
+/** La ficha abre en la consulta más reciente; dentro se navega entre visitas («‹ Anterior»
+ *  y «Siguiente ›» emiten `navegar`). Sin recogerlo, los botones se habilitaban y no hacían
+ *  nada. La elección vale mientras siga siendo una visita de este paciente. */
+const episodioElegido = ref(null);
+const episodioDeLaFicha = computed(() => {
+  const elegida = visitas.value.find((v) => v.id === episodioElegido.value);
+  return (elegida || visitas.value[0])?.id || null;
+});
 
 /** Las visitas del paciente, para la sección Ficha. Un fallo no se muestra como "sin fichas". */
 async function cargarVisitas(patientId) {

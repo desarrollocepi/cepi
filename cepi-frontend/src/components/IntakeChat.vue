@@ -215,6 +215,7 @@ import MessageContent from './MessageContent.vue';
 import BotForm from './BotForm.vue';
 import DoctoProSearch from './DoctoProSearch.vue';
 import { createDictation, dictationSupported } from '../native/speech.js';
+import { edadDesde } from '../edad.js';
 
 defineProps({ user: Object });
 const emit = defineEmits(['closed', 'back', 'head']);
@@ -688,12 +689,8 @@ async function onFichaLoad() {
   const data = { ...pdata, ...edata };
   data.nombre = [pdata.nombre, pdata.apellidos].filter(Boolean).join(' ') || data.nombre;
   if (!data.edad && pdata.fecha_nac) {
-    const d = new Date(pdata.fecha_nac);
-    if (!isNaN(d.getTime())) {
-      const now = new Date(); let a = now.getFullYear() - d.getFullYear();
-      const m = now.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--;
-      if (a >= 0 && a < 150) data.edad = a;
-    }
+    const a = edadDesde(pdata.fecha_nac);
+    if (a !== null) data.edad = a;
   }
   try { frame.contentWindow.fillFicha(data); } catch { /* ficha API no lista */ }
   try {

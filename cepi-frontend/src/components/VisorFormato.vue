@@ -39,6 +39,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { obtenerEntidad, guardarFichaCompleta } from '../api.js';
+import { edadDesde } from '../edad.js';   // la calcula el contenedor: no es un campo guardado
 
 /**
  * Visor de un formato de ficha servido como HTML suelto (public/*.html).
@@ -84,17 +85,6 @@ const tituloGuardar = computed(() => {
   if (!sucio.value) return 'No hay cambios que guardar';
   return 'Guarda los cambios en el paciente y el episodio';
 });
-
-/** Años cumplidos. La calcula el contenedor porque no es un campo guardado. */
-function edadDesde(fechaNac) {
-  const d = new Date(fechaNac);
-  if (isNaN(d.getTime())) return null;
-  const hoy = new Date();
-  let a = hoy.getFullYear() - d.getFullYear();
-  const m = hoy.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && hoy.getDate() < d.getDate())) a--;
-  return (a >= 0 && a < 150) ? a : null;
-}
 
 /** Campos que cambian en toda visita: marcarlos en rojo no señalaría nada. */
 const SIN_COMPARAR = new Set(['id', 'fecha', 'medico_id', 'patient_id', 'estado', 'tipo',

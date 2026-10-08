@@ -1,25 +1,23 @@
 <template>
   <form class="card" @submit.prevent="submit">
     <h2>Crear cuenta</h2>
-    <template>
-      <label>Nombre completo
-        <input v-model.trim="name" type="text" autocomplete="name" required />
-      </label>
-      <label>Email
-        <input v-model.trim="email" type="email" autocomplete="email" required />
-      </label>
-      <label>Teléfono
-        <input v-model.trim="phone" type="tel" autocomplete="tel" />
-      </label>
-      <label>Cédula
-        <input v-model.trim="cedula" type="text" autocomplete="off" />
-      </label>
-      <label>Contraseña
-        <input v-model="password" type="password" autocomplete="new-password" minlength="8" required />
-      </label>
-      <button type="submit" :disabled="busy">{{ busy ? 'Creando…' : 'Crear cuenta' }}</button>
-      <p v-if="error" class="error">{{ error }}</p>
-    </template>
+    <label>Nombre completo
+      <input v-model.trim="name" type="text" autocomplete="name" required />
+    </label>
+    <label>Email
+      <input v-model.trim="email" type="email" autocomplete="email" required />
+    </label>
+    <label>Teléfono
+      <input v-model.trim="phone" type="tel" autocomplete="tel" />
+    </label>
+    <label>Cédula
+      <input v-model.trim="cedula" type="text" autocomplete="off" />
+    </label>
+    <label>Contraseña
+      <input v-model="password" type="password" autocomplete="new-password" minlength="8" required />
+    </label>
+    <button type="submit" :disabled="busy">{{ busy ? 'Creando…' : 'Crear cuenta' }}</button>
+    <p v-if="error" class="error">{{ error }}</p>
     <p class="hint">
       <a href="#" @click.prevent="$emit('go-login')">← Volver a ingresar</a>
     </p>

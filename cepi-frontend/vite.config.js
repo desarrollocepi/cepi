@@ -14,7 +14,10 @@ import { fileURLToPath, URL } from 'node:url';
 export default defineConfig({
   plugins: [vue()],
   // Tests de componentes (`npm test`): Vitest con un DOM simulado, sin navegador ni backend.
-  test: { environment: 'happy-dom', include: ['tests/**/*.test.js'], setupFiles: ['tests/setup.js'], restoreMocks: true },
+  test: { environment: 'happy-dom', include: ['tests/**/*.test.js'], setupFiles: ['tests/setup.js'], restoreMocks: true,
+    // La hora de Ecuador, también en el CI (que corre en UTC): los cálculos de fechas se
+    // prueban donde se usan.
+    env: { TZ: 'America/Guayaquil' } },
   resolve: {
     alias: {
       // El web-impl de @capacitor-firebase/messaging arrastra el firebase JS SDK;

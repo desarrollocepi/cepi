@@ -46,6 +46,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { listarPacientesBusqueda } from '../api.js';
+import { edadDesde } from '../edad.js';
 
 defineProps({ activeId: { type: String, default: null } });
 defineEmits(['select']);
@@ -58,14 +59,8 @@ const nombre = (p) => [p.nombre, p.apellidos].filter(Boolean).join(' ').trim() |
 
 /** La edad se deriva de la fecha de nacimiento; el campo `edad` de DrPro casi nunca viene. */
 function edad(p) {
-  if (!p.fecha_nac) return '';
-  const n = new Date(p.fecha_nac);
-  if (Number.isNaN(n.getTime())) return '';
-  const hoy = new Date();
-  let a = hoy.getFullYear() - n.getFullYear();
-  const m = hoy.getMonth() - n.getMonth();
-  if (m < 0 || (m === 0 && hoy.getDate() < n.getDate())) a--;
-  return a >= 0 && a < 130 ? `${a} años` : '';
+  const a = edadDesde(p.fecha_nac);
+  return a !== null && a < 130 ? `${a} años` : '';
 }
 
 /** Igual que en la lista de casos: `masResultados` se pasa EXPLÍCITAMENTE, nunca

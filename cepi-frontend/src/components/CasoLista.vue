@@ -1,9 +1,9 @@
 <template>
   <div class="casos-lista">
     <header class="cl-filtros">
-      <input v-model.trim="q" class="cl-input" type="search" placeholder="Buscar por diagnóstico…" @keyup.enter="buscar" />
+      <input v-model.trim="q" class="cl-input" type="search" placeholder="Buscar por diagnóstico…" @keyup.enter="buscar()" />
       <div class="cl-fila">
-        <input v-model.trim="cie10" class="cl-input cl-corto" placeholder="CIE-10" @keyup.enter="buscar" />
+        <input v-model.trim="cie10" class="cl-input cl-corto" placeholder="CIE-10" @keyup.enter="buscar()" />
         <select v-model="estado" class="cl-input cl-corto">
           <option value="">Todo estado</option>
           <option v-for="e in ESTADOS" :key="e" :value="e">{{ e }}</option>
