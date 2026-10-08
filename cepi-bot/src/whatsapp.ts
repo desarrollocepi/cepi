@@ -47,6 +47,7 @@ import {
   colaPorChat, cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
+import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -353,6 +354,52 @@ async function sendWhatsappBotones(
   }
 }
 
+// ── Imágenes entrantes ──────────────────────────────────────────────────────
+
+/** La imagen que trae un mensaje: una foto, o un documento que es una imagen. */
+interface ImagenEntrante { mediaId: string; mime: string; nombre: string; }
+
+function imagenDe(msg: any): ImagenEntrante | null {
+  const foto = msg?.type === 'image' ? msg.image : null;
+  const doc = msg?.type === 'document' && String(msg.document?.mime_type || '').startsWith('image/')
+    ? msg.document : null;
+  const m = foto || doc;
+  if (!m?.id) return null;
+  const mime = String(m.mime_type || 'image/jpeg').split(';')[0];
+  return {
+    mediaId: String(m.id), mime,
+    nombre: nombreDeAdjunto(doc?.filename || `whatsapp_${String(m.id).slice(-12)}.${extensionDe(mime)}`),
+  };
+}
+
+/**
+ * Baja un archivo de la Cloud API: primero se pide su URL (vale unos minutos)
+ * y después el contenido, las dos veces con el token del canal.
+ */
+async function downloadWhatsappMedia(mediaId: string): Promise<Buffer | null> {
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!token) { console.error('[whatsapp] sin WHATSAPP_TOKEN no se puede bajar la imagen'); return null; }
+  try {
+    const auth = { Authorization: `Bearer ${token}` };
+    const info: any = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(mediaId)}`, { headers: auth })
+      .then(r => r.json());
+    if (!info?.url) { console.error('[whatsapp] media sin url', JSON.stringify(info)); return null; }
+    const r = await fetch(info.url, { headers: auth });
+    if (!r.ok) { console.error(`[whatsapp] media download ${r.status}`); return null; }
+    return Buffer.from(await r.arrayBuffer());
+  } catch (e: any) {
+    console.error('[whatsapp] downloadWhatsappMedia error:', e?.message || e);
+    return null;
+  }
+}
+
+/** Baja la imagen y la sube como adjunto a nombre de quien la mandó. Devuelve su id. */
+async function guardarImagen(jwt: string, img: ImagenEntrante): Promise<string | null> {
+  const buffer = await downloadWhatsappMedia(img.mediaId);
+  if (!buffer) return null;
+  return subirAdjunto('whatsapp', jwt, buffer, img.nombre, img.mime);
+}
+
 /** Prefijo del id del botón «Cancelar» del aviso; lo que sigue es el token de la ventana. */
 const BOTON_CANCELAR = 'cancelar:';
 
@@ -521,7 +568,9 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
 
   crudo.activar(from);
   jwtDe.set(from, auth.jwt);
-  const texto = typeof msg?.text?.body === 'string' ? msg.text.body.trim() : '';
+  const img = imagenDe(msg);
+  // El texto de una foto viaja en su `caption`.
+  const texto = String(msg?.text?.body ?? msg?.image?.caption ?? msg?.document?.caption ?? '').trim();
   crudo.anotar(from, {
     dir: 'in', tipo: String(msg?.type || 'text'),
     texto: texto || String(msg?.interactive?.button_reply?.title || ''), crudo: msg,
@@ -534,15 +583,32 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
     if (formWalks.has(from)) await askWalkField(ctx);
     return;
   }
-  // Only text and button taps are routed for now (images/audio would map to attachments).
-  if (!opcion && !texto) {
-    await sendWhatsappText(from, 'Por ahora solo proceso mensajes de texto.');
+  // Texto, toques en botones e imágenes; audio y video todavía no.
+  if (!opcion && !texto && !img) {
+    await sendWhatsappText(from, 'Por ahora proceso texto e imágenes. Envíame un mensaje o una foto.');
     if (formWalks.has(from)) await askWalkField(ctx);
     return;
   }
 
   // ── En medio de un recorrido: la respuesta es del campo, no del cerebro ──
-  const walk = formWalks.get(from);
+  let walk = formWalks.get(from);
+  if (walk && img) {
+    const f = walk.form.fields[walk.idx];
+    if (f?.type === 'image_upload') { await recibirEnCampo(ctx, walk, f, img); return; }
+    if (walk.form.id.startsWith('ficha_grp_')) {
+      // Foto en medio de otra sección de la ficha: sale del recorrido y la
+      // recibe el cerebro, que pregunta si es de la lesión o un consentimiento.
+      formWalks.delete(from);
+      walk = undefined;
+    } else {
+      // En el alta todavía no hay paciente: la imagen quedaría huérfana.
+      await sendWhatsappText(from,
+        'Estoy registrando los datos del paciente: todavía no puedo recibir imágenes. ' +
+        'Responde el campo que te pedí (o escribe «cancelar»).');
+      await askWalkField(ctx);
+      return;
+    }
+  }
   if (walk) {
     if (opcion) {
       if (opcion.esValor) { await applyWalkAnswer(ctx, opcion.value); return; }
@@ -574,14 +640,54 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
       await askWalkField(ctx);
       return;
     }
+    // Un campo de imágenes no se contesta con texto: guardaría basura como id.
+    if (f?.type === 'image_upload') {
+      await sendWhatsappText(from, 'Aquí va una foto, no texto.');
+      await askWalkField(ctx);
+      return;
+    }
     await applyWalkAnswer(ctx, texto);
     return;
   }
 
   if (/^\/?\s*men[uú]\s*$/i.test(texto)) { await sendMenu(from); return; }
 
+  // Imagen suelta: se sube y va al cerebro con el marcador que usa la web.
+  if (img) {
+    const id = await guardarImagen(auth.jwt, img);
+    if (!id) { await sendWhatsappText(from, 'No pude procesar la imagen. Prueba de nuevo.'); return; }
+    const mensaje = [texto, marcadorAdjunto(img.nombre, id)].filter(Boolean).join('\n');
+    await routeTurn(ctx, { message: mensaje }, texto);
+    return;
+  }
+
   const send = opcion?.send ?? texto;
   await routeTurn(ctx, { message: send }, send);
+}
+
+/** Ids de adjunto ya recibidos en un campo de imágenes (su valor es un CSV). */
+function idsDelCampo(w: FormWalk, key: string | undefined): string[] {
+  const v = key ? w.answers[key] : '';
+  return typeof v === 'string' && v ? v.split(',') : [];
+}
+
+/**
+ * Una foto en un campo de imágenes de la ficha. Se sube y su id se suma al
+ * valor del campo; el envío de la sección crea los registros como lo hace la
+ * web (calidad y rostro en §4.7, consentimiento en §8). Con `multiple` el campo
+ * sigue abierto hasta «Listo»; si no, la primera foto lo cierra.
+ */
+async function recibirEnCampo(ctx: Turno, w: FormWalk, f: BotFormField, img: ImagenEntrante): Promise<void> {
+  const id = await guardarImagen(ctx.jwt, img);
+  if (!id) {
+    await sendWhatsappText(ctx.from, 'No pude procesar la imagen. Envíala de nuevo.');
+    await askWalkField(ctx);
+    return;
+  }
+  const ids = [...idsDelCampo(w, f.key), id];
+  if (f.key) w.answers[f.key] = ids.join(',');
+  if (!(f as any).multiple) { w.idx++; }
+  await askWalkField(ctx);
 }
 
 /** Lo que hace falta para correr un turno de ese número. */
@@ -699,15 +805,7 @@ async function askWalkField(ctx: Turno): Promise<void> {
   const { from } = ctx;
   const w = formWalks.get(from);
   if (!w) return;
-  for (;;) {
-    while (w.idx < w.form.fields.length && w.form.fields[w.idx].type === 'heading') w.idx++;
-    // Las imágenes todavía no entran por WhatsApp: el campo se salta y se dice.
-    if (w.form.fields[w.idx]?.type !== 'image_upload') break;
-    await sendWhatsappText(from,
-      `«${w.form.fields[w.idx].label}»: las imágenes todavía no se reciben por WhatsApp. ` +
-      `Súbelas desde la web o la app.`);
-    w.idx++;
-  }
+  while (w.idx < w.form.fields.length && w.form.fields[w.idx].type === 'heading') w.idx++;
   if (w.idx >= w.form.fields.length) { await submitWalk(ctx); return; }
 
   const f = w.form.fields[w.idx];
@@ -716,6 +814,14 @@ async function askWalkField(ctx: Turno): Promise<void> {
   if (f.type === 'radio' || f.type === 'checkbox') {
     await sendOpciones(from, `(${pos}/${n}) ${f.label}`,
       walkOptions(f).map(o => ({ label: String(o.label), value: o.value, esValor: true })), acciones);
+  } else if (f.type === 'image_upload') {
+    // «Listo» aparece recién cuando hay algo que enviar; antes, la salida es «Omitir».
+    const ids = idsDelCampo(w, f.key);
+    const texto = ids.length
+      ? `(${pos}/${n}) ${f.label}\n📷 ${ids.length === 1 ? '1 imagen recibida' : `${ids.length} imágenes recibidas`}. Envía otra o toca «Listo».`
+      : `(${pos}/${n}) ${f.label}\nEnvía ${(f as any).multiple ? 'la(s) imagen(es)' : 'la imagen'} como foto.`;
+    await sendOpciones(from, texto,
+      ids.length ? [{ label: 'Listo', value: ids.join(','), esValor: true }] : [], acciones);
   } else {
     const hint = f.placeholder ? ` (${f.placeholder})` : '';
     await sendOpciones(from, `(${pos}/${n}) ${f.label}${hint}`, [], acciones);

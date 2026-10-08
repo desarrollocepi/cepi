@@ -36,6 +36,7 @@ import {
 } from './canalAviso.js';
 import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
+import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -446,31 +447,6 @@ async function downloadTelegramFile(fileId: string): Promise<{ buffer: Buffer; m
   }
 }
 
-/** Upload bytes to TodoERP /api/attachments as the service account. Returns the attachment id. */
-async function uploadAttachment(jwt: string, buffer: Buffer, filename: string, mime: string): Promise<string | null> {
-  const base = process.env.TODOERP_API_URL || 'http://localhost:3001';
-  try {
-    // Copy into a fresh Uint8Array so the Blob is backed by a plain
-    // ArrayBuffer (TS rejects Buffer's ArrayBufferLike as a BlobPart).
-    const bytes = new Uint8Array(buffer.byteLength);
-    bytes.set(buffer);
-    const fd = new FormData();
-    fd.append('file', new Blob([bytes], { type: mime }), filename);
-    const r = await fetch(`${base}/api/attachments`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${jwt}` },
-      body: fd,
-    });
-    if (!r.ok) { console.error(`[telegram] attachment upload ${r.status}: ${await r.text()}`); return null; }
-    const data: any = await r.json().catch(() => ({}));
-    const att = Array.isArray(data) ? data[0] : data;
-    return att?.id || null;
-  } catch (e: any) {
-    console.error('[telegram] uploadAttachment error:', e?.message || e);
-    return null;
-  }
-}
-
 /**
  * If the message carries an image (photo, or an image/* document), download it,
  * upload it to TodoERP and return the `[adjunto: name · uuid]` token the chat
@@ -491,12 +467,10 @@ async function resolveImageToken(message: any, jwt: string): Promise<string | nu
   const file = await downloadTelegramFile(fileId);
   if (!file) return null;
 
-  // Filename must not contain '·' (the token delimiter the brain parses).
-  const rawName = doc?.file_name || `telegram_${photo?.file_unique_id || Date.now()}.jpg`;
-  const name = rawName.replace(/·/g, '-');
-  const id = await uploadAttachment(jwt, file.buffer, name, doc?.mime_type || file.mime);
+  const name = nombreDeAdjunto(doc?.file_name || `telegram_${photo?.file_unique_id || Date.now()}.jpg`);
+  const id = await subirAdjunto('telegram', jwt, file.buffer, name, doc?.mime_type || file.mime);
   if (!id) return null;
-  return `[adjunto: ${name} · ${id}]`;
+  return marcadorAdjunto(name, id);
 }
 
 /**

@@ -30,6 +30,9 @@ const sent: Salida[] = [];
 const turnos: any[] = [];
 /** Si está, Meta rechaza los mensajes interactivos (para probar la caída a texto). */
 let rechazarBotones = false;
+/** Ids de media que el bot le pidió a Meta, y lo que subió a TodoERP. */
+const descargas: string[] = [];
+const subidas: Array<{ auth: string; nombre: string; tipo: string; bytes: number }> = [];
 /** Los últimos botones que vio la persona: sobreviven al beforeEach, como en su pantalla. */
 let vistos: Array<{ id: string; title: string }> = [];
 
@@ -39,6 +42,20 @@ function mockFetch(): void {
     const u = String(url);
     const json = (status: number, body: any) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    // Imagen entrante: Meta da primero la URL del archivo y después el contenido.
+    if (u.includes('graph.facebook.com') && (!init?.method || init.method === 'GET')) {
+      descargas.push(u.split('/').pop()!);
+      return json(200, { url: 'https://lookaside.test/media/' + u.split('/').pop(), mime_type: 'image/jpeg' });
+    }
+    if (u.startsWith('https://lookaside.test/media/')) {
+      if (init?.headers?.Authorization !== 'Bearer test-token') return json(401, {});
+      return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
+    }
+    if (u.endsWith('/api/attachments')) {
+      const f = (init.body as FormData).get('file') as File;
+      subidas.push({ auth: init.headers.authorization, nombre: f.name, tipo: f.type, bytes: f.size });
+      return json(200, [{ id: `00000000-0000-4000-8000-00000000000${subidas.length}` }]);
+    }
     if (u.includes('graph.facebook.com')) {
       const b = JSON.parse(init.body);
       if (b.typing_indicator) return json(200, { success: true });
@@ -69,7 +86,7 @@ const FICHA_FORM = {
   fields: [
     { key: 'fuma', label: '¿Fuma?', type: 'radio', options: [{ label: 'Sí', value: true }, { label: 'No', value: false }] },
     { key: 'fototipo', label: 'Fototipo', type: 'radio', options: ['I', 'II', 'III', 'IV', 'V', 'VI'] },
-    { key: 'foto', label: 'Foto de la lesión', type: 'image_upload' },
+    { key: 'foto', label: 'Imágenes de la lesión', type: 'image_upload', multiple: true },
     { key: 'obs', label: 'Observaciones' },
   ],
   actions: [{ label: 'Omitir', send: 'omitir ficha' }],
@@ -84,6 +101,8 @@ async function cerebro({ body }: { body: any }) {
   if (body?.form_submission) return { status: 200, body: { ...base, text: 'Antecedentes guardados.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
   if (/^nuevo paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Completá los datos del nuevo paciente.', form: PATIENT_NEW_FORM, status_header: '📋 Creando paciente' } };
   if (/^\/nuevo-paciente /.test(msg)) return { status: 200, body: { ...base, text: 'Listo, quedó registrado. Empecemos la ficha:', form: FICHA_FORM, active_patient_id: 'p-1', status_header: '👤 Paciente Prueba — ficha §2.1 Antecedentes' } };
+  if (/\[adjunto:/.test(msg)) return { status: 200, body: { ...base, text: '¿Esta imagen es de la lesión o un formulario de consentimiento?', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
+    quick_replies: [{ label: '🔬 Imagen de lesión', send: 'imagen lesion' }, { label: '📄 Consentimiento', send: 'imagen consentimiento' }] } };
   if (/^omitir ficha$/i.test(msg)) return { status: 200, body: { ...base, text: 'Sección omitida.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
   return { status: 200, body: { ...base, text: 'Escribe «nuevo paciente» para crear uno.', quick_replies: ATAJOS } };
 }
@@ -92,9 +111,11 @@ let server: ReturnType<typeof startWhatsapp>;
 let base = '';
 
 /** Manda un mensaje firmado como Meta y espera a que el bot deje de escribir. */
-async function manda(m: { text?: string; boton?: string }): Promise<void> {
+async function manda(m: { text?: string; boton?: string; imagen?: string; caption?: string }): Promise<void> {
   const antes = sent.length;
-  const raw = JSON.stringify({ entry: [{ changes: [{ value: { messages: [m.boton
+  const raw = JSON.stringify({ entry: [{ changes: [{ value: { messages: [m.imagen
+    ? { from: FROM, id: 'wamid.in', type: 'image', image: { id: m.imagen, mime_type: 'image/jpeg', ...(m.caption ? { caption: m.caption } : {}) } }
+    : m.boton
     ? { from: FROM, id: 'wamid.in', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: m.boton, title: 'x' } } }
     : { from: FROM, id: 'wamid.in', type: 'text', text: { body: m.text } }] } }] }] });
   const sig = 'sha256=' + createHmac('sha256', 'app-secret').update(raw).digest('hex');
@@ -161,18 +182,37 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(ultimo().text).toBe('(2/4) Fototipo\n\n1. I\n2. II\n3. III\n4. IV\n5. V\n6. VI\n\n_Omitir: escribe «omitir ficha»_');
   });
 
-  it('el número elige la opción, el campo de imagen se salta y se dice', async () => {
+  it('el número elige la opción y el campo de imágenes pide la foto, sin «Listo» todavía', async () => {
     await manda({ text: '3' });
-    expect(sent.map(s => s.text)).toEqual([
-      '«Foto de la lesión»: las imágenes todavía no se reciben por WhatsApp. Súbelas desde la web o la app.',
-      '(4/4) Observaciones']);
+    expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\nEnvía la(s) imagen(es) como foto.');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Omitir']);
   });
 
-  it('al terminar envía la sección estructurada con los valores tipados', async () => {
+  it('texto en el campo de imágenes no se guarda como si fuera una foto', async () => {
+    await manda({ text: 'ya la mando' });
+    expect(sent[0].text).toBe('Aquí va una foto, no texto.');
+    expect(turnos).toHaveLength(0);
+  });
+
+  it('cada foto se baja de Meta, se sube a nombre del médico y se cuenta', async () => {
+    await manda({ imagen: 'media-1' });
+    expect(descargas).toEqual(['media-1']);
+    expect(subidas).toEqual([{ auth: `Bearer ${jwt}`, nombre: 'whatsapp_media-1.jpg', tipo: 'image/jpeg', bytes: 4 }]);
+    expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\n📷 1 imagen recibida. Envía otra o toca «Listo».');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Listo', 'Omitir']);
+    await manda({ imagen: 'media-2' });
+    expect(ultimo().text).toContain('2 imágenes recibidas');
+    expect(turnos).toHaveLength(0);                    // nada va al cerebro hasta enviar la sección
+  });
+
+  it('«Listo» cierra el campo y la sección se envía con los ids de las fotos', async () => {
+    await manda({ boton: boton('Listo') });
+    expect(ultimo().text).toBe('(4/4) Observaciones');
     await manda({ text: 'sin novedades' });
     expect(turnos).toHaveLength(1);
     expect(turnos[0].form_submission).toEqual({
-      form_id: 'ficha_grp_g_2_1', data: { fuma: false, fototipo: 'III', obs: 'sin novedades' } });
+      form_id: 'ficha_grp_g_2_1', data: { fuma: false, fototipo: 'III', obs: 'sin novedades',
+        foto: '00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000002' } });
     expect(ultimo().text).toBe('👤 Paciente Prueba\nAntecedentes guardados.');
   });
 
@@ -195,6 +235,27 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(ultimo().text).toContain('1. Nuevo paciente\n2. Buscar paciente\n3. Paciente anterior');
     await manda({ text: '1' });
     expect(turnos.at(-1).message).toBe('nuevo paciente');
+  });
+});
+
+describe('WhatsApp: imagen fuera de un campo de imágenes', () => {
+  it('suelta, va al cerebro con el marcador de adjunto y el texto de la foto', async () => {
+    await manda({ text: 'cancelar' });
+    turnos.length = 0;
+    await manda({ imagen: 'media-3', caption: 'lesión en la pierna' });
+    expect(turnos.at(-1).message).toBe('lesión en la pierna\n[adjunto: whatsapp_media-3.jpg · 00000000-0000-4000-8000-000000000003]');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['🔬 Imagen de lesión', '📄 Consentimiento']);
+  });
+
+  it('durante el alta de paciente se rechaza: todavía no hay a quién ligarla', async () => {
+    await manda({ text: 'nuevo paciente' });
+    const antes = subidas.length; turnos.length = 0;
+    const desde = sent.length;
+    await manda({ imagen: 'media-4' });
+    expect(subidas.length).toBe(antes);
+    expect(turnos).toHaveLength(0);
+    expect(sent[desde].text).toContain('todavía no puedo recibir imágenes');
+    expect(ultimo().text).toBe('(1/3) Cédula (Ej: 12345678)');
   });
 });
 

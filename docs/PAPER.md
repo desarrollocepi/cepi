@@ -2642,7 +2642,15 @@ final se envían al cerebro, igual que lo haría la web (`cepi-bot/src/canalWalk
 los dos canales). Las opciones salen como botones —inline en Telegram; hasta 3 botones de
 respuesta en WhatsApp, y lista numerada cuando no caben o Meta los rechaza— y siempre vale
 escribir la etiqueta. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
-Las imágenes entran por Telegram; por WhatsApp todavía no: el campo se salta y se avisa.
+
+**Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
+JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual
+que una foto subida por la web. En WhatsApp, un campo de imágenes de la ficha (§4.7, §8)
+junta las fotos que lleguen —«Listo» lo cierra— y la sección se envía con el CSV de ids, o
+sea que pasan por el mismo control de calidad y de rostro que en la web. Una foto fuera de
+un campo de imágenes va al cerebro con el marcador `[adjunto: nombre · id]`, que pregunta si
+es de la lesión o un consentimiento; en Telegram toda foto sigue ese segundo camino. Durante
+el alta de paciente se rechaza: todavía no hay a quién ligarla. Audio y video no entran.
 
 **Sin paciente activo el agente no entrevista.** No hay dónde guardar, y una entrevista
 libre se pierde entera (pasó: doce turnos dictados por WhatsApp sin un solo dato
