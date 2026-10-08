@@ -4,6 +4,48 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## Sesión 2026-10-08 — Deuda para publicar las apps en las tiendas
+
+**Play (Android).** La app seguía como *borrador* ("ec.cepi.telemedicina (unreviewed)") con 1
+de 11 tareas de configuración: sin eso no se abre ninguna pista con revisión. Quedó en 8 de 11:
+
+- Hechas: anuncios (no), ID de publicidad (no), gubernamental (no), funciones financieras
+  (ninguna), salud ("Gestión y servicios sanitarios"), clasificación de contenido (IARC: +12 /
+  ESRB 13+ por interacción entre usuarios), categoría Medicina, contacto `info@cepi.ec`, y la
+  ficha de la tienda (textos es-419, icono 512, cabecera 1024×500 y 4 capturas del emulador
+  con datos ficticios).
+- **Seguridad de los datos**: respondida y en borrador. Se recogen (no se comparten) nombre,
+  correo, IDs de usuario, dirección, teléfono, etnia, otra información, mensajes de la app,
+  fotos, información sanitaria e IDs de dispositivo (token de push); todo cifrado en tránsito,
+  obligatorio y para el funcionamiento de la app. URL de eliminación:
+  `privacidad.html#eliminar-cuenta`. No se puede enviar hasta completar "Audiencia objetivo".
+- **Faltan 3, encadenadas**: "Datos de inicio de sesión" → "Audiencia objetivo" → enviar
+  "Seguridad de los datos". La primera pide las credenciales de la cuenta demo del revisor, que
+  en producción todavía no existe (pendiente desde el 2026-09-17: solo en `cepi-testing`, con un
+  colega en un círculo para poder mostrar la derivación).
+- Versión **7 (2.3.0)** activa en la pista interna (menú de acciones por paciente).
+
+**Política de privacidad.** `privacidad.html` ahora dice cómo eliminar la cuenta desde la app y
+la web, qué se borra y qué se conserva (anclas `#eliminar-cuenta` y `#tus-derechos`): Play lo
+exige como URL pública.
+
+**App Store (iOS).** Build 11 en el repo, tests de unidad en verde en la Mac; **no se subió**: por ssh `xcodebuild archive` falla al firmar con `errSecInternalComponent` (llavero bloqueado, hace falta la clave de la sesión de la Mac). Lo que falta para pasar de TestFlight
+interno a una distribución con revisión:
+
+1. Sesión de App Store Connect: el perfil de navegador del proyecto no la tiene (2FA de
+   `developer@cepi.ec`); sin ella no se cargan ficha, capturas ni notas para el revisor.
+2. **Guía 4.8**: la app ofrece "Continuar con Google" y no "Iniciar sesión con Apple". El
+   backend no tiene `/auth/apple`. Hay que decidir: agregarlo (backend + iOS + llave de Apple
+   para revocar al borrar la cuenta), quitar Google en iOS, o alegar la excepción de app de
+   empresa en las notas de revisión.
+3. La misma cuenta demo del revisor que pide Play.
+4. Capturas 6,9" y 13" (iPad: el target es universal), ficha, "App Privacy" y edad.
+5. Sin dictado ni push en iOS (fases 4 y 5 de §24.9 a medias): no bloquea la revisión, sí la
+   paridad con Android.
+6. El icono dice "Dermatosito" y la app se llama "CEPI Telemedicina".
+
+---
+
 ## Sesión 2026-09-28 — WhatsApp: una sola respuesta al que no tiene acceso; corte de bots hecho
 
 - **Presupuesto de WhatsApp**: quien no tiene acceso (sin registro, `pendiente` o sin poder
