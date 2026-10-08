@@ -1939,8 +1939,16 @@ colores. Un estado sin pacientes se muestra deshabilitado, no se esconde.
 
 El orden va de lo más avanzado en el circuito de telemedicina a lo menos avanzado: arriba lo
 que el médico tiene que leer o resolver, abajo lo cerrado. Un valor que la app no conoce no
-rompe la lista: cae en "Otro estado". Vive en `EstadoFicha.swift` y `EstadoFicha.kt`, con
-los mismos colores. La web (`ChatList.vue`) todavía no lo muestra.
+rompe la lista: cae en "Otro estado". Vive en `EstadoFicha.swift`, `EstadoFicha.kt` y, en la web,
+`cepi-frontend/src/estadoFicha.js` (lo pinta `ChatList.vue`), con los mismos colores.
+
+**La web no va detrás de las apps (2026-10-08).** Lo que una app nativa estrena se lleva a la
+web en el mismo cambio o en el siguiente. Al igualar quedaron en la web: el LED, el orden y
+el filtro por estado de la lista, con búsqueda sin tildes y "Reintentar" si la carga falla;
+el visor con zoom (`VisorImagen.vue`) también en Galería e Imágenes del paciente, no solo en
+el chat; "Cargando la información…" hasta que llega el hilo, que se pide en paralelo con la
+activación del bot; la barra de consultas siempre a la vista; y "Secciones" y "Auto-form"
+grises con su motivo fuera de la consulta actual.
 
 **Borrado de paciente (D-Aux-23).** Un `supermedico` puede borrar un paciente. Es un borrado
 **suave** (el registro queda inactivo, como el resto del ERP): la historia clínica no se

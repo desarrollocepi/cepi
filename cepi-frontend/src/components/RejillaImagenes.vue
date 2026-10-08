@@ -7,7 +7,7 @@
       No se pudieron cargar las imágenes: {{ error }}
       <br><button class="rej-btn" @click="recargar">Reintentar</button>
     </div>
-    <p v-else-if="!imagenes.length" class="rej-estado">{{ vacio }}</p>
+    <p v-else-if="!imagenes.length" class="rej-estado">{{ q.trim() ? `Sin resultados para «${q.trim()}»` : vacio }}</p>
 
     <div v-else class="rej-grid">
       <button v-for="img in imagenes" :key="img.id" type="button" class="rej-celda" @click="abrir(img)">
@@ -23,16 +23,18 @@
       {{ cargando ? 'Cargando…' : 'Ver más' }}
     </button>
 
-    <div v-if="abierta" class="rej-visor" @click="abierta = null">
-      <img :src="urls[abierta.attachment_id]" :alt="pie(abierta)" />
-      <p>{{ abierta.paciente }} · {{ pie(abierta) }}</p>
-    </div>
+    <VisorImagen
+      :src="abierta ? urls[abierta.attachment_id] : ''"
+      :pie="abierta ? [mostrarPaciente && abierta.paciente, pie(abierta)].filter(Boolean).join(' · ') : ''"
+      @cerrar="abierta = null"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { galeria, fetchAttachmentObjectUrl } from '../api.js';
+import VisorImagen from './VisorImagen.vue';
 
 const props = defineProps({
   /** Solo las de este paciente; vacío = todas las de la organización activa. */
@@ -62,7 +64,8 @@ function pie(img) {
   return [fecha, detalle].filter(Boolean).join(' · ');
 }
 
-function abrir(img) { abierta.value = img; }
+// Sin el archivo no hay qué ampliar: la celda ya dice «Imagen no disponible».
+function abrir(img) { if (urls.value[img.attachment_id]) abierta.value = img; }
 
 /**
  * Las fotos necesitan el token: se bajan con auth y se muestran como blob. De a tandas,
@@ -131,7 +134,4 @@ onUnmounted(() => {
 .rej-nombre { font-size: 12px; font-weight: 600; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rej-pie { font-size: 11px; color: #64748b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rej-mas { align-self: center; margin: 12px 0; padding: 7px 16px; font-weight: 600; color: #0369a1; background: #e0f2fe; border: 0; border-radius: 999px; cursor: pointer; }
-.rej-visor { position: fixed; inset: 0; z-index: 1300; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; background: rgba(0,0,0,.92); cursor: zoom-out; }
-.rej-visor img { max-width: 100%; max-height: 80vh; object-fit: contain; }
-.rej-visor p { margin: 0; font-size: 13px; color: #e2e8f0; }
 </style>

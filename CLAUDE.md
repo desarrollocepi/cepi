@@ -155,6 +155,12 @@ CEPI_LLM_PROVIDER=stub DEEPSEEK_API_KEY=` para que nada salga de la máquina.
 (git-ignored, ~358 MB). Ahí viven las sesiones de Google — Cloud Console, Play Console —, así
 que el agente entra sin pedir la contraseña cada vez.
 
+- **Son dos**: `playwright` (perfil `.pw-profile/`, el que tiene las sesiones de Google) y
+  `playwright2` (perfil `.pw-profile-2/`, también git-ignored). Un perfil admite un solo
+  Chrome: con dos sesiones de Claude Code abiertas en cepi, la segunda que llama a
+  `playwright` recibe "Browser is already in use". Esa usa `playwright2`. El segundo perfil
+  arranca sin sesiones de Google: sirve para probar la app en local o en prod; para Cloud
+  Console o Play Console hay que iniciar sesión en él una vez.
 - **Precedencia**: el scope `local` de `~/.claude.json` gana sobre este archivo. Si ambos
   existen, manda el local; `.mcp.json` es el que vale al clonar el repo en otra máquina.
   Revisar con `claude mcp list`, que además avisa si el scope `user` apunta a otro perfil.

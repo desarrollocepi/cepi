@@ -5,6 +5,23 @@
       <button class="reload" :disabled="busy" title="Refrescar" @click="load">↻</button>
     </div>
 
+    <!-- Los estados de la ficha como filtro, debajo del buscador (PAPER §24.2.1). Cada botón
+         lleva su LED y cuántos pacientes hay: es también la leyenda de los colores. Un estado
+         sin pacientes se ve gris, no se esconde. Tocar el elegido lo suelta. -->
+    <div class="filtros" role="group" aria-label="Filtrar por estado de la ficha">
+      <button
+        type="button" class="filtro" :class="{ on: !estadoElegido }" :disabled="!cargado"
+        :aria-pressed="!estadoElegido" @click="estadoElegido = ''"
+      >Todos · {{ all.length }}</button>
+      <button
+        v-for="e in ESTADOS_FICHA" :key="e.id" type="button" class="filtro"
+        :class="{ on: estadoElegido === e.id }" :aria-pressed="estadoElegido === e.id"
+        :disabled="!cargado || (!conteo[e.id] && estadoElegido !== e.id)"
+        :title="conteo[e.id] ? `Ver solo «${e.etiqueta}»` : `Ningún paciente en «${e.etiqueta}»`"
+        @click="estadoElegido = estadoElegido === e.id ? '' : e.id"
+      ><span class="led" :class="{ hueco: e.hueco }" :style="{ '--led': e.color }" />{{ e.etiqueta }} · {{ conteo[e.id] || 0 }}</button>
+    </div>
+
     <button class="newpat" @click="showCreate = !showCreate">＋ Nuevo paciente</button>
     <form v-if="showCreate" class="createform" @submit.prevent="create">
       <input v-model="cNombre" placeholder="Nombre *" autocomplete="off" />
@@ -44,19 +61,29 @@
           class="rev-badge"
           :title="`${reviewQueue[p.id].pending} pendiente(s) de revisión derivadas a ti`"
         >🔔 revisar</span>
+        <!-- El estado de la ficha actual: al costado y no en una línea más, para que la
+             fila no crezca. -->
+        <span
+          class="led" :class="{ hueco: estadoDe(p).hueco }" :style="{ '--led': estadoDe(p).color }"
+          role="img" :title="`Ficha: ${estadoDe(p).etiqueta}`" :aria-label="`Ficha: ${estadoDe(p).etiqueta}`"
+        />
       </button>
     </div>
     <!-- "No hay pacientes" solo con la lista YA recibida: antes salía al abrir, antes de la
          primera carga, y se leía como una org vacía. -->
     <p v-else-if="!cargado && !error" class="empty">Cargando pacientes…</p>
-    <p v-else-if="!busy && cargado" class="empty">{{ q ? 'Sin coincidencias' : 'No hay pacientes' }}</p>
-    <p v-if="error" class="error">{{ error }}</p>
+    <p v-else-if="!busy && cargado" class="empty">{{ vacio }}</p>
+    <p v-if="error" class="error">
+      {{ error }}
+      <button type="button" class="reintentar" :disabled="busy" @click="load()">Reintentar</button>
+    </p>
   </aside>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { listPatients, createPatient, getReviewQueue, getPatientAssignments, eliminarPaciente } from '../api.js';
+import { ESTADOS_FICHA, estadoFicha, normalizar } from '../estadoFicha.js';
 
 const props = defineProps({
   activeId: { type: String, default: null },
@@ -91,7 +118,21 @@ async function pedirBorrado(p) {
 
 const all = ref([]);
 const reviewQueue = ref({});   // { patientId: { pending, earliest_due } } — derived to me
-const assignments = ref({});   // { patientId: { assignee_name, source, ... } } — a cargo
+const assignments = ref({});   // { patientId: { assignee_name, source, estado, ... } } — a cargo
+const estadoElegido = ref(''); // id de ESTADOS_FICHA, o '' = todos
+
+function estadoDe(p) { return estadoFicha(assignments.value[p.id]?.estado); }
+/** Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos. */
+const conteo = computed(() => {
+  const c = {};
+  for (const p of all.value) { const id = estadoDe(p).id; c[id] = (c[id] || 0) + 1; }
+  return c;
+});
+const vacio = computed(() => {
+  if (q.value.trim()) return 'Sin coincidencias';
+  const e = ESTADOS_FICHA.find((x) => x.id === estadoElegido.value);
+  return e ? `Ningún paciente en «${e.etiqueta}». Elige otro estado o «Todos».` : 'No hay pacientes';
+});
 
 // Icono, texto y tooltip de "a cargo". Si el caso está derivado a varias personas se
 // nombran todas (hasta dos, y el resto como "+N"): con una sola derivación visible no se
@@ -148,44 +189,47 @@ function initials(p) {
   return n.split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
 }
 
+// Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. El orden
+// es el de `ordenar` en PacientesModelo.swift: por estado; dentro de un mismo estado, primero
+// lo derivado a quien consulta, lo que vence antes arriba; el resto conserva el del servidor.
 const filtered = computed(() => {
-  const t = q.value.trim().toLowerCase();
-  let list = all.value;
-  if (t) list = all.value.filter(p => {
-    const n = fullName(p).toLowerCase();
-    const c = String(p.data?.cedula || '').toLowerCase();
-    return n.includes(t) || c.includes(t);
-  });
-  // Patients with items pending my review (derived to me) come first, soonest
-  // due first; everyone else keeps their original order.
+  const t = normalizar(q.value.trim());
+  const elegido = estadoElegido.value;
   const rq = reviewQueue.value;
-  return list.map((p, i) => ({ p, i })).sort((a, b) => {
-    const ra = rq[a.p.id], rb = rq[b.p.id];
-    if (ra && !rb) return -1;
-    if (!ra && rb) return 1;
-    if (ra && rb) {
-      const da = ra.earliest_due ? new Date(ra.earliest_due).getTime() : Infinity;
-      const db = rb.earliest_due ? new Date(rb.earliest_due).getTime() : Infinity;
-      if (da !== db) return da - db;
-    }
-    return a.i - b.i;
-  }).map(x => x.p);
+  return all.value
+    .map((p, i) => ({ p, i, estado: estadoDe(p) }))
+    .filter(({ p, estado }) =>
+      (!t || normalizar(`${fullName(p)} ${p.data?.cedula || ''}`).includes(t))
+      && (!elegido || estado.id === elegido))
+    .sort((a, b) => {
+      if (a.estado.orden !== b.estado.orden) return a.estado.orden - b.estado.orden;
+      const ra = rq[a.p.id], rb = rq[b.p.id];
+      if (ra && !rb) return -1;
+      if (!ra && rb) return 1;
+      if (ra && rb) {
+        const da = ra.earliest_due ? new Date(ra.earliest_due).getTime() : Infinity;
+        const db = rb.earliest_due ? new Date(rb.earliest_due).getTime() : Infinity;
+        if (da !== db) return da - db;
+      }
+      return a.i - b.i;
+    })
+    .map((x) => x.p);
 });
 
 async function load(silent = false) {
   if (!silent) { busy.value = true; error.value = ''; }
   try {
-    const r = await listPatients({});
+    // Los tres en paralelo. Si fallan los dos accesorios se conserva lo anterior: un error
+    // transitorio no debe borrar los avisos de "revisar" ni los estados.
+    const [r, rq, as] = await Promise.all([
+      listPatients({}),
+      getReviewQueue().catch(() => null),
+      getPatientAssignments().catch(() => null),
+    ]);
+    if (rq) reviewQueue.value = rq.by_patient || {};
+    if (as) assignments.value = as.assignments || {};
     all.value = Array.isArray(r?.data) ? r.data : [];
     cargado.value = true;
-    try {
-      const rq = await getReviewQueue();
-      reviewQueue.value = rq?.by_patient || {};
-    } catch { /* keep previous queue on transient error */ }
-    try {
-      const as = await getPatientAssignments();
-      assignments.value = as?.assignments || {};
-    } catch { /* keep previous assignments on transient error */ }
   } catch (e) {
     if (!silent) error.value = e.message || String(e);
   } finally {
@@ -219,6 +263,30 @@ defineExpose({ reload: load });
 }
 .search:focus { border-color: var(--accent); }
 .reload { width: 36px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--accent); cursor: pointer; }
+.filtros {
+  display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); scrollbar-width: thin;
+}
+.filtro {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg); color: var(--text); font-size: 0.78rem; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+}
+.filtro.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filtro:disabled { opacity: .45; cursor: not-allowed; }
+.led {
+  flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--led); box-sizing: border-box;
+}
+.led.hueco { background: transparent; border: 2px solid var(--led); }
+.filtro .led { width: 10px; height: 10px; }
+.filtro.on .led { box-shadow: 0 0 0 1.5px #fff; }
+.reintentar {
+  margin-left: 8px; padding: 4px 12px; border: none; border-radius: 6px;
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 0.8rem; cursor: pointer;
+}
+.reintentar:disabled { opacity: .55; cursor: not-allowed; }
 .rows { flex: 1; min-height: 0; overflow-y: auto; }
 .row, .general {
   width: 100%; display: flex; align-items: center; gap: 10px;
@@ -247,7 +315,7 @@ defineExpose({ reload: load });
   background: var(--accent); color: #fff; font-weight: 700; font-size: 0.85rem;
 }
 .avatar.gen { background: var(--text-muted); }
-.info { display: flex; flex-direction: column; min-width: 0; }
+.info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc { font-size: 0.78rem; color: var(--text-muted); }
 .acargo { font-size: 0.76rem; color: var(--accent); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }

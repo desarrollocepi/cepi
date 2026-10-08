@@ -9,6 +9,16 @@
         "--user-data-dir=/mnt/sda1/cepi/.pw-profile"
       ],
       "env": {}
+    },
+    "playwright2": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--user-data-dir=/mnt/sda1/cepi/.pw-profile-2"
+      ],
+      "env": {}
     }
   }
 }

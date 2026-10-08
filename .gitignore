@@ -82,3 +82,4 @@ msp-002-lleno.png
 
 # Perfil de navegador del MCP de Playwright de este proyecto (sesiones de Google, Play Console)
 .pw-profile/
+.pw-profile-2/

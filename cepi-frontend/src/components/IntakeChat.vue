@@ -8,8 +8,9 @@
       <button type="button" class="ihead-burger" @click="showMenu = !showMenu" aria-label="Opciones" :aria-expanded="showMenu">☰</button>
       <div class="ihead-actions" :class="{ open: showMenu }">
         <div class="ihead-sections">
-          <button type="button" :disabled="busy || !bookmarks.length" @click="showSections = !showSections" title="Secciones de la ficha">▤ Secciones ▾</button>
-          <button type="button" class="autoform-toggle" :class="{ on: autoForm }" @click="toggleAutoForm" :title="autoForm ? 'Auto-form ON: el bot pide el siguiente campo faltante' : 'Auto-form OFF: solo se muestra el form que abras en Secciones'">{{ autoForm ? '🔁 Auto ✓' : '🔁 Auto ✕' }}</button>
+          <!-- Lo que todavía no aplica se ve gris y el title dice por qué (nunca ocultes un botón). -->
+          <button type="button" :disabled="busy || !bookmarks.length || !isActiveEpisode" @click="showSections = !showSections" :title="seccionesMotivo">▤ Secciones ▾</button>
+          <button type="button" class="autoform-toggle" :class="{ on: autoForm }" :disabled="busy || !isActiveEpisode" @click="toggleAutoForm" :title="autoFormMotivo">{{ autoForm ? '🔁 Auto ✓' : '🔁 Auto ✕' }}</button>
           <div v-if="showSections && bookmarks.length" class="sections-panel" @click.self="showSections = false">
             <template v-for="(grp, gi) in bookmarkGroups" :key="'sg' + gi">
               <div v-if="grp.category" class="sections-cat">{{ grp.category }}</div>
@@ -27,9 +28,11 @@
       </div>
     </div>
 
-    <div v-if="patientName && episodeOrder.length" class="iepisodes">
+    <!-- La barra de consultas está siempre: mientras carga y sin consultas lo dice, en vez
+         de aparecer de golpe cuando llega el hilo. -->
+    <div v-if="patientName" class="iepisodes">
       <button type="button" class="enav" :disabled="busy || episodeIndex <= 0" @click="prevEpisode" title="Consulta anterior">‹</button>
-      <span class="ep-label">{{ episodeLabel }}</span>
+      <span class="ep-label">{{ cargado ? (episodeLabel || 'Sin consultas todavía') : 'Cargando consultas…' }}</span>
       <button type="button" class="enav" :disabled="busy || episodeIndex >= episodeOrder.length - 1" @click="nextEpisode" title="Consulta siguiente">›</button>
       <button
         type="button" class="enav enav-now" :disabled="busy || isActiveEpisode"
@@ -44,7 +47,10 @@
     >↪️ Derivado a <b>{{ derivadosTexto }}</b></button>
 
     <div class="ifeed" ref="feedEl">
-      <div v-if="!visibleMessages.length && !busy" class="iwelcome">
+      <!-- Hasta que llega el hilo guardado se dice "Cargando…": el texto de bienvenida se
+           leía como que el paciente no tenía nada. -->
+      <div v-if="patientName && !cargado && !error" class="iwelcome"><p><span class="icarga-spin" />Cargando la información…</p></div>
+      <div v-else-if="!visibleMessages.length && !busy" class="iwelcome">
         <p>Escribe o <b>pega un texto</b> con los datos del paciente y la IA los carga en la ficha.
            También puedes conversar normalmente; antes de guardar se pide confirmación.</p>
       </div>
@@ -53,7 +59,7 @@
         <span v-if="senderLabel(i)" class="iturn-sender">{{ senderLabel(i) }}</span>
         <MessageContent :content="m.content" />
       </div>
-      <div v-if="busy" class="iturn assistant"><span class="thinking">escribiendo…</span></div>
+      <div v-if="busy && (cargado || !patientName)" class="iturn assistant"><span class="thinking">escribiendo…</span></div>
 
       <div v-if="botForm && !busy && isActiveEpisode" class="iform">
         <button type="button" class="iform-close" @click="closeForm" title="Cerrar sección">✕</button>
@@ -337,6 +343,17 @@ function toggleAutoForm() {
     if (next && !busy.value && isActiveEpisode.value) openBookmark(next);
   }
 }
+const seccionesMotivo = computed(() => {
+  if (!bookmarks.value.length) return 'Secciones de la ficha: disponibles al abrir la consulta';
+  if (!isActiveEpisode.value) return 'Secciones de la ficha: solo en la consulta actual';
+  return 'Secciones de la ficha';
+});
+const autoFormMotivo = computed(() => {
+  if (!isActiveEpisode.value) return 'Auto-form: solo en la consulta actual';
+  return autoForm.value
+    ? 'Auto-form ON: el bot pide el siguiente campo faltante'
+    : 'Auto-form OFF: solo se muestra el form que abras en Secciones';
+});
 const showMenu = ref(false);             // burger de acciones (mobile)
 const iheadEl = ref(null);               // header del chat (para cerrar el menú por blur)
 const showFicha = ref(false);            // modal del visor de ficha
@@ -369,6 +386,8 @@ const fichaPagerLabel = computed(() => {
 // reload the thread so the new message appears attributed.
 const messages = ref([]);
 const currentPatientId = ref(null);
+// El hilo guardado llegó al menos una vez. Hasta entonces la pantalla dice "Cargando…".
+const cargado = ref(false);
 
 // ── Navegación por episodios (consultas) ────────────────────────────────────
 // El hilo se muestra por episodio (un episodio por "página"); las flechas ‹ ›
@@ -747,6 +766,7 @@ function reset() {
   sessionId.value = null;
   localStorage.removeItem('cepi.session_id');
   messages.value = [];
+  cargado.value = false;
   pending.value = null;
   quickReplies.value = [];
   pendingAttachment.value = null;
@@ -777,6 +797,7 @@ async function reloadThread() {
     const r = await getPatientThread(uuid);
     if (currentPatientId.value !== uuid) return;            // patient switched → drop
     messages.value = Array.isArray(r?.messages) ? r.messages : [];
+    cargado.value = true;
     cargarDerivados();                                       // la barra de "derivado a…"
     await scrollEnd();                                       // al abrir/recargar, ir al último mensaje
   } catch (e) {
@@ -801,6 +822,7 @@ async function refrescarHilo() {
     const r = await getPatientThread(uuid);
     if (currentPatientId.value !== uuid || busy.value) return;
     const nuevos = Array.isArray(r?.messages) ? r.messages : [];
+    cargado.value = true;                                   // si la primera carga falló, esta la repone
     if (huellaDelHilo(nuevos) === huellaDelHilo(messages.value)) return;
     messages.value = nuevos;
     await scrollEnd();
@@ -832,6 +854,9 @@ async function openPatient(uuid, name) {
   currentPatientId.value = uuid;
   loadAutoForm();                          // estado auto-form propio de este paciente
   busy.value = true;
+  // Lo guardado se pide ya, en paralelo con la activación del bot (que en producción
+  // tarda): así se ve lo que hay en cuanto llega, sin esperar al saludo.
+  const historial = reloadThread();
   try {
     const sid = await findMyOpenSession(uuid);
     if (currentPatientId.value !== uuid) return;            // switched mid-load → drop
@@ -840,8 +865,10 @@ async function openPatient(uuid, name) {
     if (r?.session_id) { sessionId.value = r.session_id; saveSessionId(r.session_id); }
     quickReplies.value = Array.isArray(r?.quick_replies) ? r.quick_replies : [];
     captureFicha(r);                                        // secciones (bookmarks) + episodio
+    await historial;
     await reloadThread();
   } catch (e) {
+    await historial;
     if (currentPatientId.value === uuid) error.value = e.message || String(e);
   } finally {
     if (currentPatientId.value === uuid) busy.value = false;
@@ -1097,6 +1124,12 @@ defineExpose({ openPatient, newGeneral });
 .iturn.user { align-self: flex-end; background: var(--user-bg, #2596be); color: var(--user-text, #fff); border-bottom-right-radius: 4px; }
 .iturn.assistant, .iturn.tool { align-self: flex-start; background: var(--bot-bg, #f1f5f9); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .thinking { color: var(--text-muted); font-style: italic; }
+.icarga-spin {
+  display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%;
+  animation: icarga-gira .8s linear infinite;
+}
+@keyframes icarga-gira { to { transform: rotate(360deg); } }
 .iquick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .iquick-btn { border: 1.5px solid var(--accent); background: #fff; color: var(--accent); border-radius: 18px; padding: 8px 16px; font-weight: 700; font-size: 0.88rem; cursor: pointer; }
 .iquick-btn:hover { background: var(--accent); color: #fff; }
