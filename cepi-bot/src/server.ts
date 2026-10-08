@@ -554,9 +554,14 @@ async function avisarHilo(jwt: string, patientId: string, sessionId: string): Pr
  * al médico. Antes decía «el episodio 22fce59a-ad80-…», que no le dice nada.
  */
 function consultaDe(session: BotSession): string {
-  const pc: any = (session.extracted_slots as any)?.patient_context;
-  const nombre = pc ? [pc.nombre, pc.apellidos].filter(Boolean).join(' ').trim() : '';
+  const nombre = nombreDelPaciente(session);
   return nombre ? `la consulta de ${nombre}` : 'la consulta activa';
+}
+
+/** Nombre del paciente activo según el contexto de la sesión, o ''. */
+function nombreDelPaciente(session: BotSession): string {
+  const pc: any = (session.extracted_slots as any)?.patient_context;
+  return pc ? [pc.nombre, pc.apellidos].filter(Boolean).join(' ').trim() : '';
 }
 
 /**
@@ -1813,7 +1818,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             { tool: 'entities.update', args: { id: activeEpisodeId, record_type: 'business',
               data: { medico_primario_id: userId2, ...(motivo ? { motivo_consulta: motivo } : {}) } } },
             { tool: 'entities.request_review', args: { entity_id: activeEpisodeId, group_id: 'turno',
-              reason, status_value: 'enviada' } },
+              reason, status_value: 'enviada', subject: nombreDelPaciente(session) } },
           ],
           successMessage: 'Caso enviado a la bandeja de turno. Los médicos en turno fueron notificados.',
           createdAt: new Date().toISOString(),
@@ -1933,7 +1938,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           entity_id: activeEpisodeId,
           ...(personas.length ? { reviewers: personas } : {}),
           ...(circulos.length ? { group_ids: circulos } : {}),
-          reason, status_value: 'derivada',
+          reason, status_value: 'derivada', subject: nombreDelPaciente(session),
         } });
         session.pending_action = {
           summary: `Derivar ${consultaDe(session)} ${comoTexto}`,
@@ -1974,7 +1979,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           } });
         }
         session.pending_action = {
-          summary: `Responder teleconsulta ${activeEpisodeId}`,
+          summary: `Responder ${consultaDe(session)}`,
           batch,
           successMessage: primarioId
             ? 'Recomendación registrada y notificada al médico primario.'
@@ -1982,7 +1987,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           createdAt: new Date().toISOString(),
         };
         if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
-        const ackText = `Voy a registrar tu recomendación en el episodio ${activeEpisodeId} y notificar al primario.\n\n¿Confirmás? (sí / no)`;
+        const ackText = `Voy a registrar tu recomendación en ${consultaDe(session)} y notificar al primario.\n\n¿Confirmas? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
         return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
