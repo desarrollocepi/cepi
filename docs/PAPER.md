@@ -2791,9 +2791,11 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   si no, el médico contesta una pregunta de la ficha y recién ahí se entera. Lo que escriba
   con la consulta en pausa se **retiene** y se le vuelve a preguntar. «Sí» lo procesa con ese paciente; «Cambiar paciente» lo descarta y
   muestra el menú. Quien vuelve con un comando que cambia de paciente no recibe la pregunta.
-  Telegram resuelve lo mismo con su menú de inicio, que sale solo a los 5 min y ofrece al
-  paciente anterior.
-- **Un reinicio del bot no se nota (WhatsApp).** El canal guarda en disco lo que sabe de
+  Telegram hace lo mismo. (Antes reiniciaba el chat a los 5 min con su menú: tiraba la
+  sesión sin avisar y lo que el médico contestara después caía fuera de la ficha. Ese
+  reinicio queda solo para el chat sin paciente activo.)
+- **Un reinicio del bot no se nota.** Vale para los dos canales (Telegram guarda además los
+  botones ya enviados, en `telegram-<puerto>.json`).  El canal guarda en disco lo que sabe de
   cada número —sesión, paciente activo, la sección que va recorriendo con sus respuestas, la
   pregunta abierta— en `~/.cepi-bot/whatsapp-<puerto>.json` (`CEPI_BOT_STATE_DIR`), fuera
   del directorio del código, con permisos 600 y sin credenciales

@@ -31,7 +31,7 @@
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
 import {
-  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
+  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
 import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
@@ -215,12 +215,12 @@ const eco = crearEco<number>('telegram', {
     chatAuth.set(chatId, auth.jwt);
     return auth.jwt;
   },
-  vigente: chatId => chatSessions.has(chatId),
+  vigente: chatId => chatSessions.has(chatId) && !enPausa.has(chatId),
   enviar: (chatId, texto) => sendTelegramText(chatId, texto),
   enCola: (chatId, tarea) => serialize(chatId, tarea),
 });
 
-/** chat_id → pending idle timer that proactively sends the menu after IDLE_MS. */
+/** chat_id → pending idle timer that proactively sends the menu after inactividadMs(). */
 const idleTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
 /** chat_id → in-progress ficha form walk (asks closed questions one by one). */
@@ -248,16 +248,16 @@ function serialize(chatId: number, task: () => Promise<void>): Promise<void> {
 }
 
 /** Idle window after which the chat is proactively reset to the "new chat" menu. */
-const IDLE_MS = 5 * 60 * 1000;
+// (El rato es el mismo que en WhatsApp: `CEPI_CANAL_INACTIVIDAD_MS`, 5 min por defecto.)
 
 /**
- * Mark activity on a chat and (re)arm its idle timer. After IDLE_MS with no
+ * Mark activity on a chat and (re)arm its idle timer. After inactividadMs() with no
  * further activity the timer fires and proactively sends the "new chat" menu —
  * the message goes out AT the 5-minute mark, not on the user's next message.
  */
 function touch(chatId: number): void {
   lastSeen.set(chatId, Date.now());
-  armarInactividad(chatId, IDLE_MS);
+  armarInactividad(chatId, inactividadMs());
 }
 
 /** (Re)arma el reloj que reinicia el chat por inactividad. */
@@ -279,7 +279,7 @@ function fotoDelEstado(): unknown {
     v: 1,
     chatSessions: [...chatSessions], lastSeen: [...lastSeen], lastPatient: [...lastPatient],
     pacienteActivo: [...pacienteActivo], formWalks: [...formWalks], chatFrom: [...chatFrom],
-    callbackSends: [...callbackSends], cbCounter, eco: eco.exportar(),
+    callbackSends: [...callbackSends], cbCounter, eco: eco.exportar(), enPausa: [...enPausa],
   };
 }
 
@@ -296,13 +296,14 @@ function restaurarEstado(): void {
   const llenar = <V>(m: Map<number, V>, datos: any) => { for (const [k, v] of datos || []) m.set(Number(k), v); };
   llenar(chatSessions, e.chatSessions); llenar(lastSeen, e.lastSeen); llenar(lastPatient, e.lastPatient);
   llenar(pacienteActivo, e.pacienteActivo); llenar(formWalks, e.formWalks); llenar(chatFrom, e.chatFrom);
+  llenar(enPausa, e.enPausa);
   for (const [k, v] of e.callbackSends || []) callbackSends.set(String(k), String(v));
   cbCounter = Math.max(cbCounter, Number(e.cbCounter) || 0);
   eco.importar((e.eco || []).map(([k, v]: [any, any]) => [Number(k), v]));
   // El reinicio por inactividad de quien todavía está dentro de su rato; a quien
   // ya se le pasó se le muestra el menú cuando vuelva a escribir.
   for (const [chatId, visto] of lastSeen) {
-    const falta = IDLE_MS - (Date.now() - visto);
+    const falta = inactividadMs() - (Date.now() - visto);
     if (falta > 0) armarInactividad(chatId, falta);
   }
   console.log(`[telegram] estado restaurado: ${chatSessions.size} sesión(es), ${formWalks.size} recorrido(s)`);
@@ -311,11 +312,61 @@ function restaurarEstado(): void {
 /** Idle timer fired: proactively show the menu and reset the chat's session. */
 async function onIdle(chatId: number): Promise<void> {
   idleTimers.delete(chatId);
-  // El menú reinicia el chat: lo contestado de una sección a medias se guarda antes.
+  // Con un paciente activo no se reinicia nada: se PAUSA y se pregunta, igual que
+  // en WhatsApp. El reinicio de antes tiraba la sesión sin avisar, y el médico
+  // contestaba una pregunta de la ficha que ya no estaba abierta.
+  if (chatSessions.has(chatId) && eco.pacienteDe(chatId)) {
+    if (!enPausa.has(chatId)) await pausar(chatId);
+    return;
+  }
+  // Sin paciente no hay nada que cuidar: el menú reinicia el chat.
   await guardarParcial(chatId);
   await sendWelcomeMenu(chatId);
   // The menu was just shown; treat the user's next message as a normal turn.
   lastSeen.set(chatId, Date.now());
+}
+
+/**
+ * chat_id → consulta en pausa por inactividad, con el mensaje que la persona
+ * mandó mientras tanto (se procesa si contesta que sigue con el mismo paciente).
+ */
+const enPausa = new Map<number, { nombre: string; retenido?: any }>();
+
+function nombreDelActivo(chatId: number): string {
+  return pacienteActivo.get(chatId) || lastPatient.get(chatId)?.name || 'el mismo paciente';
+}
+
+/** Pausa la consulta y deja hecha la pregunta. `aviso`: si es el reloj quien la abre. */
+async function pausar(chatId: number, retenido?: any, aviso = true): Promise<void> {
+  const nombre = enPausa.get(chatId)?.nombre || nombreDelActivo(chatId);
+  enPausa.set(chatId, { nombre, ...(retenido ? { retenido } : {}) });
+  await sendTelegramText(chatId,
+    `${aviso && !retenido ? `⏸️ Pausé la consulta de ${nombre} por inactividad.\n` : ''}¿Sigues con ${nombre}?`,
+    { inline_keyboard: [[
+      { text: 'Sí, continuar', callback_data: 'ps:si' },
+      { text: 'Cambiar paciente', callback_data: 'ps:no' },
+    ]] });
+}
+
+/**
+ * Respuesta a «¿Sigues con X?». «Sí» retoma: procesa el mensaje retenido o, si no
+ * lo hay, repite la pregunta de la ficha que estaba abierta. «No» guarda lo
+ * contestado de la sección y muestra el menú.
+ */
+async function resolverPausa(invokeChat: InvokeChat, chatId: number, sigue: boolean): Promise<void> {
+  const p = enPausa.get(chatId);
+  if (!p) return;
+  enPausa.delete(chatId);
+  touch(chatId);
+  if (!sigue) {
+    await guardarParcial(chatId);
+    if (p.retenido) await sendTelegramText(chatId, 'No procesé tu mensaje anterior.');
+    await sendWelcomeMenu(chatId);
+    return;
+  }
+  if (p.retenido) { await procesarMensaje(invokeChat, p.retenido, chatAuth.get(chatId) || ''); return; }
+  await sendTelegramText(chatId, `▶️ Continuamos con ${p.nombre}.`);
+  if (formWalks.has(chatId)) await askWalkField(invokeChat, chatId);
 }
 
 /** Render a BotForm as plain text so a Telegram user can still answer it. */
@@ -569,6 +620,7 @@ async function sendWelcomeMenu(chatId: number): Promise<void> {
   chatSessions.delete(chatId);   // fresh session on the next turn
   pacienteActivo.delete(chatId);
   eco.soltar(chatId);
+  enPausa.delete(chatId);
   formWalks.delete(chatId);      // abandon any half-filled ficha walk
   const buttons: QuickReply[] = [
     { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
@@ -582,7 +634,7 @@ async function sendWelcomeMenu(chatId: number): Promise<void> {
 /** True when this chat has been idle long enough to count as a new conversation. */
 function isNewChat(chatId: number): boolean {
   const seen = lastSeen.get(chatId);
-  return seen === undefined || (Date.now() - seen) > IDLE_MS;
+  return seen === undefined || (Date.now() - seen) > inactividadMs();
 }
 
 /** Nombre legible de un `from` de Telegram, para bautizar una identidad nueva. */
@@ -654,13 +706,39 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
     return;
   }
 
+  // ── Consulta en pausa (o que debió pausarse y el reloj no llegó a sonar) ──
+  const escrito = String(message?.text || message?.caption || '').trim();
+  const conPaciente = chatSessions.has(chatId) && !!eco.pacienteDe(chatId);
+  if (enPausa.has(chatId) || (conPaciente && isNewChat(chatId))) {
+    // Quien vuelve cambiando de paciente ya contestó la pregunta.
+    if (CAMBIA_PACIENTE.test(escrito) || /^\/?\s*(men[uú]|cancelar|salir)\s*$/i.test(escrito)) {
+      enPausa.delete(chatId);
+    } else if (enPausa.has(chatId) && /^s[ií]$/i.test(escrito)) {
+      await resolverPausa(invokeChat, chatId, true);
+      return;
+    } else if (enPausa.has(chatId) && /^no$/i.test(escrito)) {
+      await resolverPausa(invokeChat, chatId, false);
+      return;
+    } else {
+      // Cualquier otra cosa se retiene y se (vuelve a) preguntar.
+      await pausar(chatId, message, false);
+      return;
+    }
+  }
+
   // After 5 min idle (or on first contact) treat it as a new chat: show the menu.
   const fresh = isNewChat(chatId);
   touch(chatId);
-  if (fresh) {
+  if (fresh && !conPaciente) {
     await sendWelcomeMenu(chatId);
     return;
   }
+  await procesarMensaje(invokeChat, message, jwt);
+}
+
+/** Atiende un mensaje ya autorizado: recorrido en curso, imagen o turno al cerebro. */
+async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string): Promise<void> {
+  const chatId: number = message?.chat?.id;
 
   // An image arrives as `photo`/`document`; its text (if any) is in `caption`.
   const hasImage = (Array.isArray(message?.photo) && message.photo.length)
@@ -1107,6 +1185,13 @@ async function handleCallback(invokeChat: InvokeChat, cq: any): Promise<void> {
     await applyWalkAnswer(invokeChat, chatId, value);
     return;
   }
+  // «¿Sigues con X?»
+  if (data === 'ps:si' || data === 'ps:no') {
+    await resolverPausa(invokeChat, chatId, data === 'ps:si');
+    return;
+  }
+  // Un botón tocado con la consulta en pausa: primero hay que contestar la pregunta.
+  if (enPausa.has(chatId)) { await pausar(chatId, undefined, false); return; }
   // Sí/No a «Entendí …. ¿Es correcto?» (lo que interpretó la IA para un campo).
   if (typeof data === 'string' && data.startsWith('fc:')) {
     const w = formWalks.get(chatId);
