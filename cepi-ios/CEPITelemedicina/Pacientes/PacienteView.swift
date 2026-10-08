@@ -13,7 +13,8 @@ struct PacienteView: View {
 
     @Environment(Sesion.self) private var sesion
     @State private var modelo: HiloModelo
-    @State private var seccion: Seccion = .chat
+    /// La sección a la vista. La tiene la lista: su menú de acciones abre directo en una.
+    @Binding var seccion: Seccion
     @State private var mostrarSecciones = false
     @State private var mostrarDerivar = false
 
@@ -30,8 +31,9 @@ struct PacienteView: View {
         }
     }
 
-    init(fila: FilaPaciente, alTerminar: @escaping () -> Void = {}) {
+    init(fila: FilaPaciente, seccion: Binding<Seccion>, alTerminar: @escaping () -> Void = {}) {
         self.fila = fila
+        _seccion = seccion
         self.alTerminar = alTerminar
         _modelo = State(initialValue: HiloModelo(pacienteId: fila.id))
     }

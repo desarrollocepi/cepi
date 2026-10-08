@@ -64,7 +64,14 @@ private val secciones = listOf("Chat", "Ficha", "Imágenes")
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, alVolver: () -> Unit) {
+fun PacienteAbierto(
+    entorno: Entorno,
+    pacienteId: String,
+    fila: FilaPaciente?,
+    /** La sección en la que abre (0 chat, 1 ficha, 2 imágenes): la elige el menú de la lista. */
+    seccionInicial: Int = 0,
+    alVolver: () -> Unit,
+) {
     val api = entorno.sesion.api
     val alcance = rememberCoroutineScope()
     val contexto = LocalContext.current
@@ -76,7 +83,7 @@ fun PacienteAbierto(entorno: Entorno, pacienteId: String, fila: FilaPaciente?, a
         }
     }
     val imagenes = remember(pacienteId) { GaleriaModelo(api, paciente = pacienteId) }
-    val paginas = rememberPagerState { secciones.size }
+    val paginas = rememberPagerState(initialPage = seccionInicial) { secciones.size }
     var fichaMostrada by rememberSaveable { mutableStateOf(false) }
     var imagenAbierta by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }

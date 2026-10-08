@@ -53,6 +53,8 @@ import ec.cepi.telemedicina.api.CepiApi
 import ec.cepi.telemedicina.app.Aviso
 import ec.cepi.telemedicina.app.Sesion
 import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.launch
 
 /** Lista de pacientes con búsqueda local. Equivale a ChatList.vue y a `PacientesView.swift`. */
@@ -62,10 +64,12 @@ fun ListaPacientes(
     sesion: Sesion,
     modelo: PacientesModelo,
     relleno: PaddingValues,
-    alAbrir: (String) -> Unit,
+    /** El paciente y la sección en la que abre: 0 chat, 1 ficha, 2 imágenes. */
+    alAbrir: (String, Int) -> Unit,
     alFallar: (String) -> Unit,
 ) {
     val alcance = rememberCoroutineScope()
+    val portapapeles = LocalClipboardManager.current
     var busqueda by rememberSaveable { mutableStateOf("") }
     var refrescando by remember { mutableStateOf(false) }
     var aBorrar by remember { mutableStateOf<FilaPaciente?>(null) }
@@ -147,7 +151,8 @@ fun ListaPacientes(
                             asignacion = modelo.asignaciones[fila.id],
                             estado = modelo.estado(fila.id),
                             puedeBorrar = puedeBorrar,
-                            alAbrir = { alAbrir(fila.id) },
+                            alAbrir = { seccion -> alAbrir(fila.id, seccion) },
+                            alCopiarCedula = { fila.cedula?.let { portapapeles.setText(AnnotatedString(it)) } },
                             alBorrar = { aBorrar = fila },
                         )
                     }
@@ -189,7 +194,7 @@ fun ListaPacientes(
     aBorrar?.let { fila ->
         AlertDialog(
             onDismissRequest = { aBorrar = null },
-            title = { Text("¿Eliminar a ${fila.nombre}?") },
+            title = { Text("¿Archivar a ${fila.nombre}?") },
             text = {
                 Text(
                     "El paciente deja de aparecer en las listas. Su historia clínica se conserva, y si " +
@@ -204,10 +209,10 @@ fun ListaPacientes(
                             sesion.api.eliminarPaciente(fila.id)
                             modelo.cargar(sesion.api)
                         } catch (e: ApiError) {
-                            alFallar("No se pudo eliminar a ${fila.nombre}: ${e.mensaje}")
+                            alFallar("No se pudo archivar a ${fila.nombre}: ${e.mensaje}")
                         }
                     }
-                }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Archivar") }
             },
             dismissButton = { TextButton(onClick = { aBorrar = null }) { Text("Cancelar") } },
         )

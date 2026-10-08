@@ -7,6 +7,8 @@ vi.mock('../src/api.js', () => ({
   getReviewQueue: vi.fn(),
   getPatientAssignments: vi.fn(),
   eliminarPaciente: vi.fn(),
+  listarPacientesArchivados: vi.fn(),
+  restaurarPaciente: vi.fn(),
 }));
 import * as api from '../src/api.js';
 import ChatList from '../src/components/ChatList.vue';
@@ -309,6 +311,73 @@ describe('ChatList — filas y acciones', () => {
     await flushPromises();
     expect(w.find('.error').text()).toContain('No se pudo archivar a Marta Derivada: HTTP 403');
     expect(nombres(w)).toHaveLength(6);
+  });
+
+  it('los archivados solo los ve quien puede archivar', async () => {
+    expect((await montar({ user: { permissions: [] } })).find('.verarch').exists()).toBe(false);
+    expect((await montar({ user: { permissions: ['*:*:*:*'] } })).find('.verarch').text()).toContain('Ver los archivados');
+  });
+
+  it('ver los archivados los lista, deshabilita los filtros y deja volver', async () => {
+    api.listarPacientesArchivados.mockResolvedValue({ data: [paciente('a1', 'Zoe', 'Archivada', '0909'), paciente('a2', 'Tito', 'Viejo', '0808')] });
+    const w = await montar({ user: { permissions: ['*:*:*:*'] } });
+    await w.find('.verarch').trigger('click');
+    await flushPromises();
+    expect(w.findAll('.row.arch .name').map((n) => n.text())).toEqual(['Zoe Archivada', 'Tito Viejo']);
+    expect(w.findAll('.restaurar')).toHaveLength(2);
+    expect(w.findAll('.acciones')).toHaveLength(0);
+    expect(w.findAll('.filtro').every((b) => b.element.disabled)).toBe(true);
+    await w.find('.search').setValue('tito');
+    expect(w.findAll('.row.arch')).toHaveLength(1);
+    await w.find('.search').setValue('');
+    await w.find('.verarch').trigger('click');
+    expect(nombres(w)).toHaveLength(6);
+    expect(w.find('.row.arch').exists()).toBe(false);
+  });
+
+  it('sin archivados lo dice; si la carga falla, lo dice y deja reintentar', async () => {
+    api.listarPacientesArchivados.mockResolvedValueOnce({ data: [] });
+    const w = await montar({ user: { permissions: ['*:*:*:*'] } });
+    await w.find('.verarch').trigger('click');
+    await flushPromises();
+    expect(w.find('.empty').text()).toBe('No hay pacientes archivados');
+    await w.find('.verarch').trigger('click');
+    api.listarPacientesArchivados.mockRejectedValueOnce(new Error('HTTP 500'));
+    await w.find('.verarch').trigger('click');
+    await flushPromises();
+    expect(w.find('.error').text()).toContain('No se pudieron cargar los archivados: HTTP 500');
+    api.listarPacientesArchivados.mockResolvedValueOnce({ data: [paciente('a1', 'Zoe', 'Archivada', '0909')] });
+    await w.find('.reintentar').trigger('click');
+    await flushPromises();
+    expect(w.findAll('.row.arch')).toHaveLength(1);
+    expect(w.find('.error').exists()).toBe(false);
+  });
+
+  it('restaurar saca al paciente de los archivados, avisa y recarga la lista', async () => {
+    api.listarPacientesArchivados.mockResolvedValue({ data: [paciente('a1', 'Zoe', 'Archivada', '0909')] });
+    api.restaurarPaciente.mockResolvedValue({ ok: true });
+    const w = await montar({ user: { permissions: ['*:*:*:*'] } });
+    await w.find('.verarch').trigger('click');
+    await flushPromises();
+    const cargas = api.listPatients.mock.calls.length;
+    await w.find('.restaurar').trigger('click');
+    await flushPromises();
+    expect(api.restaurarPaciente).toHaveBeenCalledWith('a1');
+    expect(w.find('.row.arch').exists()).toBe(false);
+    expect(w.find('.aviso').text()).toBe('Zoe Archivada volvió a la lista');
+    expect(api.listPatients.mock.calls.length).toBe(cargas + 1);
+  });
+
+  it('si restaurar falla lo dice y el paciente sigue archivado', async () => {
+    api.listarPacientesArchivados.mockResolvedValue({ data: [paciente('a1', 'Zoe', 'Archivada', '0909')] });
+    api.restaurarPaciente.mockRejectedValue(new Error('HTTP 403'));
+    const w = await montar({ user: { permissions: ['*:*:*:*'] } });
+    await w.find('.verarch').trigger('click');
+    await flushPromises();
+    await w.find('.restaurar').trigger('click');
+    await flushPromises();
+    expect(w.find('.error').text()).toContain('No se pudo restaurar a Zoe Archivada: HTTP 403');
+    expect(w.findAll('.row.arch')).toHaveLength(1);
   });
 
   it('alta: "Crear" deshabilitado hasta tener nombre, apellido y cédula; al crear lo selecciona', async () => {

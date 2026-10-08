@@ -27,6 +27,14 @@ describe('api — cliente', () => {
     expect(ultima()[1].headers.Authorization).toBe('Bearer tok');
   });
 
+  it('archivados: la lista pide los inactivos y restaurar es un PATCH con restore=true', async () => {
+    await api.listarPacientesArchivados();
+    expect(ultima()[0]).toContain('/api/entities?type=business&entity_id=11000000-0000-0000-0000-000000000000&active=false');
+    await api.restaurarPaciente('p 1');
+    expect(ultima()[0]).toContain('/api/entities/p%201?record_type=business&restore=true');
+    expect(ultima()[1].method).toBe('PATCH');
+  });
+
   it('un error lleva el mensaje del backend y el código HTTP', async () => {
     fetchMock.mockResolvedValue(respuesta(404, { error: 'no existe' }));
     await expect(api.obtenerEntidad('x')).rejects.toMatchObject({ message: 'no existe', status: 404 });
