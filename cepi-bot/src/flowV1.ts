@@ -8,7 +8,7 @@
 import { TodoErpMcpClient } from './mcpClient.js';
 import { BotSession, saveSession } from './sessionStore.js';
 import { inspectAttachment } from './imageInspect.js';
-import { tipoEsperado, validarRespuesta } from './validarCampo.js';
+import { tipoEsperado, validarDeterminista } from './validarCampo.js';
 
 const PATIENT_ENTITY_ID = '11000000-0000-0000-0000-000000000000';
 const EPISODE_ENTITY_ID = '12000000-0000-0000-0000-000000000000';
@@ -808,15 +808,16 @@ export async function prepararDatosGrupo(
   const grp = FICHA_GROUPS.find(g => g.id === gid);
   const isPatient = grp?.target === 'patient';
 
-  // Campos con tipo que llegan como texto (un canal, el agente): se normalizan
-  // con la misma regla que usan los canales al preguntar —determinista y, si no,
-  // IA—. Lo que nadie entiende se deja como vino: el guardado lo rechaza y el
-  // error se le muestra a la persona, en vez de perder el dato en silencio.
+  // Campos con tipo que llegan como texto: se normalizan con el validador
+  // DETERMINISTA. Acá no se usa la IA: su resultado hay que confirmarlo con la
+  // persona, y eso solo puede hacerlo quien conversa (el canal). Lo que la regla
+  // no entiende se deja como vino: el guardado lo rechaza y el error se muestra,
+  // en vez de perder el dato o guardar una interpretación sin confirmar.
   for (const f of grp?.fields || []) {
     const v = f.key ? data[f.key] : undefined;
     if (typeof v !== 'string' || !v.trim() || !tipoEsperado(f)) continue;
-    const r = await validarRespuesta(f, v);
-    if (r.ok) data[f.key!] = r.value;
+    const r = validarDeterminista(f, v);
+    if (r?.ok) data[f.key!] = r.value;
   }
   // Columna numérica — el input llega como texto.
   if (data.edad != null && data.edad !== '' && typeof data.edad !== 'number') data.edad = Number(data.edad);

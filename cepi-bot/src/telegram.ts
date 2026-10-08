@@ -38,7 +38,7 @@ import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTi
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
-import { ayudaDeTipo, tipoEsperado, validarRespuesta } from './validarCampo.js';
+import { ayudaDeTipo, legible, tipoEsperado, validarRespuesta } from './validarCampo.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -641,6 +641,14 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
         await routeTurn(invokeChat, chatId, answer, jwt, '');
         return;
       }
+      // Respuesta escrita a «Entendí …. ¿Es correcto?».
+      const porConfirmar = activeWalk.porConfirmar?.idx === activeWalk.idx ? activeWalk.porConfirmar : undefined;
+      if (porConfirmar && /^(s[ií]|no)$/i.test(answer)) {
+        activeWalk.porConfirmar = undefined;
+        if (/^s/i.test(answer)) await applyWalkAnswer(invokeChat, chatId, porConfirmar.value);
+        else await askWalkField(invokeChat, chatId);
+        return;
+      }
       if (answer) {
         // Campo con tipo (fecha, número): validador determinista, después IA, y
         // si ninguno lo entiende se dice y se vuelve a preguntar.
@@ -651,6 +659,15 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
           if (!v.ok) {
             await sendTelegramText(chatId, `No entendí «${answer}» como ${ayudaDeTipo(tipo)}.`);
             await askWalkField(invokeChat, chatId);
+            return;
+          }
+          // Lo que interpretó la IA no se guarda sin confirmación: se equivoca con aplomo.
+          if (v.porIA) {
+            activeWalk.porConfirmar = { idx: activeWalk.idx, value: v.value };
+            await sendTelegramText(chatId, `Entendí ${legible(tipo, v.value)}. ¿Es correcto?`, { inline_keyboard: [[
+              { text: '✅ Sí', callback_data: `fc:${activeWalk.idx}:si` },
+              { text: '❌ No', callback_data: `fc:${activeWalk.idx}:no` },
+            ]] });
             return;
           }
           await applyWalkAnswer(invokeChat, chatId, v.value);
@@ -704,6 +721,16 @@ async function routeTurn(
     chatSessions.delete(chatId);
     pacienteActivo.delete(chatId);
     eco.soltar(chatId);
+  }
+  // Soltar al paciente es cosa del canal, no del cerebro: allá «salir paciente»
+  // le borra el paciente activo a la sesión y la conversación desaparece del
+  // hilo del paciente. Acá la sesión simplemente termina, intacta.
+  if (actual && /^\/?\s*(salir|cerrar|olvidar)\s+paciente\s*$/i.test(turnText)) {
+    const nombre = pacienteActivo.get(chatId) || lastPatient.get(chatId)?.name || 'el paciente';
+    crudo.anotar(chatId, { dir: 'sys', tipo: 'suelta', texto: nombre });
+    await sendTelegramText(chatId, `Listo, dejé a ${nombre}.`);
+    await sendWelcomeMenu(chatId);
+    return;
   }
   const sessionId = chatSessions.get(chatId) || undefined;
 
@@ -939,6 +966,17 @@ async function handleCallback(invokeChat: InvokeChat, cq: any): Promise<void> {
     const value = walkOptions(w.form.fields[w.idx])[optIdx]?.value;
     if (value === undefined) return;            // out-of-range stale option
     await applyWalkAnswer(invokeChat, chatId, value);
+    return;
+  }
+  // Sí/No a «Entendí …. ¿Es correcto?» (lo que interpretó la IA para un campo).
+  if (typeof data === 'string' && data.startsWith('fc:')) {
+    const w = formWalks.get(chatId);
+    const [, idx, resp] = data.split(':');
+    const pc = w?.porConfirmar;
+    if (!w || !pc || pc.idx !== w.idx || parseInt(idx, 10) !== w.idx) return;
+    w.porConfirmar = undefined;
+    if (resp === 'si') await applyWalkAnswer(invokeChat, chatId, pc.value);
+    else await askWalkField(invokeChat, chatId);
     return;
   }
   // «Saltar»: deja sin contestar el campo actual (si el teclado es el suyo).

@@ -582,7 +582,10 @@ function computeStatusHeader(session: BotSession | null): string {
     }
     return `👤 ${name}`;
   }
+  // Paciente recién creado: todavía sin contexto cargado, pero ya es el activo.
+  if (session.active_patient_id) return '👤 Paciente';
   // No active patient → describe the chat state.
+  if (/^Crear paciente/i.test(session.pending_action?.summary || '')) return '📋 Creando paciente';
   const formTitle: string = slots.active_form?.title || '';
   if (/buscar paciente/i.test(formTitle)) return '📋 Buscando paciente';
   if (/nuevo paciente/i.test(formTitle)) return '📋 Creando paciente';
@@ -723,6 +726,12 @@ async function executePendingActionResult(
     const createdType = paArgs?.entity_id;
     if (createdType === '11000000-0000-0000-0000-000000000000') {
       session.active_patient_id = newId;
+      // Su nombre se conoce desde ya: sin esto, la respuesta que anuncia el alta
+      // salía encabezada «Sin paciente activo».
+      session.extracted_slots = {
+        ...(session.extracted_slots || {}),
+        patient_context: { id: newId, ...((paArgs?.data as Record<string, unknown>) || {}) },
+      };
       if ((session.extracted_slots as any)?.mode !== 'patient_info') {
         const episodeId = await openEpisodeFicha(mcp, session, newId);
         session.active_episode_id = episodeId;

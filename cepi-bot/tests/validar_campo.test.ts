@@ -60,7 +60,8 @@ describe('la regla: determinista, después IA, y si no, no se entendió', () => 
 
   it('si no, pasa a la IA, que solo recibe la respuesta y el tipo', async () => {
     const llm = llmQueDice('2000-01-01');
-    expect(await validarRespuesta(FECHA, 'el primero de enero del dos mil', llm)).toEqual({ ok: true, value: '2000-01-01' });
+    // `porIA`: quien conversa tiene que confirmarlo antes de guardarlo.
+    expect(await validarRespuesta(FECHA, 'el primero de enero del dos mil', llm)).toEqual({ ok: true, value: '2000-01-01', porIA: true });
     expect(llm.visto[0].map((t: any) => t.role)).toEqual(['system', 'user']);
     expect(llm.visto[0][1].content).toBe('el primero de enero del dos mil');
   });
@@ -78,7 +79,15 @@ describe('la regla: determinista, después IA, y si no, no se entendió', () => 
 
   it('números: igual', async () => {
     expect(await validarRespuesta(EDAD, '35 años')).toEqual({ ok: true, value: 35 });
-    expect(await validarRespuesta(EDAD, 'treinta y cinco', llmQueDice('35'))).toEqual({ ok: true, value: 35 });
+    expect(await validarRespuesta(EDAD, 'treinta y cinco', llmQueDice('35'))).toEqual({ ok: true, value: 35, porIA: true });
+  });
+});
+
+describe('legible', () => {
+  it('dice la fecha como la diría una persona, para confirmarla', async () => {
+    const { legible } = await import('../src/validarCampo.js');
+    expect(legible('fecha', '2026-01-01')).toBe('1 de enero de 2026');
+    expect(legible('numero', 35)).toBe('35');
   });
 });
 

@@ -10,7 +10,11 @@
 import type { BotForm, BotFormField } from './flowV1.js';
 
 /** Recorrido en curso de un formulario. */
-export interface FormWalk { form: BotForm; idx: number; answers: Record<string, any>; }
+export interface FormWalk {
+  form: BotForm; idx: number; answers: Record<string, any>;
+  /** Valor que interpretó la IA para el campo actual, a la espera de un sí/no. */
+  porConfirmar?: { idx: number; value: any };
+}
 
 /**
  * Forms walked field-by-field: ficha sections and the new-patient form.

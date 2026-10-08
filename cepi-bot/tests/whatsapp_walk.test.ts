@@ -126,6 +126,9 @@ async function cerebro({ body }: { body: any }) {
   if (/^buscar uno$/i.test(msg)) return { status: 200, body: { ...base, text: 'Resultados:\n1. Otro', form: BUSQUEDA, status_header: '📋 Buscando paciente', quick_replies: [
     { label: 'Otro', send: 'activar paciente 33333333-3333-4333-8333-333333333333' },
     { label: '+ Nuevo paciente', send: 'nuevo paciente' }] } };
+  if (/^ficha sexo$/i.test(msg)) return { status: 200, body: { ...base, text: '1.3 Sexo:', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
+    form: { id: 'ficha_grp_g_1_3', title: '1.3 Sexo', submit_mode: 'structured',
+      fields: [{ key: 'sexo', label: 'Sexo', type: 'radio', options: ['M', 'F', 'Otro'] }], actions: [{ label: 'Omitir', send: 'omitir ficha' }] } } };
   if (/^ficha fecha$/i.test(msg)) return { status: 200, body: { ...base, text: '1.2 Fecha de nacimiento:', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
     form: { id: 'ficha_grp_g_1_2', title: '1.2 Fecha de nacimiento', submit_mode: 'structured',
       fields: [{ key: 'fecha_nac', label: 'Fecha de nacimiento', type: 'date' }], actions: [{ label: 'Omitir', send: 'omitir ficha' }] } } };
@@ -329,9 +332,23 @@ describe('WhatsApp: saltar un campo no es omitir la sección', () => {
     await abrirFicha();
     await manda({ boton: boton('No') });
     await manda({ text: 'salir paciente' });
+    // Lo único que va al cerebro es el guardado; soltar al paciente lo hace el canal.
+    expect(turnos).toHaveLength(1);
     expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: false } });
-    expect(turnos[1].message).toBe('salir paciente');
     expect(sent.map(s => s.text)).toContain('💾 Guardé lo que llevabas de «2.1 Antecedentes».');
+    expect(sent.map(s => s.text)).toContain('Listo, dejé a *Paciente Prueba*.');
+  });
+});
+
+describe('WhatsApp: una pregunta de tres opciones sale con sus tres botones', () => {
+  it('no se esconde detrás de «Ver opciones»; las salidas se escriben', async () => {
+    await manda({ text: 'cancelar' });
+    await manda({ text: 'ficha sexo' });
+    expect(tipos.at(-1)).toBe('button');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['M', 'F', 'Otro']);
+    turnos.length = 0;
+    await manda({ text: 'saltar' });
+    expect(turnos.map(t => t.message)).toEqual(['omitir ficha']);     // única pregunta, sin respuesta: se omite
   });
 });
 
@@ -450,8 +467,11 @@ describe('WhatsApp: eco del hilo del paciente activo', () => {
     expect(ultimo().text).toBe('(1/4) ¿Fuma?');
     turnos.length = 0;
     await manda({ text: 'salir paciente' });
-    expect(turnos.map(t => t.message)).toEqual(['salir paciente']);
-    expect(ultimo().text).toBe('Paciente activo limpiado.');
+    // No se guarda como respuesta del campo, ni llega al cerebro: allá le borraría
+    // el paciente a la sesión y la conversación saldría del chat del paciente.
+    expect(turnos).toHaveLength(0);
+    expect(sent.map(s => s.text)).toContain('Listo, dejé a *Paciente Prueba*.');
+    expect(ultimo().text).toContain('¿Qué quieres hacer?');
   });
 
   it('al soltar al paciente la sesión termina con él', async () => {
@@ -516,8 +536,9 @@ describe('WhatsApp: el paciente activo dura minutos', () => {
   it('quien vuelve cambiando de paciente no recibe la pregunta', async () => {
     await manda({ text: 'nota x' });                       // p-1 activo otra vez
     await esperar(260);
-    turnos.length = 0;
+    turnos.length = 0; sent.length = 0;
     await manda({ text: 'salir paciente' });
-    expect(turnos.map(t => t.message)).toEqual(['salir paciente']);
+    expect(turnos).toHaveLength(0);
+    expect(sent[0].text).toBe('Listo, dejé a *Paciente Prueba*.');     // sin «¿Sigues con…?»
   });
 });

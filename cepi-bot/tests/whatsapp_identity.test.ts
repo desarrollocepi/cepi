@@ -191,12 +191,17 @@ describe('aviso de «pensando» con el paciente activo', () => {
       '⏳ Continuando con Juan Pérez…', '👤 Juan Pérez — ficha §2.1 Antecedentes\nAnotado.']);
   });
 
-  it('no lo dice cuando el mensaje suelta o cambia al paciente', async () => {
-    brainReply = { status: 200, body: { text: 'Listo.', session_id: 'sess-wa' } };
-    await inbound('593990000001', 'salir paciente');
-    expect(sent.map(s => s.text)).toEqual(['Listo.']);
-    // Y ya sin paciente activo, el turno siguiente tampoco.
+  it('«salir paciente» lo resuelve el canal: no lleva aviso ni va al cerebro', async () => {
+    // En el cerebro, «salir paciente» le borra el paciente activo a la sesión, y
+    // con eso toda la conversación desaparece del chat del paciente en la web.
+    turns.length = 0;
+    await inbound('593990000001', 'salir paciente', undefined, 2);
+    expect(turns).toHaveLength(0);
+    expect(sent.map(s => s.text)).toEqual([
+      'Listo, dejé a *Juan Pérez*.', 'Hola 👋 ¿Qué quieres hacer?\nPaciente anterior: Juan Pérez']);
+    // Y ya sin paciente activo, el turno siguiente no lleva aviso.
     sent.length = 0;
+    brainReply = { status: 200, body: { text: 'Listo.', session_id: 'sess-wa' } };
     await inbound('593990000001', 'hola');
     expect(sent.map(s => s.text)).toEqual(['Listo.']);
   });

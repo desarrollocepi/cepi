@@ -49,7 +49,7 @@ import {
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
-import { ayudaDeTipo, tipoEsperado, validarRespuesta } from './validarCampo.js';
+import { ayudaDeTipo, legible, tipoEsperado, validarRespuesta } from './validarCampo.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -274,7 +274,7 @@ function composeReply(body: any): string {
 // contesta con el número. En los dos casos también vale escribir la etiqueta.
 
 /** Una opción lleva un `send` (texto para el cerebro) o un `value` (respuesta de un campo). */
-interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; accion?: 'seguir' | 'cambiar' | 'saltar'; }
+interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; accion?: 'seguir' | 'cambiar' | 'saltar' | 'reintentar'; }
 
 /** Lo último que se le ofreció a un número: contra esto se resuelve su respuesta. */
 interface Pregunta { serie: number; opciones: Opcion[]; numerada: boolean; }
@@ -874,6 +874,7 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     if (opcion) {
       if (opcion.esValor) { await applyWalkAnswer(ctx, opcion.value); return; }
       if (opcion.accion === 'saltar') { walk.idx++; await askWalkField(ctx); return; }
+      if (opcion.accion === 'reintentar') { await askWalkField(ctx); return; }
       if (/^omitir/i.test(opcion.send || '')) { await omitirSeccion(ctx, walk); return; }
       await guardarParcial(ctx, walk);        // otra acción sale del recorrido
       await routeTurn(ctx, { message: opcion.send || '' }, opcion.send || '');
@@ -919,6 +920,14 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
       if (!v.ok) {
         await sendWhatsappText(from, `No entendí «${texto}» como ${ayudaDeTipo(tipo)}.`);
         await askWalkField(ctx);
+        return;
+      }
+      // Lo que interpretó la IA no se guarda sin confirmación: se equivoca con aplomo.
+      if (v.porIA) {
+        await sendOpciones(from, `Entendí *${legible(tipo, v.value)}*. ¿Es correcto?`, [
+          { label: 'Sí', value: v.value, esValor: true },
+          { label: 'No', accion: 'reintentar' },
+        ]);
         return;
       }
       await applyWalkAnswer(ctx, v.value);
@@ -971,6 +980,9 @@ async function recibirEnCampo(ctx: Turno, w: FormWalk, f: BotFormField, img: Ima
   await askWalkField(ctx);
 }
 
+/** «salir paciente» y sus variantes. */
+const SUELTA_PACIENTE = /^\/?\s*(salir|cerrar|olvidar)\s+paciente\s*$/i;
+
 /** Comandos que sacan de un recorrido aunque no lleven barra. */
 const CAMBIA_PACIENTE = /^\s*((salir|cerrar|olvidar)\s+paciente|activar\s+paciente\s+[0-9a-f-]{36}|nuevo\s+paciente|buscar\s+paciente)\s*$/i;
 
@@ -1015,6 +1027,17 @@ async function routeTurn(
     phoneSessions.delete(from);
     pacienteActivo.delete(from);
     eco.soltar(from);
+  }
+  // Soltar al paciente es cosa del canal, no del cerebro: allá «salir paciente»
+  // le borra el paciente activo a la sesión, y el hilo del paciente se arma con
+  // las sesiones que lo tienen activo — toda la conversación desaparecía del
+  // chat de la web. Acá la sesión simplemente termina, intacta.
+  if (actual && SUELTA_PACIENTE.test(String((cuerpo as any).message || ''))) {
+    const nombre = nombreDelActivo(from);
+    crudo.anotar(from, { dir: 'sys', tipo: 'suelta', texto: nombre });
+    await sendWhatsappText(from, `Listo, dejé a *${nombre}*.`);
+    await sendMenu(from);
+    return 'ok';
   }
   const sessionId = phoneSessions.get(from) || undefined;
 
@@ -1181,8 +1204,11 @@ async function askWalkField(ctx: Turno): Promise<void> {
     // Con Sí/No caben tres botones: las dos respuestas y «Saltar». «Omitir
     // sección» queda escrito (lo dice la presentación de la sección).
     const opciones = walkOptions(f).map(o => ({ label: String(o.label), value: o.value, esValor: true }));
+    // Hasta 3 respuestas van como botones, con las salidas que quepan al lado;
+    // las que no caben se escriben («saltar», «omitir restante»). Así una
+    // pregunta de tres opciones no se esconde detrás de «Ver opciones».
     await sendOpciones(from, `(${pos}/${n}) ${f.label}`, opciones,
-      opciones.length < MAX_BOTONES ? acciones.slice(0, MAX_BOTONES - opciones.length) : acciones);
+      opciones.length <= MAX_BOTONES ? acciones.slice(0, MAX_BOTONES - opciones.length) : acciones);
   } else if (f.type === 'image_upload') {
     // «Listo» aparece recién cuando hay algo que enviar.
     const ids = idsDelCampo(w, f.key);
