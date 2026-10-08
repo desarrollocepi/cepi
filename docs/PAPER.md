@@ -2720,6 +2720,24 @@ Se corrige en tres partes:
 
 Recién cuando los bots dejan de usarla, `admin@erp.com` se puede desactivar.
 
+**Avisos de la red de derivación.** Tres reglas que salieron de probar el flujo completo
+(primario → turno → especialista → respuesta) contra producción:
+
+- **Al derivar, el revisor se entera al momento.** El recordatorio que crea
+  `request_review` vence a las 24 h —es el plazo para revisar— y el planificador solo
+  despacha al vencer: por push y correo el aviso llegaba un día después. Ahora se manda al
+  crear la revisión (`TodoERP/backend/src/services/notificarAhora.ts`) y el recordatorio
+  queda para el plazo.
+- **Un reintento solo repite el canal que falló** (`reminders.delivered_channels`,
+  migración 026). Antes se reintentaba el recordatorio entero: con el correo caído, el mismo
+  aviso llegaba hasta cinco veces por Telegram y por push.
+- **El aviso nombra al paciente.** `request_review` acepta `subject`; sin él el título era
+  «Revisión solicitada: <uuid del episodio>». No se manda correo a una cuenta cuyo email es
+  de un dominio reservado (`.local`): las identidades de chat no tienen correo real.
+
+«derivar a …» valida los destinos contra los círculos que existen: la lista termina en el
+primero que trae texto detrás, y desde ahí todo es motivo, comas incluidas.
+
 ### 27.7 Registro crudo de la conversación
 
 `bot_session.turns` guarda lo que el **cerebro** vio: el texto de cada turno que le llegó.
