@@ -2667,8 +2667,11 @@ cuándo salieron, y por eso siguen sirviendo unos minutos tras un reinicio.
 no lo entiende, un validador **IA**, que recibe solo el texto de la respuesta y el tipo
 esperado —ni el paciente ni la conversación— y cuya salida vuelve a pasar por el
 determinista; si tampoco, el canal lo dice («No entendí «…» como una fecha») y vuelve a
-preguntar. Nunca se manda al backend un valor que la columna va a rechazar. El cerebro
-aplica la misma regla al recibir una sección, venga de donde venga.
+preguntar. **Lo que interpreta la IA se confirma antes de guardarse** («Entendí 1 de enero
+de 2026. ¿Es correcto?»): el modelo se equivoca con aplomo —en producción convirtió «el
+primero de enero del dos mil» en 2026-01-01—. Nunca se manda al backend un valor que la columna va a rechazar. El cerebro,
+al recibir una sección, aplica solo el validador determinista: confirmar una interpretación
+solo puede hacerlo quien conversa.
 
 **Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
 JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual
@@ -2772,6 +2775,12 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   se reemplazan entre sí, y tocar el aviso en las apps abre el chat de ese paciente.
 - **Vale mientras el paciente siga activo en el teléfono.** Al cambiar de paciente o
   soltarlo, el eco de ese hilo se corta. Solo se reenvía lo posterior a haberlo activado.
+- **Cambiar de paciente lo resuelve el canal.** Con un paciente activo, «salir paciente»,
+  «buscar paciente» y «nuevo paciente» no van al cerebro dentro de esa sesión: allá
+  «salir paciente» le borra el paciente activo a la sesión —y con eso toda la conversación
+  desaparece del hilo— y «buscar paciente» cae en el agente, que contesta dentro de la
+  sesión del paciente anterior. El canal cierra la sesión («Dejé a X») y el pedido arranca
+  una limpia, que sí entra al flujo de búsqueda o alta.
 - **Una sesión por paciente.** El hilo se arma con las sesiones que tienen activo al
   paciente: activar a otro dentro de la misma sesión se llevaría toda la conversación al
   hilo del nuevo. En WhatsApp, activar a otro paciente o soltar al actual termina la sesión.
@@ -2784,8 +2793,14 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   muestra el menú. Quien vuelve con un comando que cambia de paciente no recibe la pregunta.
   Telegram resuelve lo mismo con su menú de inicio, que sale solo a los 5 min y ofrece al
   paciente anterior.
-- **Tras un reinicio del bot pasa lo mismo.** El estado del canal vive en memoria y un
-  deploy lo borra. Cada sesión lleva de qué canal es (`extracted_slots.canal`); con el
+- **Un reinicio del bot no se nota (WhatsApp).** El canal guarda en disco lo que sabe de
+  cada número —sesión, paciente activo, la sección que va recorriendo con sus respuestas, la
+  pregunta abierta— en `~/.cepi-bot/whatsapp-<puerto>.json` (`CEPI_BOT_STATE_DIR`), fuera
+  del directorio del código, con permisos 600 y sin credenciales
+  (`cepi-bot/src/canalEstado.ts`). Al arrancar lo retoma. Cada deploy reinicia el proceso:
+  sin esto, cada deploy le «cerraba la sesión» a quien estuviera en medio de una consulta.
+- **Si el archivo no está, queda la red de abajo.** El estado del canal vivía solo en
+  memoria y un deploy lo borraba. Cada sesión lleva de qué canal es (`extracted_slots.canal`); con el
   primer mensaje, WhatsApp busca la última sesión de ese usuario por el canal y, si tiene
   paciente activo y menos de un día, pregunta si sigue con él. «Sí» retoma **esa** sesión
   y **vuelve a mostrar lo que el bot había dejado preguntado** (`GET /api/bot/session/:id`:

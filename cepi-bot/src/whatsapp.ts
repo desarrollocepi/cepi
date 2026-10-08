@@ -50,6 +50,7 @@ import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
 import { ayudaDeTipo, legible, tipoEsperado, validarRespuesta } from './validarCampo.js';
+import { crearEstado } from './canalEstado.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -700,7 +701,7 @@ const OPCIONES_DE_PAUSA: Opcion[] = [
  * siguiente: si no, el médico contesta una pregunta de la ficha y recién ahí
  * se entera de que la consulta estaba en pausa. Deja la pregunta hecha.
  */
-function armarPausa(from: string): void {
+function armarPausa(from: string, ms = inactividadMs()): void {
   const previo = relojesDePausa.get(from);
   if (previo) clearTimeout(previo);
   const t = setTimeout(() => {
@@ -713,8 +714,9 @@ function armarPausa(from: string): void {
       enEspera.set(from, { nombre });
       await sendOpciones(from,
         `⏸️ Pausé la consulta de *${nombre}* por inactividad.\n¿Sigues con *${nombre}*?`, OPCIONES_DE_PAUSA);
+      persistir();
     });
-  }, inactividadMs());
+  }, ms);
   if (typeof (t as any).unref === 'function') (t as any).unref();
   relojesDePausa.set(from, t);
 }
@@ -759,6 +761,9 @@ async function retomar(ctx: Turno, entrada: Entrada | undefined): Promise<boolea
   if (!s?.ok) return false;
   const seccion = isWalkableForm(s.form);
   if (!seccion && !s.pendiente && !s.pending_action) return false;
+  // Una foto retenida no es una respuesta fuera de contexto: se procesa. (Solo
+  // cede ante una pregunta abierta, que hay que contestar antes.)
+  if (entrada?.img && !s.pendiente && !s.pending_action) return false;
 
   if (entrada && (entrada.texto || entrada.img)) {
     await sendWhatsappText(from, 'Retomamos donde quedó. Tu último mensaje no se procesó: responde a lo que sigue.');
@@ -985,6 +990,45 @@ const ENTRA_A_OTRO = /^\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente|paciente|b
 
 /** «salir paciente» y sus variantes. */
 const SUELTA_PACIENTE = /^\/?\s*(salir|cerrar|olvidar)\s+paciente\s*$/i;
+
+// ── Estado que sobrevive a un reinicio ──────────────────────────────────────
+
+const estado = crearEstado(() => `whatsapp-${process.env.WHATSAPP_WEBHOOK_PORT || '9997'}`);
+
+/** Foto de lo que el canal sabe de cada número (sin credenciales). */
+function fotoDelEstado(): unknown {
+  return {
+    v: 1,
+    phoneSessions: [...phoneSessions], pacienteActivo: [...pacienteActivo], lastPatient: [...lastPatient],
+    ultimoEntrante: [...ultimoEntrante], formWalks: [...formWalks], preguntas: [...preguntas],
+    enEspera: [...enEspera], seriePregunta, eco: eco.exportar(),
+  };
+}
+
+/** Se guarda tras cada cosa que cambia el estado; las ráfagas se agrupan. */
+function persistir(): void { estado.guardar(fotoDelEstado); }
+
+/**
+ * Al arrancar: retoma donde quedó cada número. Un deploy deja de notarse: la
+ * sesión, el paciente activo, la sección a medias y sus respuestas siguen ahí.
+ */
+function restaurarEstado(): void {
+  const e = estado.cargar();
+  if (!e || e.v !== 1) return;
+  const llenar = <V>(m: Map<string, V>, datos: any) => { for (const [k, v] of datos || []) m.set(String(k), v); };
+  llenar(phoneSessions, e.phoneSessions); llenar(pacienteActivo, e.pacienteActivo); llenar(lastPatient, e.lastPatient);
+  llenar(ultimoEntrante, e.ultimoEntrante); llenar(formWalks, e.formWalks); llenar(preguntas, e.preguntas);
+  llenar(enEspera, e.enEspera);
+  seriePregunta = Math.max(seriePregunta, Number(e.seriePregunta) || 0);
+  eco.importar(e.eco);
+  // El aviso de pausa de quien todavía está dentro del rato de inactividad. A
+  // quien ya se le pasó no se le escribe ahora: se le pregunta cuando vuelva.
+  for (const [from, ultimo] of ultimoEntrante) {
+    const falta = inactividadMs() - (Date.now() - ultimo);
+    if (falta > 0 && eco.pacienteDe(from)) armarPausa(from, falta);
+  }
+  console.log(`[whatsapp] estado restaurado: ${phoneSessions.size} sesión(es), ${formWalks.size} recorrido(s)`);
+}
 
 /** Comandos que sacan de un recorrido aunque no lleven barra. */
 const CAMBIA_PACIENTE = /^\s*((salir|cerrar|olvidar)\s+paciente|activar\s+paciente\s+[0-9a-f-]{36}|nuevo\s+paciente|buscar\s+paciente)\s*$/i;
@@ -1292,6 +1336,9 @@ export function verifyMetaSignature(
  */
 export function startWhatsapp(invokeChat: InvokeChat) {
   cerebro = invokeChat;
+  restaurarEstado();
+  // Al apagar (un deploy), lo último que cambió queda escrito.
+  for (const señal of ['SIGINT', 'SIGTERM'] as const) process.once(señal, () => estado.guardarYa(fotoDelEstado));
   const app = express();
   // Keep the raw bytes: the signature is over the body exactly as Meta sent it.
   app.use(express.json({
@@ -1361,7 +1408,7 @@ export function startWhatsapp(invokeChat: InvokeChat) {
                 console.error('[whatsapp] cancelar error:', e?.message || e));
               continue;
             }
-            await enCola(from, () => handleInbound(invokeChat, msg, contactos[String(msg?.from)]));
+            await enCola(from, () => handleInbound(invokeChat, msg, contactos[String(msg?.from)]).finally(persistir));
           }
         }
       }

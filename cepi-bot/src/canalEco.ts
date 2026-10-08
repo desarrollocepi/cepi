@@ -100,6 +100,9 @@ export interface EcoDeCanal<K> {
   /** Soltó o cambió de paciente: deja de recibir ese hilo. */
   soltar(k: K): void;
   pacienteDe(k: K): string | undefined;
+  /** Foto del estado para guardarlo, y su restauración tras un reinicio. */
+  exportar(): Array<[K, { patientId: string; desde: number; enviados: string[] }]>;
+  importar(datos: Array<[K, { patientId: string; desde: number; enviados: string[] }]>): void;
 }
 
 interface EstadoDeEco { patientId: string; desde: number; enviados: Set<string>; }
@@ -114,9 +117,11 @@ export function crearEco<K>(canal: string, t: TransporteDeEco<K>): EcoDeCanal<K>
 
   const ponerAlDia = async (k: K): Promise<void> => {
     const estado = estados.get(k);
-    let jwt = t.jwtDe(k);
-    if (!estado || !jwt || !t.vigente(k)) return;
+    if (!estado || !t.vigente(k)) return;
     try {
+      // Tras un reinicio el chat no tiene JWT en memoria: se pide uno.
+      let jwt = t.jwtDe(k) || await t.renovarJwt(k);
+      if (!jwt) return;
       let hilo = await leerHilo(jwt, estado.patientId);
       if (hilo.status === 401) {
         const nuevo = await t.renovarJwt(k);
@@ -149,5 +154,11 @@ export function crearEco<K>(canal: string, t: TransporteDeEco<K>): EcoDeCanal<K>
     },
     soltar(k) { estados.delete(k); },
     pacienteDe(k) { return estados.get(k)?.patientId; },
+    exportar() { return [...estados].map(([k, e]) => [k, { patientId: e.patientId, desde: e.desde, enviados: [...e.enviados] }]); },
+    importar(datos) {
+      for (const [k, e] of datos || []) {
+        if (e?.patientId) estados.set(k, { patientId: e.patientId, desde: e.desde || Date.now(), enviados: new Set(e.enviados || []) });
+      }
+    },
   };
 }
