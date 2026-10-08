@@ -1349,8 +1349,10 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
         });
         if (!(upd as any)?.ok) {
           const text = `No pude guardar: ${(upd as any)?.error || 'error desconocido'}.\n` +
-            `Revisá los datos y volvé a enviar.`;
-          await appendAndSave(session, summary, text, mcp);
+            `Revisa los datos y vuelve a enviar.`;
+          // Sin el 📋: ese prefijo marca lo que quedó en la ficha, y el hilo del
+          // paciente lo muestra como dato. Esto no se guardó.
+          await appendAndSave(session, summary.replace(/^📋/, '⚠️ No guardado —'), text, mcp);
           return { text, form: await fichaGroupFormFilled(gid, mcp, session), bookmarks: await fichaBookmarks(mcp, session) };
         }
         if (isPatient) {

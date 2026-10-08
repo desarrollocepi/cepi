@@ -93,3 +93,22 @@ describe('BLINK ficha group', () => {
     expect(String(data?.blink_resultado)).toMatch(/no precisa más estudios/i);
   });
 });
+
+describe('envío de una sección que el backend rechaza', () => {
+  it('no queda en la conversación como dato de la ficha (sin el 📋)', async () => {
+    const mcp = fakeMcp();
+    const call = mcp.call.bind(mcp);
+    mcp.call = async (name: string, args: any) =>
+      name === 'entities.update' && args.id === 'ep-1' && args.data?.blink_lonely !== undefined
+        ? { ok: false, error: 'HTTP 400: Validation failed' } : call(name, args);
+    const session = fichaSession();
+    const r: any = await handleV1Flow({
+      session, message: '', mcp,
+      formSubmission: { form_id: 'ficha_grp_g_blink', data: { blink_lonely: true } },
+    });
+    expect(r.text).toContain('No pude guardar');
+    const dicho = session.turns.filter((t: any) => t.role === 'user').map((t: any) => String(t.content));
+    expect(dicho.some((c: string) => c.startsWith('📋'))).toBe(false);
+    expect(dicho.at(-1)).toMatch(/^⚠️ No guardado — BLINK/);
+  });
+});

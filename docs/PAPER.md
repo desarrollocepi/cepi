@@ -2653,6 +2653,17 @@ mensaje— y siempre vale escribir la etiqueta. Los títulos se recortan al larg
 Meta y una salida repetida sale una sola vez (un título duplicado hace que Meta rechace el
 mensaje entero). En WhatsApp, una búsqueda con un único resultado activa a ese paciente sin
 hacerle elegir. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
+Escribir la opción vale igual que tocarla («otro», «sí», sin importar mayúsculas ni tildes).
+Un **comando** escrito en medio de un recorrido no es la respuesta al campo
+(`esComando` en `canalWalk.ts`): con «/» delante siempre; sin ella, los inequívocos («enviar
+caso …», «entrantes», «ver chatter»…), y «nota …» / «responder …» solo si la pregunta es
+cerrada, porque en texto libre pueden ser la respuesta. Un envío que el backend rechaza se
+registra en la conversación **sin el 📋** («⚠️ No guardado — …»): ese prefijo es lo que el
+hilo del paciente trata como dato de la ficha.
+Mientras una consulta está en pausa («¿Sigues con X?») se retienen **todos** los mensajes
+que lleguen, en orden, y se procesan al contestar que sí. En Telegram, quien vuelve tras la
+inactividad escribiendo ya lo que quiere («nuevo paciente», «buscar paciente …», «ayuda»)
+es atendido sin pasar por el menú.
 En una sección de la ficha hay dos salidas con nombres distintos, en los dos canales:
 **Saltar** deja ese campo sin contestar y sigue, y **Omitir restante** termina la sección
 **guardando lo ya contestado**. Salir de una sección por cualquier otro camino (un comando,
