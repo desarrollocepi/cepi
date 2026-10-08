@@ -21,7 +21,7 @@ import dotenv from 'dotenv';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { runAgentTurn } from './agent.js';
-import { ChatTurn } from './llm.js';
+import { ChatTurn, TEXTO_DE_AYUDA } from './llm.js';
 import { TodoErpMcpClient } from './mcpClient.js';
 import { createSession, loadSession, saveSession, BOT_SESSION_ENTITY_ID, BotSession } from './sessionStore.js';
 import {
@@ -1180,6 +1180,24 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         // Other input while a pending_action exists: keep the pending; the
         // LLM still sees state context, but user might be reconsidering.
         // Fall through to the normal LLM path below.
+      }
+
+      // ── Ayuda: determinista, antes del flujo y del modelo ──────────────
+      // (En modo paciente sin paciente activo el flujo la tomaba como una
+      // búsqueda, y el modelo la contestaba con «escribe nuevo paciente».)
+      if (/^\/?\s*(help|ayuda|comandos)\s*$/i.test(message.trim())) {
+        session.turns = [
+          ...session.turns,
+          { role: 'user',      content: message },
+          { role: 'assistant', content: TEXTO_DE_AYUDA },
+        ];
+        await saveSession(mcp, session);
+        return res.json({
+          ok: true, session_id: sessionId, text: TEXTO_DE_AYUDA,
+          history: session.turns, toolCalls: [],
+          active_patient_id: session.active_patient_id,
+          active_episode_id: session.active_episode_id,
+        });
       }
 
       // ── V1 conversational flow gate (docs/CHATBOT_FLOW.md) ─────────────
