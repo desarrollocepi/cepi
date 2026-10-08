@@ -485,7 +485,8 @@ describe('telegram: eco del hilo del paciente activo', () => {
     const desde = sent.length;
     hiloTg = [
       { session_id: 'sess-pac', role: 'user', content: 'lo mío', ts: new Date(Date.now() + 1000).toISOString() },
-      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos', author_name: 'Dra. Derma', ts: new Date(Date.now() + 1000).toISOString() },
+      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos', author_name: 'Dra. Derma', contenido: true, ts: new Date(Date.now() + 1000).toISOString() },
+      { session_id: 'sess-web', role: 'assistant', content: '¿Algo más?', is_bot: true, contenido: false, ts: new Date(Date.now() + 1000).toISOString() },
     ];
     emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
     await esperar(150);

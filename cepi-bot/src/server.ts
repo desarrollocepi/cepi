@@ -2150,7 +2150,11 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       const session = await loadSession(mcp, sessionId);
       if (session) {
         // Don't persist the synthetic system note — strip it before saving.
-        session.turns = out.history.filter(t => t.role !== 'system');
+        // Lo nuevo de este turno es conversación con el agente: se marca para
+        // que el hilo del paciente lo distinga de los pasos del flujo guiado.
+        const yaEstaban = session.turns.length;
+        session.turns = out.history.filter(t => t.role !== 'system').map((t, i) =>
+          i >= yaEstaban && (t.role === 'user' || t.role === 'assistant') ? { ...t, origen: 'agente' as const } : t);
         // Sin marcador se conserva la cola anterior: el agente pudo haber hecho
         // solo una tool call, y perderla ahí lo haría olvidar lo que faltaba.
         if (queued.questions !== null) session.pending_slots = queued.questions;

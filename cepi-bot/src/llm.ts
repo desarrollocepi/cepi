@@ -19,6 +19,12 @@ export interface ChatTurn {
   /** Active episode at persist time. Lets the UI group the thread per episode
    *  (navegación con flechas) aun si una sesión abarca varios episodios. */
   episode_id?: string | null;
+  /**
+   * `agente`: el turno es conversación libre con el agente (lo que la persona
+   * le escribió y lo que le contestó), no un paso del flujo guiado. El hilo del
+   * paciente lo usa para separar contenido de maniobra (PAPER §27.8).
+   */
+  origen?: 'agente';
 }
 
 export interface ToolSpec {

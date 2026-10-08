@@ -273,7 +273,7 @@ function composeReply(body: any): string {
 // contesta con el número. En los dos casos también vale escribir la etiqueta.
 
 /** Una opción lleva un `send` (texto para el cerebro) o un `value` (respuesta de un campo). */
-interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; accion?: 'seguir' | 'cambiar'; }
+interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; accion?: 'seguir' | 'cambiar' | 'saltar'; }
 
 /** Lo último que se le ofreció a un número: contra esto se resuelve su respuesta. */
 interface Pregunta { serie: number; opciones: Opcion[]; numerada: boolean; }
@@ -281,6 +281,8 @@ const preguntas = new Map<string, Pregunta>();
 let seriePregunta = 0;
 
 const BOTON_OPCION = 'op:';
+/** Cuánto vale un botón cuya pregunta ya no está en memoria. */
+const BOTON_VIGENTE_MS = 15 * 60 * 1000;
 const MAX_BOTONES = 3;
 const MAX_TITULO = 20;
 /** Una lista admite 10 filas, con título de 24 caracteres y descripción de 72. */
@@ -313,7 +315,11 @@ async function sendOpciones(to: string, text: string, elegibles: Opcion[], accio
   const todas = [...elegibles, ...acciones];
   if (!todas.length) { preguntas.delete(to); await sendWhatsappText(to, text); return; }
   const serie = ++seriePregunta;
-  const ids = todas.map((_o, i) => `${BOTON_OPCION}${serie}:${i}`);
+  // El id lleva también la hora y el `send`: tras un reinicio del bot la
+  // pregunta ya no está en memoria, y un botón recién enviado tiene que seguir
+  // sirviendo (ver `resolverOpcion`). Meta admite hasta 256 caracteres.
+  const ahora = Date.now().toString(36);
+  const ids = todas.map((o, i) => `${BOTON_OPCION}${serie}:${i}:${ahora}:${o.send ?? ''}`.slice(0, 256));
   const sinRepetir = (max: number) => new Set(todas.map(o => llano(recortar(o.label, max)))).size === todas.length;
 
   if (todas.length <= MAX_BOTONES && sinRepetir(MAX_TITULO)) {
@@ -350,9 +356,16 @@ function resolverOpcion(from: string, msg: any): { opcion?: Opcion; vencida?: bo
   const p = preguntas.get(from);
   const id = msg?.interactive?.button_reply?.id ?? msg?.interactive?.list_reply?.id;
   if (typeof id === 'string' && id.startsWith(BOTON_OPCION)) {
-    const [serie, i] = id.slice(BOTON_OPCION.length).split(':').map(n => parseInt(n, 10));
-    const opcion = p && p.serie === serie ? p.opciones[i] : undefined;
-    return opcion ? { opcion } : { vencida: true };
+    const [serieTxt, iTxt, hora, ...resto] = id.slice(BOTON_OPCION.length).split(':');
+    const opcion = p && p.serie === parseInt(serieTxt, 10) ? p.opciones[parseInt(iTxt, 10)] : undefined;
+    if (opcion) return { opcion };
+    // Sin ninguna pregunta en memoria para este número (el bot se reinició):
+    // el botón vale por lo que lleva escrito, si es reciente. Con otra pregunta
+    // ya hecha, en cambio, es un botón viejo y no se obedece.
+    const send = resto.join(':');
+    const edad = Date.now() - parseInt(hora || '', 36);
+    if (!p && send && edad >= 0 && edad < BOTON_VIGENTE_MS) return { opcion: { label: send, send } };
+    return { vencida: true };
   }
   const texto = typeof msg?.text?.body === 'string' ? msg.text.body.trim() : '';
   if (!p || !texto) return {};
@@ -759,6 +772,8 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
       return true;
     }
     if (opcion?.accion === 'cambiar' || /^no$/i.test(texto)) {
+      const w = formWalks.get(from);
+      if (w) await guardarParcial(ctx, w);
       if (pend.entrada) await sendWhatsappText(from, 'No procesé tu mensaje anterior.');
       await sendMenu(from);
       return true;
@@ -798,9 +813,10 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     const f = walk.form.fields[walk.idx];
     if (f?.type === 'image_upload') { await recibirEnCampo(ctx, walk, f, img); return; }
     if (walk.form.id.startsWith('ficha_grp_')) {
-      // Foto en medio de otra sección de la ficha: sale del recorrido y la
-      // recibe el cerebro, que pregunta si es de la lesión o un consentimiento.
-      formWalks.delete(from);
+      // Foto en medio de otra sección de la ficha: sale del recorrido (guardando
+      // lo contestado) y la recibe el cerebro, que pregunta si es de la lesión
+      // o un consentimiento.
+      await guardarParcial(ctx, walk);
       walk = undefined;
     } else {
       // En el alta todavía no hay paciente: la imagen quedaría huérfana.
@@ -814,26 +830,26 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
   if (walk) {
     if (opcion) {
       if (opcion.esValor) { await applyWalkAnswer(ctx, opcion.value); return; }
-      formWalks.delete(from);                 // una acción (p. ej. «Omitir») sale del recorrido
+      if (opcion.accion === 'saltar') { walk.idx++; await askWalkField(ctx); return; }
+      if (/^omitir/i.test(opcion.send || '')) { await omitirSeccion(ctx, walk); return; }
+      await guardarParcial(ctx, walk);        // otra acción sale del recorrido
       await routeTurn(ctx, { message: opcion.send || '' }, opcion.send || '');
       return;
     }
     if (/^\/?\s*(cancelar|salir|men[uú])\s*$/i.test(texto)) {
-      formWalks.delete(from);
+      await guardarParcial(ctx, walk);
       await sendMenu(from);
       return;
     }
-    // «omitir» y los comandos con barra no son el valor de un campo.
-    if (/^\/?\s*omitir(\s+ficha)?\s*$/i.test(texto)) {
-      formWalks.delete(from);
-      await routeTurn(ctx, { message: 'omitir ficha' }, 'omitir ficha');
-      return;
-    }
+    // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir sección»
+    // termina la sección. Ninguno es el valor de un campo.
+    if (/^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
+    if (/^\/?\s*omitir\s+(ficha|secci[oó]n)\s*$/i.test(texto)) { await omitirSeccion(ctx, walk); return; }
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
     // quedaba guardado como dirección).
     if (/^\//.test(texto) || CAMBIA_PACIENTE.test(texto)) {
-      formWalks.delete(from);
+      await guardarParcial(ctx, walk);
       await routeTurn(ctx, { message: texto }, texto);
       return;
     }
@@ -1019,7 +1035,7 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
     // La sección de la ficha se muestra entera como contexto; el alta de
     // paciente va directo a su primera pregunta.
     const intro = body.form.id.startsWith('ficha_grp_')
-      ? composeReply(body)
+      ? composeReply(body) + '\n\n_«Saltar» deja un campo sin contestar. Escribe «omitir sección» para terminarla: lo contestado se guarda._'
       : composeReply({ ...body, form: null });
     formWalks.set(from, { form: body.form, idx: 0, answers: {} });
     await sendWhatsappText(from, intro);
@@ -1043,6 +1059,45 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
   await sendOpciones(from, composeReply(body), rapidas, acciones);
 }
 
+/**
+ * Sale de un recorrido sin perder lo contestado: si es una sección de la ficha
+ * con respuestas, las envía al cerebro tal como están (una sección incompleta
+ * se guarda igual, campo por campo) y recién entonces lo cierra. La respuesta
+ * del cerebro a ese envío no se muestra: quien sale ya va a otra cosa.
+ */
+async function guardarParcial(ctx: Turno, w: FormWalk): Promise<void> {
+  const { from } = ctx;
+  formWalks.delete(from);
+  if (w.form.submit_mode !== 'structured' || !Object.keys(w.answers).length) return;
+  const eventos = crudo.tomar(from);
+  try {
+    const { status, body } = await ctx.invokeChat({
+      headers: { authorization: `Bearer ${ctx.jwt}` },
+      body: { ...cuerpoDeEnvio(w), session_id: phoneSessions.get(from), canal: 'whatsapp', canal_raw: eventos },
+    });
+    if (status !== 200 || body?.ok === false) throw new Error(body?.error || `estado ${status}`);
+    await sendWhatsappText(from, `💾 Guardé lo que llevabas de «${w.form.title}».`);
+  } catch (e: any) {
+    crudo.devolver(from, eventos);
+    console.error('[whatsapp] guardado parcial:', e?.message || e);
+    await sendWhatsappText(from, `⚠️ No pude guardar lo que llevabas de «${w.form.title}».`);
+  }
+}
+
+/**
+ * «Omitir sección»: termina la sección. Con respuestas, se envía con lo que
+ * tiene (el cerebro guarda y pasa a la siguiente); sin ninguna, se omite.
+ */
+async function omitirSeccion(ctx: Turno, w: FormWalk): Promise<void> {
+  if (w.form.submit_mode === 'structured' && Object.keys(w.answers).length) {
+    w.idx = w.form.fields.length;
+    await submitWalk(ctx);
+    return;
+  }
+  formWalks.delete(ctx.from);
+  await routeTurn(ctx, { message: 'omitir ficha' }, 'omitir ficha');
+}
+
 /** Pregunta el campo actual del recorrido. Cuando no queda ninguno, envía. */
 async function askWalkField(ctx: Turno): Promise<void> {
   const { from } = ctx;
@@ -1053,12 +1108,23 @@ async function askWalkField(ctx: Turno): Promise<void> {
 
   const f = w.form.fields[w.idx];
   const { pos, n } = posicion(w);
-  const acciones: Opcion[] = (w.form.actions || []).map(a => ({ label: a.label, send: a.send }));
+  // Dos salidas distintas, con nombres que no se confunden: «Saltar» deja ESTE
+  // campo sin contestar y sigue; «Omitir sección» termina la sección (lo ya
+  // contestado se guarda). Un «Omitir» a secas se leía como lo primero y hacía
+  // lo segundo, perdiendo las respuestas.
+  const acciones: Opcion[] = [
+    { label: 'Saltar', accion: 'saltar' },
+    ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
+      ? { label: 'Omitir sección', send: 'omitir ficha' } : { label: a.label, send: a.send }),
+  ];
   if (f.type === 'radio' || f.type === 'checkbox') {
-    await sendOpciones(from, `(${pos}/${n}) ${f.label}`,
-      walkOptions(f).map(o => ({ label: String(o.label), value: o.value, esValor: true })), acciones);
+    // Con Sí/No caben tres botones: las dos respuestas y «Saltar». «Omitir
+    // sección» queda escrito (lo dice la presentación de la sección).
+    const opciones = walkOptions(f).map(o => ({ label: String(o.label), value: o.value, esValor: true }));
+    await sendOpciones(from, `(${pos}/${n}) ${f.label}`, opciones,
+      opciones.length < MAX_BOTONES ? acciones.slice(0, MAX_BOTONES - opciones.length) : acciones);
   } else if (f.type === 'image_upload') {
-    // «Listo» aparece recién cuando hay algo que enviar; antes, la salida es «Omitir».
+    // «Listo» aparece recién cuando hay algo que enviar.
     const ids = idsDelCampo(w, f.key);
     const texto = ids.length
       ? `(${pos}/${n}) ${f.label}\n📷 ${ids.length === 1 ? '1 imagen recibida' : `${ids.length} imágenes recibidas`}. Envía otra o toca «Listo».`

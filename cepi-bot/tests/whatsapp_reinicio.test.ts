@@ -46,9 +46,11 @@ function mockFetch(): void {
 
 let server: ReturnType<typeof startWhatsapp>;
 let base = '';
-async function manda(from: string, text: string): Promise<void> {
+async function manda(from: string, text: string, boton?: string): Promise<void> {
   const antes = sent.length;
-  const raw = JSON.stringify({ entry: [{ changes: [{ value: { messages: [{ from, id: 'wamid.in', type: 'text', text: { body: text } }] } }] }] });
+  const raw = JSON.stringify({ entry: [{ changes: [{ value: { messages: [boton
+    ? { from, id: 'wamid.in', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: boton, title: text } } }
+    : { from, id: 'wamid.in', type: 'text', text: { body: text } }] } }] }] });
   const sig = 'sha256=' + createHmac('sha256', 'app-secret').update(raw).digest('hex');
   await realFetch(`${base}/whatsapp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig }, body: raw });
   for (let i = 0; i < 100 && sent.length === antes; i++) await new Promise(r => setTimeout(r, 10));
@@ -96,5 +98,24 @@ describe('WhatsApp tras un reinicio', () => {
     turnos.length = 0;
     await manda('593990000003', 'hola');
     expect(turnos.map(t => t.message)).toEqual(['hola']);
+  });
+});
+
+describe('WhatsApp: un botón enviado antes del reinicio', () => {
+  // La pregunta ya no está en memoria; el botón lleva escrito qué manda y cuándo salió.
+  const idDe = (send: string, haceMs: number) => `op:7:0:${(Date.now() - haceMs).toString(36)}:${send}`;
+
+  it('reciente: se obedece por lo que lleva escrito', async () => {
+    sesiones = [];
+    turnos.length = 0;
+    await manda('593990000004', '🔬 Imagen de lesión', idDe('imagen lesion', 60_000));
+    expect(turnos.map(t => t.message)).toEqual(['imagen lesion']);
+  });
+
+  it('viejo: ya no vale', async () => {
+    turnos.length = 0;
+    await manda('593990000005', '✅ Sí', idDe('sí', 60 * 60_000));
+    expect(turnos).toHaveLength(0);
+    expect(sent.at(-1)!.text).toBe('Esa opción ya no está vigente.');
   });
 });

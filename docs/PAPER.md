@@ -2645,6 +2645,11 @@ mensaje— y siempre vale escribir la etiqueta. Los títulos se recortan al larg
 Meta y una salida repetida sale una sola vez (un título duplicado hace que Meta rechace el
 mensaje entero). En WhatsApp, una búsqueda con un único resultado activa a ese paciente sin
 hacerle elegir. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
+En WhatsApp hay dos salidas con nombres distintos: **Saltar** deja ese campo sin contestar y
+sigue, y **Omitir sección** termina la sección **guardando lo ya contestado**. Salir de una
+sección por cualquier otro camino (un comando, una foto, cambiar de paciente, el menú)
+también guarda antes lo contestado: una respuesta dada no se pierde. Los botones llevan en
+su id qué mandan y cuándo salieron, y por eso siguen sirviendo unos minutos tras un reinicio.
 
 **Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
 JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual
@@ -2729,6 +2734,14 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   contenido: el canal **vuelve a leer el hilo con el JWT del usuario del número**, y por eso
   recibe exactamente lo que vería en la web, con sus permisos y su organización. Un rol que
   solo ve sus propias sesiones recibe solo lo suyo (lo que escribió desde otro dispositivo).
+- **Al hilo común solo pasa contenido; las preguntas del bot son de quien conversa con él.**
+  En un canal el bot guía paso a paso («¿Esta imagen es de la lesión…?», «Omitido.
+  Siguiente: 1.2»): eso va dirigido a esa persona y a nadie más. De una sesión de canal, el
+  hilo muestra solo lo que la persona envió como dato —el resumen de una sección («📋 …»),
+  un adjunto, una nota, o texto libre al agente (`turn.origen = 'agente'`)— y nunca un turno
+  del bot. El eco hacia los canales sigue la misma regla para cualquier sesión, así que **un
+  eco nunca trae una respuesta del bot**. La sesión propia de la web se ve entera, como
+  siempre: ahí las preguntas del bot sí son para quien mira.
 - **Vale mientras el paciente siga activo en el teléfono.** Al cambiar de paciente o
   soltarlo, el eco de ese hilo se corta. Solo se reenvía lo posterior a haberlo activado.
 - **Una sesión por paciente.** El hilo se arma con las sesiones que tienen activo al

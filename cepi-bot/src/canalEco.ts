@@ -33,6 +33,8 @@ export function emitirTurnoDePaciente(ev: TurnoDePaciente): void {
 export interface MensajeDeHilo {
   session_id: string; role: string; content: string;
   author_name?: string; self?: boolean; is_bot?: boolean; ts?: string;
+  /** Lo marca el hilo: dato que alguien envió, no maniobra de su conversación con el bot. */
+  contenido?: boolean;
 }
 
 /** Lee el hilo del paciente como lo ve el dueño de ese JWT. `status` 401 ⇒ token vencido. */
@@ -52,14 +54,13 @@ export function claveDeMensaje(m: MensajeDeHilo): string {
 }
 
 /**
- * El acuse «Paciente activo: …» se emite cada vez que alguien abre al paciente
- * en la web. En el hilo de la web se muestra una sola vez; al teléfono no va.
- */
-const ACUSE_DE_ACTIVACION = /^Paciente activo:/;
-
-/**
- * Lo que le falta ver a un chat: mensajes de OTRAS sesiones, posteriores a
- * `desde` y todavía no enviados. Los de su propia sesión ya los tiene en pantalla.
+ * Lo que le falta ver a un chat: **contenido** de OTRAS sesiones, posterior a
+ * `desde` y todavía no enviado. Lo de su propia sesión ya lo tiene en pantalla.
+ *
+ * Solo contenido: lo que una persona envió como dato. Las preguntas y
+ * respuestas del bot son de la conversación de quien las recibió —reenviarlas
+ * sería hacerle a un tercero una pregunta que no era para él—, y un eco nunca
+ * provoca una respuesta del bot.
  */
 export function mensajesNuevos(
   messages: MensajeDeHilo[], sesionPropia: string | undefined, desde: number, enviados: Set<string>,
@@ -69,13 +70,12 @@ export function mensajesNuevos(
     && !!m.ts && new Date(m.ts).getTime() > desde
     && !enviados.has(claveDeMensaje(m))
     && !!(m.content || '').trim()
-    && !(m.is_bot && ACUSE_DE_ACTIVACION.test(m.content.trimStart())));
+    && !m.is_bot && m.contenido === true);
 }
 
 /** Texto de un mensaje del hilo para un canal: quién lo escribió y qué. */
 export function textoDeEco(m: MensajeDeHilo): string {
-  const quien = m.is_bot ? '🤖 *Asistente*' : `💬 *${m.self ? 'Tú (otro dispositivo)' : (m.author_name || 'Profesional')}*`;
-  return `${quien}\n${m.content}`;
+  return `💬 *${m.self ? 'Tú (otro dispositivo)' : (m.author_name || 'Profesional')}*\n${m.content}`;
 }
 
 // ── El eco de un canal ──────────────────────────────────────────────────────

@@ -191,7 +191,7 @@ describe('WhatsApp: alta de paciente campo por campo', () => {
     await manda({ text: 'Lunes' });
     expect(turnos.map(t => t.message)).toEqual(['/nuevo-paciente 1234567895 || Paciente Prueba || Lunes']);
     expect(ultimo().text).toBe('(1/4) ¿Fuma?');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['Sí', 'No', 'Omitir']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Sí', 'No', 'Saltar']);
   });
 });
 
@@ -206,13 +206,13 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     await manda({ text: 'no' });
     expect(tipos.at(-1)).toBe('list');
     expect(ultimo().text).toBe('(2/4) Fototipo');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'Omitir']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'Saltar', 'Omitir sección']);
   });
 
   it('la fila elegida responde el campo, y el de imágenes pide la foto sin «Listo» todavía', async () => {
     await manda({ boton: boton('III') });
     expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\nEnvía la(s) imagen(es) como foto.');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['Omitir']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Saltar', 'Omitir sección']);
   });
 
   it('texto en el campo de imágenes no se guarda como si fuera una foto', async () => {
@@ -226,7 +226,7 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(descargas).toEqual(['media-1']);
     expect(subidas).toEqual([{ auth: `Bearer ${jwt}`, nombre: 'whatsapp_media-1.jpg', tipo: 'image/jpeg', bytes: 4 }]);
     expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\n📷 1 imagen recibida. Envía otra o toca «Listo».');
-    expect(ultimo().botones.map(b => b.title)).toEqual(['Listo', 'Omitir']);
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Listo', 'Saltar', 'Omitir sección']);
     await manda({ imagen: 'media-2' });
     expect(ultimo().text).toContain('2 imágenes recibidas');
     expect(turnos).toHaveLength(0);                    // nada va al cerebro hasta enviar la sección
@@ -281,12 +281,63 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
   });
 });
 
+describe('WhatsApp: saltar un campo no es omitir la sección', () => {
+  /** Abre el alta y deja el recorrido en la primera pregunta de la ficha. */
+  async function abrirFicha(): Promise<void> {
+    await manda({ text: 'cancelar' });
+    await manda({ text: 'nuevo paciente' });
+    await manda({ text: '111' }); await manda({ text: 'A' }); await manda({ text: 'B' });
+    expect(ultimo().text).toBe('(1/4) ¿Fuma?');
+    turnos.length = 0; sent.length = 0;
+  }
+
+  it('la presentación de la sección explica las dos salidas', async () => {
+    await manda({ text: 'cancelar' });
+    await manda({ text: 'nuevo paciente' });
+    await manda({ text: '111' }); await manda({ text: 'A' });
+    sent.length = 0;
+    await manda({ text: 'B' });
+    expect(sent[0].text).toContain('«Saltar» deja un campo sin contestar. Escribe «omitir sección» para terminarla: lo contestado se guarda.');
+  });
+
+  it('«Saltar» deja ese campo sin contestar y sigue con el siguiente', async () => {
+    await abrirFicha();
+    await manda({ boton: boton('Saltar') });
+    expect(ultimo().text).toBe('(2/4) Fototipo');
+    expect(turnos).toHaveLength(0);
+  });
+
+  it('«Omitir sección» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
+    await abrirFicha();
+    await manda({ boton: boton('Sí') });
+    await manda({ text: 'omitir sección' });
+    expect(turnos).toHaveLength(1);
+    expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: true } });
+    expect(ultimo().text).toBe('👤 Paciente Prueba\nAntecedentes guardados.');
+  });
+
+  it('«Omitir sección» sin ninguna respuesta la omite', async () => {
+    await abrirFicha();
+    await manda({ text: 'omitir sección' });
+    expect(turnos.map(t => t.message)).toEqual(['omitir ficha']);
+  });
+
+  it('salir de la sección por otro camino también guarda lo contestado', async () => {
+    await abrirFicha();
+    await manda({ boton: boton('No') });
+    await manda({ text: 'salir paciente' });
+    expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: false } });
+    expect(turnos[1].message).toBe('salir paciente');
+    expect(sent.map(s => s.text)).toContain('💾 Guardé lo que llevabas de «2.1 Antecedentes».');
+  });
+});
+
 describe('WhatsApp: imagen fuera de un campo de imágenes', () => {
   it('suelta, va al cerebro con el marcador de adjunto y el texto de la foto', async () => {
     await manda({ text: 'cancelar' });
     turnos.length = 0;
     await manda({ imagen: 'media-3', caption: 'lesión en la pierna' });
-    expect(turnos.at(-1).message).toBe('lesión en la pierna\n[adjunto: whatsapp_media-3.jpg · 00000000-0000-4000-8000-000000000003]');
+    expect(turnos.at(-1).message).toMatch(/^lesión en la pierna\n\[adjunto: whatsapp_media-3\.jpg · 00000000-0000-4000-8000-00000000000\d\]$/);
     expect(ultimo().botones.map(b => b.title)).toEqual(['🔬 Imagen de lesión', '📄 Consentimiento']);
   });
 
@@ -329,18 +380,19 @@ describe('WhatsApp: eco del hilo del paciente activo', () => {
     sent.length = 0; lecturasDeHilo.length = 0;
     hilo = [
       { session_id: 'sess-wa', role: 'user', content: 'nota control en 7 días', ts: enUnRato(), author_name: 'Ana' },
-      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos, parece queratosis', ts: enUnRato(), author_name: 'Dra. Derma' },
-      { session_id: 'sess-web', role: 'assistant', content: 'Paciente activo: Paciente Prueba', ts: enUnRato(), is_bot: true },
-      { session_id: 'sess-web', role: 'assistant', content: 'Anotado en la ficha.', ts: enUnRato(), is_bot: true },
-      { session_id: 'sess-web', role: 'user', content: 'viejo', ts: '2020-01-01T00:00:00Z', author_name: 'Dra. Derma' },
+      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos, parece queratosis', ts: enUnRato(), author_name: 'Dra. Derma', contenido: true },
+      // Lo que el bot le contestó a ella, y sus maniobras, son de SU conversación.
+      { session_id: 'sess-web', role: 'assistant', content: '¿Esta imagen es de la lesión o un consentimiento?', ts: enUnRato(), is_bot: true, contenido: false },
+      { session_id: 'sess-web', role: 'user', content: 'omitir ficha', ts: enUnRato(), author_name: 'Dra. Derma', contenido: false },
+      { session_id: 'sess-web', role: 'user', content: 'viejo', ts: '2020-01-01T00:00:00Z', author_name: 'Dra. Derma', contenido: true },
     ];
     emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
     await esperar(150);
     // Lee el hilo con el JWT del usuario del número: recibe lo que vería en la web.
     expect(lecturasDeHilo).toEqual([{ url: expect.stringContaining('patient_id=p-1'), auth: `Bearer ${jwt}` }]);
-    // Ni lo suyo, ni lo anterior a tener al paciente activo, ni el acuse de activación.
-    expect(sent.map(s => s.text)).toEqual([
-      '💬 *Dra. Derma*\nRevisé las fotos, parece queratosis', '🤖 *Asistente*\nAnotado en la ficha.']);
+    // Ni lo suyo, ni lo anterior a tener al paciente activo, ni las preguntas del
+    // bot a otra persona: un eco nunca trae una respuesta del bot.
+    expect(sent.map(s => s.text)).toEqual(['💬 *Dra. Derma*\nRevisé las fotos, parece queratosis']);
   });
 
   it('no repite lo ya enviado, y un turno propio no dispara eco', async () => {
@@ -362,7 +414,7 @@ describe('WhatsApp: eco del hilo del paciente activo', () => {
     await manda({ text: `activar paciente ${OTRO}` });
     expect(turnos.at(-1).session_id).toBeUndefined();        // no arrastra la sesión de p-1
     sent.length = 0; lecturasDeHilo.length = 0;
-    hilo = [{ session_id: 'sess-web', role: 'user', content: 'otro mensaje sobre p-1', ts: enUnRato(), author_name: 'Dra. Derma' }];
+    hilo = [{ session_id: 'sess-web', role: 'user', content: 'otro mensaje sobre p-1', ts: enUnRato(), author_name: 'Dra. Derma', contenido: true }];
     emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
     await esperar(100);
     expect(sent).toEqual([]);
