@@ -23,6 +23,8 @@ const jwt = 'h.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 100
 const sent: Array<{ text: string; botones: string[] }> = [];
 const turnos: any[] = [];
 let sesiones: any[] = [];
+/** Lo que la sesión retomada tenía pendiente, según el cerebro. */
+let estadoDeSesion: any = {};
 
 const realFetch = globalThis.fetch;
 function mockFetch(): void {
@@ -31,6 +33,7 @@ function mockFetch(): void {
     const json = (status: number, body: any) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (u === 'http://bot.test/api/bot/sessions') return json(200, { ok: true, sessions: sesiones });
+    if (u.startsWith('http://bot.test/api/bot/session/')) return json(200, { ok: true, session_id: u.split('/').pop(), active_patient_id: 'p-9', status_header: '👤 Juan Pérez', form: null, pending_action: null, pendiente: null, ...estadoDeSesion });
     if (u.includes('graph.facebook.com')) {
       const b = JSON.parse(init.body);
       if (b.typing_indicator) return json(200, {});
@@ -117,5 +120,40 @@ describe('WhatsApp: un botón enviado antes del reinicio', () => {
     await manda('593990000005', '✅ Sí', idDe('sí', 60 * 60_000));
     expect(turnos).toHaveLength(0);
     expect(sent.at(-1)!.text).toBe('Esa opción ya no está vigente.');
+  });
+});
+
+describe('WhatsApp: retomar una sesión con algo pendiente', () => {
+  const vieja = () => [{ id: 'sess-vieja', canal: 'whatsapp', estado: 'abierta', active_patient_id: 'p-9', patient_name: 'Juan Pérez', updated_at: new Date().toISOString() }];
+
+  it('con una imagen sin clasificar, vuelve a preguntar y NO manda el mensaje al agente', async () => {
+    sesiones = vieja();
+    estadoDeSesion = { pendiente: { text: '¿Esta imagen es de la lesión o un formulario de consentimiento?',
+      quick_replies: [{ label: '🔬 Imagen de lesión', send: 'imagen lesion' }, { label: '📄 Consentimiento', send: 'imagen consentimiento' }] } };
+    await manda('593990000006', '!');
+    turnos.length = 0; const desde = sent.length;
+    await manda('593990000006', 'sí');
+    await new Promise(r => setTimeout(r, 80));
+    expect(turnos).toHaveLength(0);
+    expect(sent.slice(desde)).toEqual([
+      { text: 'Retomamos donde quedó. Tu último mensaje no se procesó: responde a lo que sigue.', botones: [] },
+      { text: '👤 Juan Pérez\n¿Esta imagen es de la lesión o un formulario de consentimiento?', botones: ['🔬 Imagen de lesión', '📄 Consentimiento'] },
+    ]);
+  });
+
+  it('con una sección de la ficha abierta, la retoma preguntando solo lo que falta', async () => {
+    sesiones = vieja();
+    estadoDeSesion = { form: { id: 'ficha_grp_g_1_1', title: '1.1 Datos de contacto', submit_mode: 'structured',
+      fields: [{ key: 'direccion', label: 'Dirección' }, { key: 'telefono', label: 'Teléfono' }, { key: 'ocupacion', label: 'Ocupación' }],
+      values: { direccion: 'Av. Uno', telefono: '555' }, actions: [{ label: 'Omitir', send: 'omitir ficha' }] } };
+    await manda('593990000007', 'hola');
+    turnos.length = 0;
+    await manda('593990000007', 'sí');
+    await new Promise(r => setTimeout(r, 80));
+    expect(turnos).toHaveLength(0);
+    expect(sent.at(-1)).toEqual({ text: '(3/3) Ocupación', botones: ['Saltar', 'Omitir sección'] });
+    await manda('593990000007', 'Ingeniero');
+    expect(turnos.at(-1).form_submission).toEqual({ form_id: 'ficha_grp_g_1_1', data: { ocupacion: 'Ingeniero' } });
+    estadoDeSesion = {};
   });
 });

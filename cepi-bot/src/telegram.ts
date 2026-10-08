@@ -34,7 +34,7 @@ import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
-import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk } from './canalWalk.js';
+import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
@@ -771,7 +771,9 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
 async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<void> {
   const w = formWalks.get(chatId);
   if (!w) return;
-  while (w.idx < w.form.fields.length && w.form.fields[w.idx].type === 'heading') w.idx++;
+  // Se saltan los títulos y lo que ya tiene valor en la ficha: solo se pregunta lo que falta.
+  while (w.idx < w.form.fields.length
+    && (w.form.fields[w.idx].type === 'heading' || yaTieneValor(w, w.form.fields[w.idx]))) w.idx++;
   if (w.idx >= w.form.fields.length) { await submitWalk(invokeChat, chatId); return; }
 
   const f = w.form.fields[w.idx];

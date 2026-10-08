@@ -44,7 +44,7 @@ import {
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
 import {
-  colaPorChat, cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk,
+  colaPorChat, cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
@@ -738,6 +738,45 @@ async function ultimaSesionDelCanal(jwt: string): Promise<{ id: string; patientI
 }
 
 /**
+ * Retoma una sesión recuperada de la base tras un reinicio: si el bot había
+ * dejado algo preguntado —una sección de la ficha abierta, una imagen sin
+ * clasificar, una confirmación— lo vuelve a mostrar. El mensaje retenido NO se
+ * procesa en ese caso: se escribió sin la pregunta a la vista, y mandarlo al
+ * agente como texto libre lo hace improvisar (pasó: «¿Qué muestra la imagen
+ * que adjuntaste?»). Devuelve `false` si no había nada pendiente.
+ */
+async function retomar(ctx: Turno, entrada: Entrada | undefined): Promise<boolean> {
+  const { from } = ctx;
+  const base = process.env.CEPI_BOT_URL || `http://localhost:${process.env.PORT || '3002'}`;
+  let s: any = null;
+  try {
+    const r = await fetch(`${base}/api/bot/session/${phoneSessions.get(from)}`, {
+      headers: { authorization: `Bearer ${ctx.jwt}` },
+    });
+    if (r.ok) s = await r.json().catch(() => null);
+  } catch { s = null; }
+  if (!s?.ok) return false;
+  const seccion = isWalkableForm(s.form);
+  if (!seccion && !s.pendiente && !s.pending_action) return false;
+
+  if (entrada && (entrada.texto || entrada.img)) {
+    await sendWhatsappText(from, 'Retomamos donde quedó. Tu último mensaje no se procesó: responde a lo que sigue.');
+  }
+  await deliver(ctx, {
+    session_id: s.session_id,
+    active_patient_id: s.active_patient_id,
+    status_header: s.status_header,
+    text: s.pendiente?.text
+      || (s.pending_action ? `${s.pending_action.summary}\n\n¿Confirmas?` : 'Seguimos con la ficha:'),
+    // Una pregunta abierta va antes que la sección: se contesta y después sigue la ficha.
+    form: s.pendiente || s.pending_action ? null : s.form,
+    quick_replies: s.pendiente?.quick_replies || [],
+    pending_action: s.pending_action || null,
+  });
+  return true;
+}
+
+/**
  * «Paciente activo» dura minutos (`inactividadMs`). Si la persona vuelve
  * después de ese rato —o el bot se reinició y perdió lo que tenía en memoria—
  * no se da por hecho que sigue con el mismo: el mensaje se retiene y se le
@@ -763,6 +802,9 @@ async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | u
         pacienteActivo.set(from, pend.nombre);
         lastPatient.set(from, { id: pend.adoptar.patientId, name: pend.nombre });
         eco.fijar(from, pend.adoptar.patientId);
+        // La sesión se recuperó de la base: lo que el bot tenía preguntado ya
+        // no está en memoria. Se vuelve a mostrar antes que nada.
+        if (await retomar(ctx, pend.entrada)) return true;
       }
       if (pend.entrada) { await procesar(ctx, pend.entrada); return true; }
       // Contestó al aviso de pausa sin haber escrito nada más: se retoma donde
@@ -1103,7 +1145,9 @@ async function askWalkField(ctx: Turno): Promise<void> {
   const { from } = ctx;
   const w = formWalks.get(from);
   if (!w) return;
-  while (w.idx < w.form.fields.length && w.form.fields[w.idx].type === 'heading') w.idx++;
+  // Se saltan los títulos y lo que ya tiene valor en la ficha: solo se pregunta lo que falta.
+  while (w.idx < w.form.fields.length
+    && (w.form.fields[w.idx].type === 'heading' || yaTieneValor(w, w.form.fields[w.idx]))) w.idx++;
   if (w.idx >= w.form.fields.length) { await submitWalk(ctx); return; }
 
   const f = w.form.fields[w.idx];

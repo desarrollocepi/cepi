@@ -32,6 +32,18 @@ export function walkOptions(f: BotFormField): Array<{ label: string; value: any 
     : { label: o.label, value: (o as any).value });
 }
 
+/**
+ * ¿El campo ya tiene valor guardado? El cerebro manda la sección con lo que ya
+ * hay en la ficha (`form.values`). Un canal pregunta solo lo que falta: volver a
+ * pedir lo ya contestado —por ejemplo tras guardar media sección— cansa y
+ * arriesga pisar un dato bueno.
+ */
+export function yaTieneValor(w: FormWalk, f: BotFormField): boolean {
+  if (!f.key || f.type === 'image_upload') return false;
+  const v = (w.form.values || {})[f.key];
+  return v !== undefined && v !== null && v !== '';
+}
+
 /** Posición «(3/7)» del campo actual entre los que se preguntan. */
 export function posicion(w: FormWalk): { pos: number; n: number } {
   const n = w.form.fields.filter(x => x.type !== 'heading').length;

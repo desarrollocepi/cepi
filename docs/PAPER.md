@@ -2761,8 +2761,13 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
 - **Tras un reinicio del bot pasa lo mismo.** El estado del canal vive en memoria y un
   deploy lo borra. Cada sesión lleva de qué canal es (`extracted_slots.canal`); con el
   primer mensaje, WhatsApp busca la última sesión de ese usuario por el canal y, si tiene
-  paciente activo y menos de un día, pregunta si sigue con él. «Sí» retoma **esa** sesión.
-  Un recorrido que estaba a medias no se recupera: sus respuestas sin enviar se pierden.
+  paciente activo y menos de un día, pregunta si sigue con él. «Sí» retoma **esa** sesión
+  y **vuelve a mostrar lo que el bot había dejado preguntado** (`GET /api/bot/session/:id`:
+  una imagen sin clasificar, una confirmación, la sección de la ficha abierta). El mensaje
+  retenido no se procesa en ese caso: se escribió sin la pregunta a la vista, y mandarlo al
+  agente como texto libre lo hace improvisar. La sección se retoma preguntando **solo lo que
+  falta** (los canales saltan los campos que ya tienen valor en la ficha); las respuestas
+  del recorrido que no se habían enviado sí se pierden.
 - WhatsApp y Telegram reciben el eco. El acuse «Paciente activo: …» no se reenvía. No hay
   tope de mensajes: cada turno dispara su eco, así que lo normal son dos (el mensaje y la
   respuesta del asistente).

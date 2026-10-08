@@ -214,6 +214,10 @@ app.get('/api/bot/session/:id', async (req: Request, res: Response, next: NextFu
       pending_action: s.pending_action,
       form,
       bookmarks: isFicha ? await fichaBookmarks(mcp, s) : [],
+      status_header: computeStatusHeader(s),
+      // Una pregunta del bot que quedó sin contestar: quien retoma la sesión
+      // (un canal tras un reinicio) la vuelve a mostrar en vez de adivinar.
+      pendiente: (s.extracted_slots as any)?.pending_image?.attachment_id ? PREGUNTA_IMAGEN : null,
     });
   } catch (err) { next(err); }
   finally {
@@ -525,6 +529,14 @@ const NOTA_SIN_PACIENTE =
   'PROHIBIDO pedir o recoger datos de un paciente (nombre, cédula, edad, motivo, síntomas, antecedentes) ' +
   'y PROHIBIDO crear el paciente tú. Si quiere registrar o atender a alguien, dile solo que escriba ' +
   '«nuevo paciente» para crearlo o «paciente» para buscarlo.';
+/** La pregunta que queda abierta tras subir una imagen suelta (`pending_image`). */
+const PREGUNTA_IMAGEN = {
+  text: '¿Esta imagen es de la lesión o un formulario de consentimiento?',
+  quick_replies: [
+    { label: '🔬 Imagen de lesión', send: 'imagen lesion' },
+    { label: '📄 Consentimiento',   send: 'imagen consentimiento' },
+  ],
+};
 const ATAJOS_SIN_PACIENTE = [
   { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
   { label: '🔍 Buscar paciente', send: 'paciente' },
@@ -2095,7 +2107,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           ...(session.extracted_slots || {}),
           pending_image: { attachment_id: attachmentId, name: fileName },
         };
-        const ackText = '¿Esta imagen es de la lesión o un formulario de consentimiento?';
+        const ackText = PREGUNTA_IMAGEN.text;
         session.turns = [
           ...session.turns,
           { role: 'user',      content: message },
@@ -2107,10 +2119,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           history: session.turns, toolCalls: [],
           active_patient_id: activePatientId,
           active_episode_id: activeEpisodeId,
-          quick_replies: [
-            { label: '🔬 Imagen de lesión', send: 'imagen lesion' },
-            { label: '📄 Consentimiento',   send: 'imagen consentimiento' },
-          ],
+          quick_replies: PREGUNTA_IMAGEN.quick_replies,
         });
       }
 
