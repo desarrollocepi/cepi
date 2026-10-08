@@ -732,6 +732,17 @@ async function routeTurn(
     await sendWelcomeMenu(chatId);
     return;
   }
+  // Buscar o crear OTRO paciente con uno activo: el cerebro, con paciente activo,
+  // no entra a la búsqueda (lo manda al agente). El canal cierra antes la sesión
+  // de este paciente y el pedido arranca una limpia.
+  if (actual && /^\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente|paciente|buscar(\s+paciente)?|atenci[oó]n)\s*$/i.test(turnText)) {
+    const nombre = pacienteActivo.get(chatId) || lastPatient.get(chatId)?.name || 'el paciente';
+    chatSessions.delete(chatId);
+    pacienteActivo.delete(chatId);
+    eco.soltar(chatId);
+    crudo.anotar(chatId, { dir: 'sys', tipo: 'suelta', texto: nombre });
+    await sendTelegramText(chatId, `Dejé a ${nombre}.`);
+  }
   const sessionId = chatSessions.get(chatId) || undefined;
 
   if (!(await avisarPensando(chatId, turnText))) return;

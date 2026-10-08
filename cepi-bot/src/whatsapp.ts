@@ -980,6 +980,9 @@ async function recibirEnCampo(ctx: Turno, w: FormWalk, f: BotFormField, img: Ima
   await askWalkField(ctx);
 }
 
+/** Pedidos de buscar o crear un paciente: con uno activo, implican dejarlo. */
+const ENTRA_A_OTRO = /^\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente|paciente|buscar(\s+paciente)?|atenci[oó]n)\s*$/i;
+
 /** «salir paciente» y sus variantes. */
 const SUELTA_PACIENTE = /^\/?\s*(salir|cerrar|olvidar)\s+paciente\s*$/i;
 
@@ -1038,6 +1041,18 @@ async function routeTurn(
     await sendWhatsappText(from, `Listo, dejé a *${nombre}*.`);
     await sendMenu(from);
     return 'ok';
+  }
+  // Buscar o crear OTRO paciente con uno activo: el cerebro, con paciente activo,
+  // no entra a la búsqueda —manda el pedido al agente, que contesta «¿Qué paciente
+  // buscás?» dentro de la sesión del paciente actual—. El canal cierra antes la
+  // sesión de este paciente y el pedido arranca una limpia.
+  if (actual && ENTRA_A_OTRO.test(String((cuerpo as any).message || ''))) {
+    const nombre = nombreDelActivo(from);
+    phoneSessions.delete(from);
+    pacienteActivo.delete(from);
+    eco.soltar(from);
+    crudo.anotar(from, { dir: 'sys', tipo: 'suelta', texto: nombre });
+    await sendWhatsappText(from, `Dejé a *${nombre}*.`);
   }
   const sessionId = phoneSessions.get(from) || undefined;
 

@@ -474,6 +474,20 @@ describe('WhatsApp: eco del hilo del paciente activo', () => {
     expect(ultimo().text).toContain('¿Qué quieres hacer?');
   });
 
+  it('buscar otro paciente con uno activo: lo deja y busca en una sesión limpia', async () => {
+    await manda({ text: 'nota control' });                 // p-1 activo en sess-wa
+    turnos.length = 0; sent.length = 0;
+    await manda({ text: 'buscar paciente' });
+    // El pedido no llega al cerebro dentro de la sesión del paciente anterior.
+    expect(turnos.map(t => [t.message, t.session_id])).toEqual([['buscar paciente', undefined]]);
+    expect(sent[0].text).toBe('Dejé a *Paciente Prueba*.');
+    // Y dejó de recibir el eco de ese paciente.
+    lecturasDeHilo.length = 0;
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    await new Promise(r => setTimeout(r, 100));
+    expect(lecturasDeHilo).toEqual([]);
+  });
+
   it('al soltar al paciente la sesión termina con él', async () => {
     await manda({ text: 'nota x' });
     await manda({ text: 'salir paciente' });
