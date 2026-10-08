@@ -501,3 +501,63 @@ describe('telegram: eco del hilo del paciente activo', () => {
     expect(textsTo(CHAT, desde)).toEqual([]);
   });
 });
+
+describe('telegram: saltar un campo no es omitir la sección', () => {
+  const CHAT = 7003;
+  const datosDe = (s: { reply_markup?: any }) =>
+    (s?.reply_markup?.inline_keyboard || []).flat().map((b: any) => `${b.text}=${b.callback_data}`);
+
+  /** Abre la sección de la ficha y deja el recorrido en su primera pregunta. */
+  async function abrirFicha(): Promise<void> {
+    await update(msgUpdate(CHAT, 'menú'));
+    await update(msgUpdate(CHAT, 'ficha'));
+    expect(lastTo(CHAT).text).toBe('(1/2) ¿Fuma?');
+  }
+
+  it('cada pregunta ofrece «Saltar» y «Omitir sección», y la presentación lo explica', async () => {
+    await update(msgUpdate(CHAT, 'hola'));            // menú de bienvenida
+    const desde = sent.length;
+    await update(msgUpdate(CHAT, 'ficha'));
+    expect(textsTo(CHAT, desde)[0]).toContain('«Saltar» deja un campo sin contestar. «Omitir sección» la termina: lo contestado se guarda.');
+    expect(datosDe(lastTo(CHAT))).toEqual(['Sí=fw:0:0', 'No=fw:0:1', 'Saltar=fs:0', 'Omitir sección=omitir ficha']);
+  });
+
+  it('«Saltar» deja ese campo sin contestar y sigue con el siguiente', async () => {
+    await abrirFicha();
+    const turnos = inbound.length;
+    await update(tapUpdate(CHAT, 'fs:0'));
+    expect(lastTo(CHAT).text).toBe('(2/2) Sexo');
+    expect(inbound.length).toBe(turnos);
+  });
+
+  it('«Omitir sección» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
+    await abrirFicha();
+    await update(tapUpdate(CHAT, 'fw:0:0'));          // ¿Fuma? → Sí
+    await update(tapUpdate(CHAT, 'omitir ficha'));
+    expect(inbound.at(-1).form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: true } });
+    expect(lastTo(CHAT).text).toContain('Antecedentes guardados.');
+  });
+
+  it('«Omitir sección» sin ninguna respuesta la omite', async () => {
+    await abrirFicha();
+    await update(tapUpdate(CHAT, 'omitir ficha'));
+    expect(inbound.at(-1).message).toBe('omitir ficha');
+    expect(inbound.at(-1).form_submission).toBeUndefined();
+  });
+
+  it('salir de la sección por otro camino también guarda lo contestado', async () => {
+    await abrirFicha();
+    await update(tapUpdate(CHAT, 'fw:0:1'));          // ¿Fuma? → No
+    const turnos = inbound.length; const desde = sent.length;
+    await update(msgUpdate(CHAT, 'salir paciente'));
+    expect(inbound[turnos].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: false } });
+    expect(inbound[turnos + 1].message).toBe('salir paciente');
+    expect(textsTo(CHAT, desde)).toContain('💾 Guardé lo que llevabas de «2.1 Antecedentes».');
+  });
+
+  it('en el alta de paciente no hay «Saltar»: sus campos son obligatorios', async () => {
+    await update(msgUpdate(CHAT, 'menú'));
+    await update(tapUpdate(CHAT, 'nuevo paciente'));
+    expect(datosDe(lastTo(CHAT))).toEqual([]);
+  });
+});

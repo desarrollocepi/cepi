@@ -843,7 +843,7 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     }
     // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir sección»
     // termina la sección. Ninguno es el valor de un campo.
-    if (/^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
+    if (walk.form.submit_mode === 'structured' && /^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
     if (/^\/?\s*omitir\s+(ficha|secci[oó]n)\s*$/i.test(texto)) { await omitirSeccion(ctx, walk); return; }
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
@@ -1112,8 +1112,9 @@ async function askWalkField(ctx: Turno): Promise<void> {
   // campo sin contestar y sigue; «Omitir sección» termina la sección (lo ya
   // contestado se guarda). Un «Omitir» a secas se leía como lo primero y hacía
   // lo segundo, perdiendo las respuestas.
+  // (En el alta de paciente no hay «Saltar»: sus tres campos son obligatorios.)
   const acciones: Opcion[] = [
-    { label: 'Saltar', accion: 'saltar' },
+    ...(w.form.submit_mode === 'structured' ? [{ label: 'Saltar', accion: 'saltar' as const }] : []),
     ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
       ? { label: 'Omitir sección', send: 'omitir ficha' } : { label: a.label, send: a.send }),
   ];

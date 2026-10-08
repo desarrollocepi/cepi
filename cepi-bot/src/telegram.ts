@@ -255,6 +255,8 @@ function touch(chatId: number): void {
 /** Idle timer fired: proactively show the menu and reset the chat's session. */
 async function onIdle(chatId: number): Promise<void> {
   idleTimers.delete(chatId);
+  // El menú reinicia el chat: lo contestado de una sección a medias se guarda antes.
+  await guardarParcial(chatId);
   await sendWelcomeMenu(chatId);
   // The menu was just shown; treat the user's next message as a normal turn.
   lastSeen.set(chatId, Date.now());
@@ -603,7 +605,7 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
   if (activeWalk) {
     if (hasImage) {
       if (fichaWalk) {
-        formWalks.delete(chatId);            // image flow takes over the section
+        await guardarParcial(chatId);        // image flow takes over the section; lo contestado se guarda
       } else {
         await sendTelegramText(chatId,
           'Estoy registrando los datos del paciente — todavía no puedo recibir imágenes. ' +
@@ -616,19 +618,25 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
       // messages carry only a caption). Command-like inputs abandon capture.
       const answer = String(message?.text || message?.caption || '').trim();
       if (/^\/?\s*(cancelar|salir|men[uú])\s*$/i.test(answer)) {
-        formWalks.delete(chatId);
+        await guardarParcial(chatId);
         await sendWelcomeMenu(chatId);
         return;
       }
-      // "omitir" and slash-commands aren't field values — hand them to the
-      // brain so they behave like the equivalent button / typed command.
-      if (/^\/?\s*omitir(\s+ficha)?\s*$/i.test(answer)) {
-        formWalks.delete(chatId);
-        await routeTurn(invokeChat, chatId, 'omitir ficha', jwt, '');
+      // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir sección»
+      // termina la sección guardando lo contestado. Ninguno es el valor de un campo.
+      if (fichaWalk && /^\/?\s*(saltar|omitir)\s*$/i.test(answer)) {
+        activeWalk.idx++;
+        await askWalkField(invokeChat, chatId);
         return;
       }
-      if (/^\//.test(answer)) {
-        formWalks.delete(chatId);
+      if (/^\/?\s*omitir\s+(ficha|secci[oó]n)\s*$/i.test(answer)) {
+        await omitirSeccion(invokeChat, chatId, jwt);
+        return;
+      }
+      // Slash-commands, y los comandos que cambian o sueltan al paciente,
+      // tampoco: tomarlos como respuesta deja al médico atrapado en la sección.
+      if (/^\//.test(answer) || CAMBIA_PACIENTE.test(answer)) {
+        await guardarParcial(chatId);
         await routeTurn(invokeChat, chatId, answer, jwt, '');
         return;
       }
@@ -741,7 +749,7 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
     // rendering the field list + "Respondé con los datos" would contradict
     // the one-by-one walk that follows.
     const intro = body.form.id.startsWith('ficha_grp_')
-      ? composeReply(body)
+      ? composeReply(body) + '\n\n«Saltar» deja un campo sin contestar. «Omitir sección» la termina: lo contestado se guarda.'
       : composeReply({ ...body, form: null });
     formWalks.set(chatId, { form: body.form, idx: 0, answers: {} });
     await sendTelegramText(chatId, intro);
@@ -768,7 +776,17 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
 
   const f = w.form.fields[w.idx];
   const { pos, n } = posicion(w);
-  const actions = (w.form.actions || []).map(a => ({ text: a.label, callback_data: a.send }));
+  // Dos salidas con nombres que no se confunden: «Saltar» deja ESTE campo sin
+  // contestar y sigue; «Omitir sección» termina la sección guardando lo ya
+  // contestado. Un «Omitir» a secas se leía como lo primero y hacía lo segundo,
+  // perdiendo las respuestas. `fs:<campo>` lleva el índice, como `fw:`, para
+  // ignorar el toque en un teclado viejo.
+  // (En el alta de paciente no hay «Saltar»: sus tres campos son obligatorios.)
+  const actions = [
+    ...(w.form.submit_mode === 'structured' ? [{ text: 'Saltar', callback_data: `fs:${w.idx}` }] : []),
+    ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
+      ? { text: 'Omitir sección', callback_data: 'omitir ficha' } : { text: a.label, callback_data: a.send }),
+  ];
 
   if (f.type === 'radio' || f.type === 'checkbox') {
     // callback_data carries BOTH the field index and the option index so a
@@ -785,6 +803,51 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
     await sendTelegramText(chatId, `(${pos}/${n}) ${f.label}${hint}`,
       actions.length ? { inline_keyboard: [actions] } : undefined);
   }
+}
+
+/** Comandos que sacan de un recorrido aunque no lleven barra. */
+const CAMBIA_PACIENTE = /^\s*((salir|cerrar|olvidar)\s+paciente|activar\s+paciente\s+[0-9a-f-]{36}|nuevo\s+paciente|buscar\s+paciente)\s*$/i;
+
+/**
+ * Sale de un recorrido sin perder lo contestado: si es una sección de la ficha
+ * con respuestas, las envía al cerebro tal como están y recién entonces lo
+ * cierra. La respuesta del cerebro a ese envío no se muestra: quien sale ya va
+ * a otra cosa.
+ */
+async function guardarParcial(chatId: number): Promise<void> {
+  const w = formWalks.get(chatId);
+  formWalks.delete(chatId);
+  if (!w || w.form.submit_mode !== 'structured' || !Object.keys(w.answers).length) return;
+  const jwt = chatAuth.get(chatId);
+  if (!cerebro || !jwt) return;
+  const eventos = crudo.tomar(chatId);
+  try {
+    const { status, body } = await cerebro({
+      headers: { authorization: `Bearer ${jwt}` },
+      body: { ...cuerpoDeEnvio(w), session_id: chatSessions.get(chatId), canal: 'telegram', canal_raw: eventos },
+    });
+    if (status !== 200 || body?.ok === false) throw new Error(body?.error || `estado ${status}`);
+    await sendTelegramText(chatId, `💾 Guardé lo que llevabas de «${w.form.title}».`);
+  } catch (e: any) {
+    crudo.devolver(chatId, eventos);
+    console.error('[telegram] guardado parcial:', e?.message || e);
+    await sendTelegramText(chatId, `⚠️ No pude guardar lo que llevabas de «${w.form.title}».`);
+  }
+}
+
+/**
+ * «Omitir sección»: termina la sección. Con respuestas, se envía con lo que
+ * tiene (el cerebro guarda y pasa a la siguiente); sin ninguna, se omite.
+ */
+async function omitirSeccion(invokeChat: InvokeChat, chatId: number, jwt: string): Promise<void> {
+  const w = formWalks.get(chatId);
+  if (w && w.form.submit_mode === 'structured' && Object.keys(w.answers).length) {
+    w.idx = w.form.fields.length;
+    await submitWalk(invokeChat, chatId);
+    return;
+  }
+  formWalks.delete(chatId);
+  await routeTurn(invokeChat, chatId, 'omitir ficha', jwt, '');
 }
 
 /** Record the answer for the current field and advance the walk. */
@@ -858,9 +921,22 @@ async function handleCallback(invokeChat: InvokeChat, cq: any): Promise<void> {
     await applyWalkAnswer(invokeChat, chatId, value);
     return;
   }
-  // Any other button while walking is an action (e.g. "Omitir"): leave the walk
-  // and route its send normally.
-  if (formWalks.has(chatId)) formWalks.delete(chatId);
+  // «Saltar»: deja sin contestar el campo actual (si el teclado es el suyo).
+  if (typeof data === 'string' && data.startsWith('fs:')) {
+    const w = formWalks.get(chatId);
+    if (!w || parseInt(data.slice(3), 10) !== w.idx) return;
+    w.idx++;
+    await askWalkField(invokeChat, chatId);
+    return;
+  }
+  // «Omitir sección» en medio de un recorrido: termina guardando lo contestado.
+  if (formWalks.has(chatId) && typeof data === 'string' && /^omitir/i.test(data)) {
+    await omitirSeccion(invokeChat, chatId, jwt);
+    return;
+  }
+  // Any other button while walking is an action: leave the walk (guardando lo
+  // contestado) and route its send normally.
+  if (formWalks.has(chatId)) await guardarParcial(chatId);
 
   const mapped = callbackSends.get(data);
   // A bare internal id (q<n>) that isn't in the map is a stale button — its

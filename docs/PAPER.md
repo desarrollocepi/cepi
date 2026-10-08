@@ -2645,11 +2645,13 @@ mensaje— y siempre vale escribir la etiqueta. Los títulos se recortan al larg
 Meta y una salida repetida sale una sola vez (un título duplicado hace que Meta rechace el
 mensaje entero). En WhatsApp, una búsqueda con un único resultado activa a ese paciente sin
 hacerle elegir. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
-En WhatsApp hay dos salidas con nombres distintos: **Saltar** deja ese campo sin contestar y
-sigue, y **Omitir sección** termina la sección **guardando lo ya contestado**. Salir de una
-sección por cualquier otro camino (un comando, una foto, cambiar de paciente, el menú)
-también guarda antes lo contestado: una respuesta dada no se pierde. Los botones llevan en
-su id qué mandan y cuándo salieron, y por eso siguen sirviendo unos minutos tras un reinicio.
+En una sección de la ficha hay dos salidas con nombres distintos, en los dos canales:
+**Saltar** deja ese campo sin contestar y sigue, y **Omitir sección** termina la sección
+**guardando lo ya contestado**. Salir de una sección por cualquier otro camino (un comando,
+una foto, cambiar de paciente, el menú, el reinicio por inactividad de Telegram) también
+guarda antes lo contestado: una respuesta dada no se pierde. La excepción es un reinicio del
+bot, que borra el recorrido en curso. En WhatsApp los botones llevan en su id qué mandan y
+cuándo salieron, y por eso siguen sirviendo unos minutos tras un reinicio.
 
 **Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
 JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual
