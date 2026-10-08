@@ -25,6 +25,8 @@ process.env.TELEGRAM_BOT_PASSWORD = 'secret';
 // o sea sin estar limitado a nadie (PAPER §27.4).
 process.env.TELEGRAM_BOT_ORG = 'cepi';
 process.env.WHATSAPP_WEBHOOK_PORT = '0';            // random free port
+// Ventana de gracia corta: alcanza para tocar «Cancelar» y no frena la suite.
+process.env.CEPI_CANAL_GRACIA_MS = '150';
 
 import { startWhatsapp, phoneCandidates } from '../src/whatsapp.js';
 
@@ -40,6 +42,8 @@ const sent: Array<{ to: string; text: string }> = [];
 const turns: Array<{ auth: string; message: string }> = [];
 /** Ids de mensaje para los que el bot encendió el «escribiendo…». */
 const typing: string[] = [];
+/** Ids de los botones «Cancelar» que salieron con el aviso. */
+const botones: string[] = [];
 /** Lo que el bot le mandó al endpoint de identidad, para poder afirmar sobre org y ruta. */
 const resoluciones: Array<{ ruta: string; body: any }> = [];
 /** Números dados de alta por el mock de `/ensure`. */
@@ -56,7 +60,11 @@ function mockFetch(): void {
       const b = JSON.parse(init.body);
       // El «escribiendo…» va por el mismo endpoint y no es un mensaje.
       if (b.typing_indicator) { typing.push(b.message_id); return json(200, { success: true }); }
-      sent.push({ to: b.to, text: b.text.body });
+      // El aviso con botón es `interactive`; su id de botón queda aparte.
+      if (b.type === 'interactive') {
+        botones.push(b.interactive.action.buttons[0].reply.id);
+        sent.push({ to: b.to, text: b.interactive.body.text });
+      } else sent.push({ to: b.to, text: b.text.body });
       return json(200, { messages: [{ id: 'wamid.x' }] });
     }
     if (u.endsWith('/api/auth/login')) return json(200, { token: jwtFor('svc') });
@@ -107,11 +115,13 @@ beforeEach(() => {
 });
 
 /** POST a one-message webhook payload signed like Meta, then let it process. */
-async function inbound(from: string, text: string, perfil?: string, esperados = 1): Promise<void> {
+async function inbound(from: string, text: string, perfil?: string, esperados = 1, boton?: string): Promise<void> {
   const raw = JSON.stringify({
     object: 'whatsapp_business_account',
     entry: [{ changes: [{ field: 'messages', value: {
-      messages: [{ from, id: `wamid.${from}`, type: 'text', text: { body: text } }],
+      messages: [boton
+        ? { from, id: `wamid.${from}`, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: boton, title: 'Cancelar' } } }
+        : { from, id: `wamid.${from}`, type: 'text', text: { body: text } }],
       ...(perfil ? { contacts: [{ wa_id: from, profile: { name: perfil } }] } : {}),
     } }] }],
   });
@@ -188,6 +198,62 @@ describe('aviso de «pensando» con el paciente activo', () => {
     sent.length = 0;
     await inbound('593990000001', 'hola');
     expect(sent.map(s => s.text)).toEqual(['Listo.']);
+  });
+});
+
+describe('ventana de gracia: «Cancelar» antes de que el mensaje se procese', () => {
+  const conPaciente = (texto: string) => ({ status: 200, body: {
+    text: texto, session_id: 'sess-wa', active_patient_id: 'p-1', status_header: '👤 Juan Pérez',
+  } });
+  const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+  // Suelta al paciente: si queda activo, los turnos de las suites siguientes
+  // llevarían aviso y ventana, y su respuesta caería en otro test.
+  afterAll(async () => {
+    brainReply = { status: 200, body: { text: 'Listo.', session_id: 'sess-wa' } };
+    await inbound('593990000001', 'salir paciente');
+    await esperar(250);
+  });
+
+  /** Deja la sesión con paciente activo y los registros en cero. */
+  async function conPacienteActivo(): Promise<void> {
+    brainReply = conPaciente('Paciente activo.');
+    await inbound('593990000001', 'ver paciente');
+    await esperar(250);                      // que venza cualquier ventana anterior
+    sent.length = 0; turns.length = 0; botones.length = 0;
+  }
+
+  it('cancelar dentro de la ventana: el mensaje NO llega al cerebro', async () => {
+    await conPacienteActivo();
+    await inbound('593990000001', 'tiene fiebre');        // sale el aviso y espera
+    expect(botones).toHaveLength(1);
+    expect(turns).toHaveLength(0);
+    await inbound('593990000001', '', undefined, 2, botones[0]);
+    await esperar(250);
+    expect(turns).toHaveLength(0);
+    expect(sent.map(s => s.text)).toEqual(['⏳ Continuando con Juan Pérez…', '🚫 Cancelado: no procesé tu mensaje.']);
+  });
+
+  it('cancelar tarde: el mensaje ya se procesó y se le dice', async () => {
+    await conPacienteActivo();
+    brainReply = conPaciente('Anotado.');
+    await inbound('593990000001', 'tiene fiebre', undefined, 2);
+    expect(turns).toHaveLength(1);
+    sent.length = 0;
+    await inbound('593990000001', '', undefined, 1, botones[0]);
+    expect(sent.map(s => s.text)).toEqual(['Ese mensaje ya se procesó: no se pudo cancelar.']);
+  });
+
+  it('el botón de otro número no cancela el turno', async () => {
+    await conPacienteActivo();
+    brainReply = conPaciente('Anotado.');
+    linked['+593990000002'] = 'otro';
+    const turno = inbound('593990000001', 'tiene fiebre', undefined, 2);
+    await esperar(40);
+    await inbound('593990000002', '', undefined, 3, botones[0]);
+    await turno;
+    delete linked['+593990000002'];
+    expect(turns.map(t => t.message)).toEqual(['tiene fiebre']);
   });
 });
 

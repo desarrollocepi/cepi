@@ -97,6 +97,14 @@ let gateOn = false;
 async function scriptedBrain({ body }: { body: any; headers?: Record<string, string> }) {
   inbound.push(body);
   const msg = String(body?.message || '');
+  // Sesión con paciente activo: lo que habilita el aviso de «pensando».
+  if (/^(ver paciente|tiene fiebre)$/i.test(msg)) {
+    return { status: 200, body: {
+      ok: true, session_id: 'sess-pac', text: msg === 'tiene fiebre' ? 'Anotado.' : 'Paciente activo.',
+      active_patient_id: 'p-1', status_header: '👤 Juan Pérez',
+      form: null, quick_replies: [], pending_action: null,
+    } };
+  }
   if (body?.form_submission?.form_id === 'ficha_grp_g_2_1') {
     return { status: 200, body: {
       ok: true, session_id: 'sess-1', text: 'Antecedentes guardados.',
@@ -405,5 +413,57 @@ describe('telegram ficha walk callbacks', () => {
     await new Promise(res => setTimeout(res, 60));
     expect(inbound.some(b => b?.message === 'fw:0:0')).toBe(false);
     expect(inbound.length).toBe(before);
+  });
+});
+
+describe('telegram: aviso de «pensando» y ventana de gracia', () => {
+  const CHAT = 7001;
+  const esperar = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const botonCancelar = (desde: number) => sent.slice(desde)
+    .flatMap(s => (s.reply_markup?.inline_keyboard || []).flat())
+    .find((b: any) => String(b.callback_data).startsWith('cx:'))?.callback_data as string;
+
+  beforeAll(async () => {
+    process.env.CEPI_CANAL_GRACIA_MS = '200';
+    await update(msgUpdate(CHAT, 'hola'));            // menú de bienvenida
+    await update(msgUpdate(CHAT, 'ver paciente'));    // deja paciente activo
+  });
+  afterAll(() => { delete process.env.CEPI_CANAL_GRACIA_MS; });
+
+  it('avisa con quién continúa y, si nadie cancela, procesa el mensaje', async () => {
+    const desde = sent.length; const turnos = inbound.length;
+    await update(msgUpdate(CHAT, 'tiene fiebre'));
+    await esperar(350);
+    expect(textsTo(CHAT, desde)).toEqual(['⏳ Continuando con Juan Pérez…', '👤 Juan Pérez\nAnotado.']);
+    expect(botonCancelar(desde)).toMatch(/^cx:/);
+    expect(inbound.length).toBe(turnos + 1);
+  });
+
+  it('«Cancelar» dentro de la ventana: el mensaje no llega al cerebro', async () => {
+    const desde = sent.length; const turnos = inbound.length;
+    await update(msgUpdate(CHAT, 'tiene fiebre'));
+    // El toque entra aunque la cola del chat esté ocupada por ese turno.
+    await realFetch(`${base}/telegram/webhook`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tapUpdate(CHAT, botonCancelar(desde))),
+    });
+    await esperar(350);
+    expect(inbound.length).toBe(turnos);
+    // El toque del test no trae message_id, así que el «cancelado» sale como
+    // mensaje nuevo; con message_id edita el propio aviso.
+    expect(textsTo(CHAT, desde)).toEqual(['⏳ Continuando con Juan Pérez…', '🚫 Cancelado: no procesé tu mensaje.']);
+  });
+
+  it('«Cancelar» tarde no deshace nada ni manda el turno de nuevo', async () => {
+    const desde = sent.length;
+    await update(msgUpdate(CHAT, 'tiene fiebre'));
+    await esperar(350);
+    const turnos = inbound.length;
+    await realFetch(`${base}/telegram/webhook`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tapUpdate(CHAT, botonCancelar(desde))),
+    });
+    await esperar(100);
+    expect(inbound.length).toBe(turnos);
   });
 });

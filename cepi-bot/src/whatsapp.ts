@@ -39,7 +39,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
-import { avisoContinuando, pacienteDeRespuesta } from './canalAviso.js';
+import {
+  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
+  TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
+} from './canalAviso.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -218,6 +221,41 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
   }
 }
 
+/** Prefijo del id del botón «Cancelar» del aviso; lo que sigue es el token de la ventana. */
+const BOTON_CANCELAR = 'cancelar:';
+
+/**
+ * El aviso de «pensando» con su botón «Cancelar» (mensaje interactivo). WhatsApp
+ * no deja editar ni retirar el botón después: un toque tardío recibe TXT_TARDE.
+ */
+async function sendWhatsappAviso(to: string, text: string, token: string): Promise<void> {
+  const tok     = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!tok || !phoneId) {
+    console.log(`[whatsapp] (dry-run, no WHATSAPP_TOKEN/PHONE_ID) → ${to}: ${text} [${TXT_CANCELAR}]`);
+    return;
+  }
+  try {
+    const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text },
+          action: { buttons: [{ type: 'reply', reply: { id: `${BOTON_CANCELAR}${token}`, title: TXT_CANCELAR } }] },
+        },
+      }),
+    });
+    if (!r.ok) console.error(`[whatsapp] aviso failed ${r.status}: ${await r.text()}`);
+  } catch (e: any) {
+    console.error('[whatsapp] aviso error:', e?.message || e);
+  }
+}
+
 /**
  * Indicador de «escribiendo…» mientras el cerebro arma la respuesta. Meta lo
  * ata a marcar como leído el mensaje entrante, dura hasta 25 s o hasta la
@@ -338,6 +376,14 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
     return;
   }
 
+  // Toque en «Cancelar» del aviso: cierra la ventana de gracia de ese turno.
+  const boton = msg?.interactive?.button_reply?.id;
+  if (typeof boton === 'string' && boton.startsWith(BOTON_CANCELAR)) {
+    const ok = cancelarGracia(boton.slice(BOTON_CANCELAR.length), from);
+    await sendWhatsappText(from, ok ? TXT_CANCELADO : TXT_TARDE);
+    return;
+  }
+
   // Only plain text is routed for now (images/audio would map to attachments).
   const text = msg?.text?.body;
   if (typeof text !== 'string' || !text.trim()) {
@@ -346,10 +392,19 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   }
   const sessionId = phoneSessions.get(from) || undefined;
 
-  // «Pensando»: primero el texto y después el indicador, porque cualquier
-  // mensaje saliente apaga el «escribiendo…».
+  // «Pensando»: el aviso con su botón «Cancelar», la ventana de gracia y recién
+  // después el «escribiendo…» (cualquier mensaje saliente lo apaga, y antes de
+  // que venza la ventana todavía no se está procesando nada).
   const aviso = avisoContinuando(sessionId ? pacienteActivo.get(from) : undefined, text);
-  if (aviso) await sendWhatsappText(from, aviso);
+  if (aviso) {
+    const ms = graciaMs();
+    if (!ms) await sendWhatsappText(from, aviso);
+    else {
+      const { token, espera } = abrirGracia(from, ms);
+      await sendWhatsappAviso(from, aviso, token);
+      if (!(await espera)) { console.log(`[whatsapp] ${from} canceló el turno en la ventana de gracia`); return; }
+    }
+  }
   await sendWhatsappTyping(msg?.id);
 
   const { status, body } = await invokeChat({

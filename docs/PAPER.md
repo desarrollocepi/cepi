@@ -2627,6 +2627,15 @@ mientras espera, que es cuando todavía puede corregir. No sale si el mensaje su
 al paciente, ni en el primer turno de una sesión (el canal aún no sabe quién está activo).
 Vive en `cepi-bot/src/canalAviso.ts`.
 
+**Ventana de gracia.** El aviso lleva un botón **Cancelar** y el canal retiene el mensaje
+3 s (`CEPI_CANAL_GRACIA_MS`; `0` la apaga) antes de pasarlo al cerebro. Cancelar dentro de
+ese lapso hace que el mensaje **no se procese**: nunca entra al turno. No es un aborto: el
+turno no se puede cortar a mitad sin dejar la sesión o la ficha a medias, así que lo único
+cancelable es no empezarlo, y el costo son esos 3 s en cada turno con paciente activo. Un
+toque tardío contesta «ya se procesó». En Telegram el botón se retira al vencer la ventana y
+su callback se atiende fuera de la cola por chat, que está ocupada por el turno en espera;
+en WhatsApp el botón no se puede retirar. Sin aviso no hay ventana.
+
 ### 27.5 Vincular y desvincular
 
 Lo hace un admin desde la consola (`console.cepi.ec`, §26), que es donde vive la

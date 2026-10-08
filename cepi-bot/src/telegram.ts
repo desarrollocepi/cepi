@@ -30,7 +30,10 @@
  */
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
-import { avisoContinuando, pacienteDeRespuesta } from './canalAviso.js';
+import {
+  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
+  TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
+} from './canalAviso.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -303,26 +306,76 @@ async function sendTelegramText(chatId: number, text: string, replyMarkup?: any)
   }
 }
 
-/**
- * «Pensando», antes de llamar al cerebro: el mensaje que nombra al paciente con
- * el que sigue la conversación y después el «escribiendo…» nativo (dura 5 s y
- * no admite texto; cualquier mensaje saliente lo apaga, por eso va segundo).
- */
-async function avisarPensando(chatId: number, mensaje: string): Promise<void> {
-  const aviso = avisoContinuando(
-    chatSessions.has(chatId) ? pacienteActivo.get(chatId) : undefined, mensaje);
-  if (aviso) await sendTelegramText(chatId, aviso);
+/** Prefijo del callback del botón «Cancelar» del aviso; lo que sigue es el token de la ventana. */
+const CB_CANCELAR = 'cx:';
+
+/** Llamada suelta a la Bot API (best-effort). Devuelve `result` o null. */
+async function telegramApi(metodo: string, payload: any): Promise<any> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
+  if (!token) return null;
   try {
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+    const r = await fetch(`https://api.telegram.org/bot${token}/${metodo}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+      body: JSON.stringify(payload),
     });
-    if (!r.ok) console.error(`[telegram] typing failed ${r.status}: ${await r.text()}`);
+    if (!r.ok) { console.error(`[telegram] ${metodo} failed ${r.status}: ${await r.text()}`); return null; }
+    const data: any = await r.json().catch(() => ({}));
+    return data?.result ?? null;
   } catch (e: any) {
-    console.error('[telegram] typing error:', e?.message || e);
+    console.error(`[telegram] ${metodo} error:`, e?.message || e);
+    return null;
+  }
+}
+
+/**
+ * «Pensando», antes de llamar al cerebro: el mensaje que nombra al paciente con
+ * el que sigue la conversación, con su botón «Cancelar» y la ventana de gracia,
+ * y después el «escribiendo…» nativo (dura 5 s y no admite texto; cualquier
+ * mensaje saliente lo apaga, por eso va al final). Devuelve `false` si el
+ * usuario canceló: el turno NO se manda al cerebro.
+ */
+async function avisarPensando(chatId: number, mensaje: string): Promise<boolean> {
+  const aviso = avisoContinuando(
+    chatSessions.has(chatId) ? pacienteActivo.get(chatId) : undefined, mensaje);
+  if (aviso) {
+    const ms = graciaMs();
+    if (!ms) await sendTelegramText(chatId, aviso);
+    else {
+      const { token, espera } = abrirGracia(chatId, ms);
+      const enviado = await telegramApi('sendMessage', {
+        chat_id: chatId, text: aviso,
+        reply_markup: { inline_keyboard: [[{ text: TXT_CANCELAR, callback_data: `${CB_CANCELAR}${token}` }]] },
+      });
+      if (!(await espera)) { console.log(`[telegram] ${chatId} canceló el turno en la ventana de gracia`); return false; }
+      // Venció: el botón ya no sirve, se retira (nunca ocultar un control que
+      // aplica; este dejó de existir).
+      if (enviado?.message_id) {
+        await telegramApi('editMessageReplyMarkup', {
+          chat_id: chatId, message_id: enviado.message_id, reply_markup: { inline_keyboard: [] },
+        });
+      }
+    }
+  }
+  await telegramApi('sendChatAction', { chat_id: chatId, action: 'typing' });
+  return true;
+}
+
+/**
+ * Toque en «Cancelar» del aviso. Va FUERA de la cola por chat: el turno que se
+ * quiere cancelar es justamente el que la tiene ocupada mientras espera.
+ */
+async function handleCancelar(cq: any): Promise<void> {
+  const chatId = cq?.message?.chat?.id;
+  const ok = typeof chatId === 'number'
+    && cancelarGracia(String(cq?.data || '').slice(CB_CANCELAR.length), chatId);
+  await telegramApi('answerCallbackQuery', { callback_query_id: cq?.id, ...(ok ? {} : { text: TXT_TARDE }) });
+  if (!ok || typeof chatId !== 'number') return;
+  touch(chatId);
+  if (cq?.message?.message_id) {
+    await telegramApi('editMessageText', { chat_id: chatId, message_id: cq.message.message_id, text: TXT_CANCELADO });
+  } else {
+    await sendTelegramText(chatId, TXT_CANCELADO);
   }
 }
 
@@ -586,7 +639,7 @@ async function routeTurn(
   else if (apiKey) headers['x-api-key'] = apiKey;
   const sessionId = chatSessions.get(chatId) || undefined;
 
-  await avisarPensando(chatId, turnText);
+  if (!(await avisarPensando(chatId, turnText))) return;
   const { body } = await invokeChat({
     headers,
     body: { message: turnText, session_id: sessionId },
@@ -713,13 +766,21 @@ async function applyWalkAnswer(invokeChat: InvokeChat, chatId: number, value: an
 async function submitWalk(invokeChat: InvokeChat, chatId: number): Promise<void> {
   const w = formWalks.get(chatId);
   if (!w) return;
+  // Cancelado en la ventana de gracia: nada se envió. La walk conserva sus
+  // respuestas y vuelve a preguntar el último campo.
+  if (!(await avisarPensando(chatId, w.form.submit_mode === 'structured' ? '' : (w.form.submit_send || '')))) {
+    let ultimo = w.form.fields.length - 1;
+    while (ultimo > 0 && w.form.fields[ultimo].type === 'heading') ultimo--;
+    w.idx = ultimo;
+    await askWalkField(invokeChat, chatId);
+    return;
+  }
   formWalks.delete(chatId);
   const jwt = chatAuth.get(chatId) || '';
   const headers: Record<string, string> = {};
   if (jwt) headers['authorization'] = `Bearer ${jwt}`;
   const sessionId = chatSessions.get(chatId) || undefined;
 
-  await avisarPensando(chatId, w.form.submit_mode === 'structured' ? '' : (w.form.submit_send || ''));
   let body: any;
   if (w.form.submit_mode === 'structured') {
     ({ body } = await invokeChat({
@@ -845,7 +906,9 @@ export function startTelegram(invokeChat: InvokeChat) {
       const callback = req.body?.callback_query;
       // Serialise per chat so updates for one chat can't race each other.
       const chatId = callback?.message?.chat?.id ?? message?.chat?.id;
-      if (callback) {
+      if (callback && String(callback?.data || '').startsWith(CB_CANCELAR)) {
+        await handleCancelar(callback);
+      } else if (callback) {
         if (typeof chatId === 'number') {
           await serialize(chatId, () => handleCallback(invokeChat, callback));
         } else {
