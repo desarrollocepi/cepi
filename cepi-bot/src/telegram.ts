@@ -869,8 +869,37 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
       ?? (body?.pending_action
         ? buildKeyboard([{ label: '✅ Sí', send: 'sí' }, { label: '❌ No', send: 'no' }])
         : undefined);
-    await sendTelegramText(chatId, composeReply(body), keyboard);
+    const resumen = body?.pending_action?.summary;
+    const texto = composeReply(body);
+    // Los botones Sí/No salen mientras haya una acción pendiente; si la respuesta
+    // habla de otra cosa, hay que decir a qué se le está diciendo que sí.
+    await sendTelegramText(chatId, resumen && !/¿Confirmas\?/i.test(texto)
+      ? `${texto}\n\n⏳ Sigue pendiente de confirmar: ${resumen}. ¿Confirmas?` : texto, keyboard);
+    // La respuesta no traía pregunta: si la ficha sigue abierta, se retoma. Un
+    // comando (una nota, ver el chatter) no puede dejar al médico sin saber qué sigue.
+    if (!keyboard && body?.active_patient_id && !body?.session_closed) await reanudarFicha(invokeChat, chatId);
   }
+}
+
+/**
+ * Retoma la sección de la ficha que la sesión tiene abierta, si la hay: la pide
+ * al cerebro (`GET /api/bot/session/:id`, que la devuelve con lo ya guardado) y
+ * sigue preguntando lo que falta.
+ */
+async function reanudarFicha(invokeChat: InvokeChat, chatId: number): Promise<void> {
+  const sessionId = chatSessions.get(chatId);
+  const jwt = chatAuth.get(chatId);
+  if (!sessionId || !jwt || formWalks.has(chatId)) return;
+  const base = process.env.CEPI_BOT_URL || `http://localhost:${process.env.PORT || '3002'}`;
+  let s: any = null;
+  try {
+    const r = await fetch(`${base}/api/bot/session/${sessionId}`, { headers: { authorization: `Bearer ${jwt}` } });
+    if (r.ok) s = await r.json().catch(() => null);
+  } catch { s = null; }
+  if (!s?.ok || s.pending_action || s.pendiente || !isWalkableForm(s.form) || !s.form.id.startsWith('ficha_grp_')) return;
+  formWalks.set(chatId, { form: s.form, idx: 0, answers: {} });
+  await sendTelegramText(chatId, `Sigamos con la ficha: ${s.form.title}`);
+  await askWalkField(invokeChat, chatId);
 }
 
 /** Ask the current walk field (skipping headings). Submits when none remain. */

@@ -73,3 +73,18 @@ describe('ventana de gracia', () => {
     if (antes !== undefined) process.env.CEPI_CANAL_GRACIA_MS = antes;
   });
 });
+
+describe('avisoContinuando: lo que no carga un dato no lleva aviso ni espera', () => {
+  it('un sí/no y las consultas de solo lectura van directo', () => {
+    for (const m of ['sí', 'si', 'no', 'ok', 'confirmar', '/ver chatter', 'ver paciente', 'recordatorios',
+      '/recordatorios', 'resumen', '/help', 'entrantes', 'casos similares', 'imagen lesion', 'imagen consentimiento']) {
+      expect(avisoContinuando('Juan Pérez', m), m).toBe('');
+    }
+  });
+
+  it('lo que sí escribe en la ficha lo lleva', () => {
+    for (const m of ['/nota control en 7 días', '/diagnostico L20.9 dermatitis', 'no tiene alergias', 'sí fuma desde los 20']) {
+      expect(avisoContinuando('Juan Pérez', m), m).not.toBe('');
+    }
+  });
+});

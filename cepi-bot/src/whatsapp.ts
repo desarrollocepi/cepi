@@ -1195,7 +1195,10 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
     return;
   }
   const acciones: Opcion[] = (body?.form?.actions || []).map((a: any) => ({ label: a.label, send: a.send }));
-  await sendOpciones(from, composeReply(body), rapidas, acciones);
+  await sendOpciones(from, textoConPendiente(body), rapidas, acciones);
+  // La respuesta no traía pregunta: si la ficha sigue abierta, se retoma. Un
+  // comando (una nota, ver el chatter) no puede dejar al médico sin saber qué sigue.
+  if (!rapidas.length && body?.active_patient_id && !body?.session_closed) await reanudarFicha(ctx);
 }
 
 /**
@@ -1235,6 +1238,39 @@ async function omitirSeccion(ctx: Turno, w: FormWalk): Promise<void> {
   }
   formWalks.delete(ctx.from);
   await routeTurn(ctx, { message: 'omitir ficha' }, 'omitir ficha');
+}
+
+/**
+ * El texto de una respuesta, recordando la confirmación que sigue abierta. Los
+ * botones Sí/No salen en toda respuesta mientras haya una acción pendiente; si
+ * la respuesta habla de otra cosa («No hay recordatorios»), hay que decir a qué
+ * se le está diciendo que sí.
+ */
+function textoConPendiente(body: any): string {
+  const texto = composeReply(body);
+  const resumen = body?.pending_action?.summary;
+  return resumen && !/¿Confirmas\?/i.test(texto) ? `${texto}\n\n⏳ Sigue pendiente de confirmar: ${resumen}. ¿Confirmas?` : texto;
+}
+
+/**
+ * Retoma la sección de la ficha que la sesión tiene abierta, si la hay: la pide
+ * al cerebro (`GET /api/bot/session/:id`, que la devuelve con lo ya guardado) y
+ * sigue preguntando lo que falta.
+ */
+async function reanudarFicha(ctx: Turno): Promise<void> {
+  const { from } = ctx;
+  const sessionId = phoneSessions.get(from);
+  if (!sessionId || formWalks.has(from)) return;
+  const base = process.env.CEPI_BOT_URL || `http://localhost:${process.env.PORT || '3002'}`;
+  let s: any = null;
+  try {
+    const r = await fetch(`${base}/api/bot/session/${sessionId}`, { headers: { authorization: `Bearer ${ctx.jwt}` } });
+    if (r.ok) s = await r.json().catch(() => null);
+  } catch { s = null; }
+  if (!s?.ok || s.pending_action || s.pendiente || !isWalkableForm(s.form) || !s.form.id.startsWith('ficha_grp_')) return;
+  formWalks.set(from, { form: s.form, idx: 0, answers: {} });
+  await sendWhatsappText(from, `Sigamos con la ficha: *${s.form.title}*`);
+  await askWalkField(ctx);
 }
 
 /** Pregunta el campo actual del recorrido. Cuando no queda ninguno, envía. */

@@ -28,10 +28,24 @@ export function pacienteDeRespuesta(body: any): string {
  */
 const CAMBIA_DE_PACIENTE = /^\/?\s*(activar|salir|nuevo|buscar|paciente|cancelar|men[uú])(\s|-|$)/i;
 
+/**
+ * Mensajes que no llevan aviso ni ventana de gracia: no cargan un dato nuevo al
+ * paciente. Un sí/no es la respuesta a una pregunta que ya nombraba lo que se
+ * confirma, y una consulta de solo lectura no tiene nada que cancelar; hacer
+ * esperar 3 s por un «no» o por «ver chatter» es pura fricción.
+ */
+const SIN_AVISO = new RegExp('^/?\\s*(' + [
+  's[ií]', 'no', 'ok', 'confirmar', 'adelante', 'yes',
+  'ver\\s.*', 'recordatorios', 'reminders', 'resumen', 'help', 'ayuda', 'comandos',
+  'entrantes', 'turno', 'casos\\s+similares', 'mostrar\\s+resultados.*', 'sugerir\\s+diagn[oó]stico',
+  'whoami', 'definitions', 'pacientes', 'episodios', 'diagn[oó]sticos', 'tools',
+  'imagen\\s+(lesi[oó]n|consentimiento)',
+].join('|') + ')\\s*$', 'i');
+
 /** Texto del aviso para este turno, o '' si no corresponde mandarlo. */
 export function avisoContinuando(paciente: string | undefined, mensaje: string): string {
   const nombre = (paciente || '').trim();
-  if (!nombre || CAMBIA_DE_PACIENTE.test(mensaje.trim())) return '';
+  if (!nombre || CAMBIA_DE_PACIENTE.test(mensaje.trim()) || SIN_AVISO.test(mensaje.trim())) return '';
   return `⏳ Continuando con ${nombre}…`;
 }
 
