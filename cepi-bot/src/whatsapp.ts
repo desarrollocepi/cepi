@@ -43,6 +43,10 @@ import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
+import {
+  colaPorChat, cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk,
+} from './canalWalk.js';
+import { crearRegistroCrudo } from './canalRaw.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -163,6 +167,35 @@ const phoneSessions = new Map<string, string>();
 /** phone → nombre del paciente activo en su sesión, para el aviso de «pensando». */
 const pacienteActivo = new Map<string, string>();
 
+/** phone → último paciente activo, para ofrecerlo en el menú. */
+const lastPatient = new Map<string, { id: string; name: string }>();
+
+/** phone → recorrido campo por campo en curso (canalWalk.ts). */
+const formWalks = new Map<string, FormWalk>();
+
+/** phone → JWT del último turno, para vaciar el registro crudo sin turno. */
+const jwtDe = new Map<string, string>();
+
+/** Un mensaje a la vez por número; ver `colaPorChat`. */
+const enCola = colaPorChat<string>('whatsapp');
+
+let cerebro: InvokeChat | null = null;
+
+/**
+ * Registro crudo del canal (canalRaw.ts). Sin turno que los lleve, los eventos
+ * se mandan solos a la sesión del número; si todavía no hay sesión, esperan.
+ */
+const crudo = crearRegistroCrudo('whatsapp', async (from, eventos) => {
+  const sessionId = phoneSessions.get(from);
+  const jwt = jwtDe.get(from);
+  if (!cerebro || !sessionId || !jwt) return false;
+  const { status, body } = await cerebro({
+    headers: { authorization: `Bearer ${jwt}` },
+    body: { session_id: sessionId, canal_raw: eventos },
+  });
+  return status === 200 && body?.ok !== false;
+});
+
 /** Render a BotForm as plain text so a WhatsApp user can still answer it. */
 function renderForm(form: BotForm): string {
   const lines: string[] = ['', `📋 *${form.title}*`];
@@ -176,28 +209,93 @@ function renderForm(form: BotForm): string {
     }
     lines.push(`• ${f.label}${req}${opts}`);
   }
-  if (form.submit_send) {
-    lines.push('', `_Respondé con los datos y los registro._`);
-  }
   return lines.join('\n');
 }
 
-/** Append quick replies as a numbered hint (WhatsApp text fallback). */
-function renderQuickReplies(qr: QuickReply[]): string {
-  if (!qr?.length) return '';
-  return '\n\n' + qr.map((q, i) => `${i + 1}. ${q.label}`).join('\n');
-}
-
-/** Build the outbound WhatsApp text from a chat-brain response body. */
+/**
+ * Texto de una respuesta del cerebro: primera línea el `status_header`
+ * (paciente activo o estado del chat), después el texto y el formulario si no
+ * se recorre. Las opciones NO van acá: salen como botones o lista numerada.
+ */
 function composeReply(body: any): string {
+  const header = String(body?.status_header || '').trim();
   let text = String(body?.text || '').trim();
   if (body?.form) text += '\n' + renderForm(body.form);
-  if (Array.isArray(body?.quick_replies)) text += renderQuickReplies(body.quick_replies);
-  return text || '…';
+  text = text || '…';
+  return header ? `${header}\n${text}` : text;
+}
+
+// ── Opciones: botones de respuesta o lista numerada ─────────────────────────
+//
+// WhatsApp admite hasta 3 botones de respuesta con título de 20 caracteres.
+// Lo que cabe sale como botones; lo que no, como lista numerada que se
+// contesta con el número. En los dos casos también vale escribir la etiqueta.
+
+/** Una opción lleva un `send` (texto para el cerebro) o un `value` (respuesta de un campo). */
+interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; }
+
+/** Lo último que se le ofreció a un número: contra esto se resuelve su respuesta. */
+interface Pregunta { serie: number; opciones: Opcion[]; numerada: boolean; }
+const preguntas = new Map<string, Pregunta>();
+let seriePregunta = 0;
+
+const BOTON_OPCION = 'op:';
+const MAX_BOTONES = 3;
+const MAX_TITULO = 20;
+
+/** Para comparar lo que la persona escribió con una etiqueta: sin tildes, emojis ni signos. */
+function llano(t: string): string {
+  return t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Manda un texto con sus opciones. `elegibles` son las respuestas posibles;
+ * `acciones`, salidas laterales (Omitir, Nuevo paciente). Si Meta rechaza los
+ * botones, cae a la lista numerada: la persona nunca se queda sin cómo contestar.
+ */
+async function sendOpciones(to: string, text: string, elegibles: Opcion[], acciones: Opcion[] = []): Promise<void> {
+  const todas = [...elegibles, ...acciones];
+  if (!todas.length) { preguntas.delete(to); await sendWhatsappText(to, text); return; }
+  const serie = ++seriePregunta;
+  const caben = todas.length <= MAX_BOTONES && todas.every(o => o.label.trim().length <= MAX_TITULO);
+  if (caben) {
+    preguntas.set(to, { serie, opciones: todas, numerada: false });
+    if (await sendWhatsappBotones(to, text, todas.map((o, i) => ({ id: `${BOTON_OPCION}${serie}:${i}`, title: o.label.trim() })))) return;
+  }
+  const lineas = elegibles.map((o, i) => `${i + 1}. ${o.label}`);
+  const salidas = acciones.map(a => `_${a.label}: escribe «${a.send}»_`);
+  preguntas.set(to, { serie, opciones: todas, numerada: elegibles.length > 0 });
+  await sendWhatsappText(to, [text, lineas.join('\n'), salidas.join('\n')].filter(Boolean).join('\n\n'));
+}
+
+/**
+ * La opción que eligió la persona, por botón, por número o por etiqueta.
+ * `vencida`: tocó un botón de una pregunta anterior.
+ */
+function resolverOpcion(from: string, msg: any): { opcion?: Opcion; vencida?: boolean } {
+  const p = preguntas.get(from);
+  const id = msg?.interactive?.button_reply?.id;
+  if (typeof id === 'string' && id.startsWith(BOTON_OPCION)) {
+    const [serie, i] = id.slice(BOTON_OPCION.length).split(':').map(n => parseInt(n, 10));
+    const opcion = p && p.serie === serie ? p.opciones[i] : undefined;
+    return opcion ? { opcion } : { vencida: true };
+  }
+  const texto = typeof msg?.text?.body === 'string' ? msg.text.body.trim() : '';
+  if (!p || !texto) return {};
+  // El número solo vale si la lista salió numerada: con botones a la vista, un
+  // «2» es una respuesta («hace 2 días»), no la segunda opción.
+  if (p.numerada && /^\d{1,2}$/.test(texto)) {
+    const opcion = p.opciones[parseInt(texto, 10) - 1];
+    if (opcion) return { opcion };
+  }
+  const opcion = p.opciones.find(o => llano(o.label) === llano(texto));
+  return opcion ? { opcion } : {};
 }
 
 /** Send a text message back through the WhatsApp Cloud API (best-effort). */
 async function sendWhatsappText(to: string, text: string): Promise<void> {
+  crudo.anotar(to, { dir: 'out', tipo: 'text', texto: text });
   const token   = process.env.WHATSAPP_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_ID;
   if (!token || !phoneId) {
@@ -221,6 +319,40 @@ async function sendWhatsappText(to: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * Mensaje interactivo con botones de respuesta. `false` si no salió (Meta lo
+ * rechazó o no hay credenciales): quien llama cae a texto.
+ */
+async function sendWhatsappBotones(
+  to: string, text: string, botones: Array<{ id: string; title: string }>,
+): Promise<boolean> {
+  const tok     = process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!tok || !phoneId) return false;
+  try {
+    const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: text.slice(0, 1024) },
+          action: { buttons: botones.map(b => ({ type: 'reply', reply: b })) },
+        },
+      }),
+    });
+    if (!r.ok) { console.error(`[whatsapp] botones failed ${r.status}: ${await r.text()}`); return false; }
+    crudo.anotar(to, { dir: 'out', tipo: 'botones', texto: text, crudo: botones });
+    return true;
+  } catch (e: any) {
+    console.error('[whatsapp] botones error:', e?.message || e);
+    return false;
+  }
+}
+
 /** Prefijo del id del botón «Cancelar» del aviso; lo que sigue es el token de la ventana. */
 const BOTON_CANCELAR = 'cancelar:';
 
@@ -229,6 +361,7 @@ const BOTON_CANCELAR = 'cancelar:';
  * no deja editar ni retirar el botón después: un toque tardío recibe TXT_TARDE.
  */
 async function sendWhatsappAviso(to: string, text: string, token: string): Promise<void> {
+  crudo.anotar(to, { dir: 'out', tipo: 'aviso', texto: text });
   const tok     = process.env.WHATSAPP_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_ID;
   if (!tok || !phoneId) {
@@ -343,6 +476,16 @@ function esLocal(req: Request): boolean {
   return local && !req.get('x-forwarded-for');
 }
 
+/**
+ * Toque en «Cancelar» del aviso: cierra la ventana de gracia de ese turno. No
+ * pasa por la identidad: la ventana solo la cierra el número que la abrió.
+ */
+async function handleCancelar(from: string, boton: string, msg: any): Promise<void> {
+  crudo.anotar(from, { dir: 'in', tipo: 'interactive', texto: TXT_CANCELAR, crudo: msg });
+  const ok = cancelarGracia(boton.slice(BOTON_CANCELAR.length), from);
+  await sendWhatsappText(from, ok ? TXT_CANCELADO : TXT_TARDE);
+}
+
 /** Process one inbound message object from the webhook payload. */
 async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string): Promise<void> {
   const from = msg?.from;
@@ -376,47 +519,148 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
     return;
   }
 
-  // Toque en «Cancelar» del aviso: cierra la ventana de gracia de ese turno.
-  const boton = msg?.interactive?.button_reply?.id;
-  if (typeof boton === 'string' && boton.startsWith(BOTON_CANCELAR)) {
-    const ok = cancelarGracia(boton.slice(BOTON_CANCELAR.length), from);
-    await sendWhatsappText(from, ok ? TXT_CANCELADO : TXT_TARDE);
+  crudo.activar(from);
+  jwtDe.set(from, auth.jwt);
+  const texto = typeof msg?.text?.body === 'string' ? msg.text.body.trim() : '';
+  crudo.anotar(from, {
+    dir: 'in', tipo: String(msg?.type || 'text'),
+    texto: texto || String(msg?.interactive?.button_reply?.title || ''), crudo: msg,
+  });
+  const ctx: Turno = { invokeChat, from, jwt: auth.jwt, msgId: msg?.id };
+
+  const { opcion, vencida } = resolverOpcion(from, msg);
+  if (vencida) {
+    await sendWhatsappText(from, 'Esa opción ya no está vigente.');
+    if (formWalks.has(from)) await askWalkField(ctx);
+    return;
+  }
+  // Only text and button taps are routed for now (images/audio would map to attachments).
+  if (!opcion && !texto) {
+    await sendWhatsappText(from, 'Por ahora solo proceso mensajes de texto.');
+    if (formWalks.has(from)) await askWalkField(ctx);
     return;
   }
 
-  // Only plain text is routed for now (images/audio would map to attachments).
-  const text = msg?.text?.body;
-  if (typeof text !== 'string' || !text.trim()) {
-    await sendWhatsappText(from, 'Por ahora solo proceso mensajes de texto.');
+  // ── En medio de un recorrido: la respuesta es del campo, no del cerebro ──
+  const walk = formWalks.get(from);
+  if (walk) {
+    if (opcion) {
+      if (opcion.esValor) { await applyWalkAnswer(ctx, opcion.value); return; }
+      formWalks.delete(from);                 // una acción (p. ej. «Omitir») sale del recorrido
+      await routeTurn(ctx, { message: opcion.send || '' }, opcion.send || '');
+      return;
+    }
+    if (/^\/?\s*(cancelar|salir|men[uú])\s*$/i.test(texto)) {
+      formWalks.delete(from);
+      await sendMenu(from);
+      return;
+    }
+    // «omitir» y los comandos con barra no son el valor de un campo.
+    if (/^\/?\s*omitir(\s+ficha)?\s*$/i.test(texto)) {
+      formWalks.delete(from);
+      await routeTurn(ctx, { message: 'omitir ficha' }, 'omitir ficha');
+      return;
+    }
+    if (/^\//.test(texto)) {
+      formWalks.delete(from);
+      await routeTurn(ctx, { message: texto }, texto);
+      return;
+    }
+    // Pregunta cerrada contestada con otra cosa: no se guarda un valor que el
+    // campo no admite; se vuelve a preguntar.
+    const f = walk.form.fields[walk.idx];
+    if (f && (f.type === 'radio' || f.type === 'checkbox')) {
+      await sendWhatsappText(from, 'Elige una de las opciones.');
+      await askWalkField(ctx);
+      return;
+    }
+    await applyWalkAnswer(ctx, texto);
     return;
   }
+
+  if (/^\/?\s*men[uú]\s*$/i.test(texto)) { await sendMenu(from); return; }
+
+  const send = opcion?.send ?? texto;
+  await routeTurn(ctx, { message: send }, send);
+}
+
+/** Lo que hace falta para correr un turno de ese número. */
+interface Turno { invokeChat: InvokeChat; from: string; jwt: string; msgId?: string; }
+
+/**
+ * Menú de inicio: nuevo paciente, buscar y, si lo hubo, el paciente anterior.
+ * Deja al número sin sesión ni recorrido: el turno siguiente empieza limpio.
+ */
+async function sendMenu(from: string): Promise<void> {
+  phoneSessions.delete(from);
+  pacienteActivo.delete(from);
+  formWalks.delete(from);
+  const opciones: Opcion[] = [
+    { label: 'Nuevo paciente', send: 'nuevo paciente' },
+    { label: 'Buscar paciente', send: 'paciente' },
+  ];
+  const prev = lastPatient.get(from);
+  if (prev) opciones.push({ label: 'Paciente anterior', send: `activar paciente ${prev.id}` });
+  await sendOpciones(from,
+    `Hola 👋 ¿Qué quieres hacer?${prev ? `\nPaciente anterior: ${prev.name}` : ''}`, opciones);
+}
+
+/**
+ * Corre un turno en el cerebro y entrega la respuesta. Antes va el aviso de
+ * «pensando» con su ventana de gracia. `cancelado`: la persona tocó «Cancelar»
+ * y el mensaje no se procesó. `error`: el turno falló y ya se le avisó.
+ */
+async function routeTurn(
+  ctx: Turno, cuerpo: Record<string, unknown>, textoAviso: string,
+): Promise<'ok' | 'cancelado' | 'error'> {
+  const { invokeChat, from } = ctx;
   const sessionId = phoneSessions.get(from) || undefined;
 
   // «Pensando»: el aviso con su botón «Cancelar», la ventana de gracia y recién
   // después el «escribiendo…» (cualquier mensaje saliente lo apaga, y antes de
   // que venza la ventana todavía no se está procesando nada).
-  const aviso = avisoContinuando(sessionId ? pacienteActivo.get(from) : undefined, text);
+  const aviso = avisoContinuando(sessionId ? pacienteActivo.get(from) : undefined, textoAviso);
   if (aviso) {
     const ms = graciaMs();
     if (!ms) await sendWhatsappText(from, aviso);
     else {
       const { token, espera } = abrirGracia(from, ms);
       await sendWhatsappAviso(from, aviso, token);
-      if (!(await espera)) { console.log(`[whatsapp] ${from} canceló el turno en la ventana de gracia`); return; }
+      if (!(await espera)) {
+        console.log(`[whatsapp] ${from} canceló el turno en la ventana de gracia`);
+        crudo.anotar(from, { dir: 'sys', tipo: 'cancelado', texto: textoAviso });
+        return 'cancelado';
+      }
     }
   }
-  await sendWhatsappTyping(msg?.id);
+  await sendWhatsappTyping(ctx.msgId);
 
-  const { status, body } = await invokeChat({
-    headers: { authorization: `Bearer ${auth.jwt}` },
-    body: { message: text, session_id: sessionId },
-  });
+  const eventos = crudo.tomar(from);
+  let status = 500; let body: any = null;
+  try {
+    ({ status, body } = await invokeChat({
+      headers: { authorization: `Bearer ${ctx.jwt}` },
+      body: { ...cuerpo, session_id: sessionId, canal_raw: eventos },
+    }));
+  } catch (e: any) {
+    body = { ok: false, error: e?.message || String(e) };
+  }
   if (status !== 200 || body?.ok === false) {
+    crudo.devolver(from, eventos);
     console.error(`[whatsapp] chat turn failed ${status}: ${body?.error || 'no error message'}`);
     await sendWhatsappText(from, 'No pude procesar tu mensaje. Prueba de nuevo en un rato.');
-    return;
+    return 'error';
   }
+  await deliver(ctx, body);
+  return 'ok';
+}
 
+/**
+ * Entrega una respuesta del cerebro. Una sección de la ficha o el alta de
+ * paciente se recorren campo por campo; lo demás sale como texto con opciones.
+ */
+async function deliver(ctx: Turno, body: any): Promise<void> {
+  const { from } = ctx;
   // Remember the session for this phone; drop it when the session closes.
   if (body?.session_id) {
     if (body?.session_closed) phoneSessions.delete(from);
@@ -424,9 +668,89 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
     const paciente = body?.session_closed ? '' : pacienteDeRespuesta(body);
     if (paciente) pacienteActivo.set(from, paciente);
     else pacienteActivo.delete(from);
+    if (paciente) lastPatient.set(from, { id: body.active_patient_id, name: paciente });
   }
 
-  await sendWhatsappText(from, composeReply(body));
+  // Con `pending_action` el cerebro espera un sí/no, no un formulario: puede
+  // traer pegado el formulario anterior y recorrerlo otra vez trabaría el alta.
+  if (isWalkableForm(body?.form) && !body?.pending_action) {
+    // La sección de la ficha se muestra entera como contexto; el alta de
+    // paciente va directo a su primera pregunta.
+    const intro = body.form.id.startsWith('ficha_grp_')
+      ? composeReply(body)
+      : composeReply({ ...body, form: null });
+    formWalks.set(from, { form: body.form, idx: 0, answers: {} });
+    await sendWhatsappText(from, intro);
+    await askWalkField(ctx);
+    return;
+  }
+  formWalks.delete(from);
+  const rapidas: Opcion[] = Array.isArray(body?.quick_replies) && body.quick_replies.length
+    ? body.quick_replies.map((q: QuickReply) => ({ label: q.label, send: q.send }))
+    : body?.pending_action
+      ? [{ label: '✅ Sí', send: 'sí' }, { label: '❌ No', send: 'no' }]
+      : [];
+  const acciones: Opcion[] = (body?.form?.actions || []).map((a: any) => ({ label: a.label, send: a.send }));
+  await sendOpciones(from, composeReply(body), rapidas, acciones);
+}
+
+/** Pregunta el campo actual del recorrido. Cuando no queda ninguno, envía. */
+async function askWalkField(ctx: Turno): Promise<void> {
+  const { from } = ctx;
+  const w = formWalks.get(from);
+  if (!w) return;
+  for (;;) {
+    while (w.idx < w.form.fields.length && w.form.fields[w.idx].type === 'heading') w.idx++;
+    // Las imágenes todavía no entran por WhatsApp: el campo se salta y se dice.
+    if (w.form.fields[w.idx]?.type !== 'image_upload') break;
+    await sendWhatsappText(from,
+      `«${w.form.fields[w.idx].label}»: las imágenes todavía no se reciben por WhatsApp. ` +
+      `Súbelas desde la web o la app.`);
+    w.idx++;
+  }
+  if (w.idx >= w.form.fields.length) { await submitWalk(ctx); return; }
+
+  const f = w.form.fields[w.idx];
+  const { pos, n } = posicion(w);
+  const acciones: Opcion[] = (w.form.actions || []).map(a => ({ label: a.label, send: a.send }));
+  if (f.type === 'radio' || f.type === 'checkbox') {
+    await sendOpciones(from, `(${pos}/${n}) ${f.label}`,
+      walkOptions(f).map(o => ({ label: String(o.label), value: o.value, esValor: true })), acciones);
+  } else {
+    const hint = f.placeholder ? ` (${f.placeholder})` : '';
+    await sendOpciones(from, `(${pos}/${n}) ${f.label}${hint}`, [], acciones);
+  }
+}
+
+/** Guarda la respuesta del campo actual y avanza. */
+async function applyWalkAnswer(ctx: Turno, value: any): Promise<void> {
+  const w = formWalks.get(ctx.from);
+  if (!w) return;
+  const f = w.form.fields[w.idx];
+  if (f?.key) w.answers[f.key] = value;
+  w.idx++;
+  await askWalkField(ctx);
+}
+
+/** Todos los campos contestados: se envía el formulario al cerebro. */
+async function submitWalk(ctx: Turno): Promise<void> {
+  const { from } = ctx;
+  const w = formWalks.get(from);
+  if (!w) return;
+  // Un recorrido donde no quedó nada que mandar (solo imágenes) no se envía vacío.
+  if (w.form.submit_mode === 'structured' && !Object.keys(w.answers).length) {
+    formWalks.delete(from);
+    await routeTurn(ctx, { message: 'omitir ficha' }, 'omitir ficha');
+    return;
+  }
+  const cuerpo = cuerpoDeEnvio(w);
+  const r = await routeTurn(ctx, cuerpo, 'message' in cuerpo ? cuerpo.message : '');
+  // Cancelado o fallido: nada se envió. El recorrido conserva sus respuestas y
+  // vuelve a preguntar el último campo. (Con `ok`, `deliver` ya lo cerró o abrió el siguiente.)
+  if (r !== 'ok' && formWalks.get(from) === w) {
+    w.idx = ultimoCampo(w);
+    await askWalkField(ctx);
+  }
 }
 
 /**
@@ -451,6 +775,7 @@ export function verifyMetaSignature(
  * can close it on shutdown.
  */
 export function startWhatsapp(invokeChat: InvokeChat) {
+  cerebro = invokeChat;
   const app = express();
   // Keep the raw bytes: the signature is over the body exactly as Meta sent it.
   app.use(express.json({
@@ -511,8 +836,16 @@ export function startWhatsapp(invokeChat: InvokeChat) {
             if (c?.wa_id && c?.profile?.name) contactos[String(c.wa_id)] = String(c.profile.name);
           }
           for (const msg of messages) {
-            await handleInbound(invokeChat, msg, contactos[String(msg?.from)]).catch(e =>
-              console.error('[whatsapp] handle error:', e?.message || e));
+            const from = String(msg?.from || '');
+            // «Cancelar» del aviso va FUERA de la cola: el turno que se quiere
+            // cancelar es el que la tiene ocupada mientras corre su ventana.
+            const boton = msg?.interactive?.button_reply?.id;
+            if (from && typeof boton === 'string' && boton.startsWith(BOTON_CANCELAR)) {
+              await handleCancelar(from, boton, msg).catch(e =>
+                console.error('[whatsapp] cancelar error:', e?.message || e));
+              continue;
+            }
+            await enCola(from, () => handleInbound(invokeChat, msg, contactos[String(msg?.from)]));
           }
         }
       }

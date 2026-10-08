@@ -1152,14 +1152,19 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
     return { text, form: PATIENT_SEARCH_FORM };
   }
 
-  if (mode === 'unset' && /^\s*\/?\s*(paciente|atenci[oó]n)\s*$/i.test(trimmed)) {
+  // Entrar a paciente vale desde `unset` y también desde `general` mientras no
+  // haya paciente activo: un canal sin pantalla de bienvenida (WhatsApp) cae en
+  // `general` con el primer mensaje libre, y desde ahí «nuevo» iba al LLM, que
+  // entrevistaba al médico sin guardar nada.
+  const sinPaciente = (mode === 'unset' || mode === 'general') && !session.active_patient_id;
+  if (sinPaciente && /^\s*\/?\s*(paciente|atenci[oó]n|buscar(\s+paciente)?)\s*$/i.test(trimmed)) {
     setSlot(session, 'mode', 'patient');
     const text = 'Buscar paciente por cédula o nombre, o crea uno nuevo.';
     await appendAndSave(session, message, text, mcp);
     return { text, form: PATIENT_SEARCH_FORM };
   }
 
-  if (mode === 'unset' && /^\s*\/?\s*(nuevo\s+paciente|crear\s+paciente)\s*$/i.test(trimmed)) {
+  if (sinPaciente && /^\s*\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente)\s*$/i.test(trimmed)) {
     setSlot(session, 'mode', 'patient');
     const text = 'Completá los datos del nuevo paciente.';
     await appendAndSave(session, message, text, mcp);

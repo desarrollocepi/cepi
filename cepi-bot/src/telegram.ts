@@ -34,6 +34,8 @@ import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
+import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk } from './canalWalk.js';
+import { crearRegistroCrudo } from './canalRaw.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -157,6 +159,25 @@ const lastSeen = new Map<number, number>();
 /** chat_id → last active patient (to offer "paciente anterior" after a reset). */
 const lastPatient = new Map<number, { id: string; name: string }>();
 
+/** Guarda el invokeChat para que el registro crudo pueda vaciarse sin turno. */
+let cerebro: InvokeChat | null = null;
+
+/**
+ * Registro crudo del canal (canalRaw.ts). Sin turno que los lleve, los eventos
+ * se mandan solos a la sesión del chat; si todavía no hay sesión, esperan.
+ */
+const crudo = crearRegistroCrudo('telegram', async (clave, eventos) => {
+  const chatId = Number(clave);
+  const sessionId = chatSessions.get(chatId);
+  const jwt = chatAuth.get(chatId);
+  if (!cerebro || !sessionId || !jwt) return false;
+  const { status, body } = await cerebro({
+    headers: { authorization: `Bearer ${jwt}` },
+    body: { session_id: sessionId, canal_raw: eventos },
+  });
+  return status === 200 && body?.ok !== false;
+});
+
 /** chat_id → nombre del paciente activo en la sesión en curso (aviso de «pensando»). */
 const pacienteActivo = new Map<number, string>();
 
@@ -164,7 +185,6 @@ const pacienteActivo = new Map<number, string>();
 const idleTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
 /** chat_id → in-progress ficha form walk (asks closed questions one by one). */
-interface FormWalk { form: BotForm; idx: number; answers: Record<string, any>; }
 const formWalks = new Map<number, FormWalk>();
 
 /**
@@ -285,6 +305,7 @@ function composeReply(body: any): string {
  * attaches an inline keyboard when provided.
  */
 async function sendTelegramText(chatId: number, text: string, replyMarkup?: any): Promise<void> {
+  crudo.anotar(chatId, { dir: 'out', tipo: 'text', texto: text, ...(replyMarkup ? { crudo: replyMarkup } : {}) });
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.log(`[telegram] (dry-run, no TELEGRAM_BOT_TOKEN) → ${chatId}: ${text}`);
@@ -343,11 +364,16 @@ async function avisarPensando(chatId: number, mensaje: string): Promise<boolean>
     if (!ms) await sendTelegramText(chatId, aviso);
     else {
       const { token, espera } = abrirGracia(chatId, ms);
+      crudo.anotar(chatId, { dir: 'out', tipo: 'aviso', texto: aviso });
       const enviado = await telegramApi('sendMessage', {
         chat_id: chatId, text: aviso,
         reply_markup: { inline_keyboard: [[{ text: TXT_CANCELAR, callback_data: `${CB_CANCELAR}${token}` }]] },
       });
-      if (!(await espera)) { console.log(`[telegram] ${chatId} canceló el turno en la ventana de gracia`); return false; }
+      if (!(await espera)) {
+        console.log(`[telegram] ${chatId} canceló el turno en la ventana de gracia`);
+        crudo.anotar(chatId, { dir: 'sys', tipo: 'cancelado', texto: mensaje });
+        return false;
+      }
       // Venció: el botón ya no sirve, se retira (nunca ocultar un control que
       // aplica; este dejó de existir).
       if (enviado?.message_id) {
@@ -533,6 +559,11 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
   // Identity gate: every inbound is acted on AS the linked TodoERP user.
   const jwt = await authorizeChat(chatId, fromId, nombreDe(message?.from));
   if (!jwt) return;
+  crudo.activar(chatId);
+  crudo.anotar(chatId, {
+    dir: 'in', tipo: message?.photo ? 'photo' : message?.document ? 'document' : 'text',
+    texto: String(message?.text || message?.caption || ''), crudo: message,
+  });
 
   // Admin linking command: "vincular telegram <id> <email>".
   const linkCmd = String(message?.text || '').trim()
@@ -640,10 +671,14 @@ async function routeTurn(
   const sessionId = chatSessions.get(chatId) || undefined;
 
   if (!(await avisarPensando(chatId, turnText))) return;
-  const { body } = await invokeChat({
-    headers,
-    body: { message: turnText, session_id: sessionId },
-  });
+  const eventos = crudo.tomar(chatId);
+  let body: any;
+  try {
+    ({ body } = await invokeChat({
+      headers,
+      body: { message: turnText, session_id: sessionId, canal_raw: eventos },
+    }));
+  } catch (e) { crudo.devolver(chatId, eventos); throw e; }
   await deliver(invokeChat, chatId, body);
 }
 
@@ -702,26 +737,6 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
   }
 }
 
-/**
- * Forms walked field-by-field: ficha sections and the new-patient form.
- * The search form stays as text — any typed text already triggers a search.
- * (Without walking `patient_new`, a user who taps "nuevo paciente" and then
- * sends just the cédula would fall through to the search branch of the brain.)
- */
-function isWalkableForm(form: any): form is BotForm {
-  return !!form && typeof form.id === 'string'
-    && (form.id.startsWith('ficha_grp_') || form.id === 'patient_new')
-    && Array.isArray(form.fields) && form.fields.some((f: any) => f.type !== 'heading');
-}
-
-/** Selectable options for a walk field (Sí/No for checkbox; field options otherwise). */
-function walkOptions(f: BotFormField): Array<{ label: string; value: any }> {
-  if (f.type === 'checkbox') return [{ label: 'Sí', value: true }, { label: 'No', value: false }];
-  return (f.options || []).map(o => typeof o === 'string'
-    ? { label: o, value: o }
-    : { label: o.label, value: (o as any).value });
-}
-
 /** Ask the current walk field (skipping headings). Submits when none remain. */
 async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<void> {
   const w = formWalks.get(chatId);
@@ -730,9 +745,7 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
   if (w.idx >= w.form.fields.length) { await submitWalk(invokeChat, chatId); return; }
 
   const f = w.form.fields[w.idx];
-  const askable = w.form.fields.filter(x => x.type !== 'heading');
-  const n = askable.length;
-  const pos = w.form.fields.slice(0, w.idx).filter(x => x.type !== 'heading').length + 1;
+  const { pos, n } = posicion(w);
   const actions = (w.form.actions || []).map(a => ({ text: a.label, callback_data: a.send }));
 
   if (f.type === 'radio' || f.type === 'checkbox') {
@@ -769,9 +782,7 @@ async function submitWalk(invokeChat: InvokeChat, chatId: number): Promise<void>
   // Cancelado en la ventana de gracia: nada se envió. La walk conserva sus
   // respuestas y vuelve a preguntar el último campo.
   if (!(await avisarPensando(chatId, w.form.submit_mode === 'structured' ? '' : (w.form.submit_send || '')))) {
-    let ultimo = w.form.fields.length - 1;
-    while (ultimo > 0 && w.form.fields[ultimo].type === 'heading') ultimo--;
-    w.idx = ultimo;
+    w.idx = ultimoCampo(w);
     await askWalkField(invokeChat, chatId);
     return;
   }
@@ -781,22 +792,13 @@ async function submitWalk(invokeChat: InvokeChat, chatId: number): Promise<void>
   if (jwt) headers['authorization'] = `Bearer ${jwt}`;
   const sessionId = chatSessions.get(chatId) || undefined;
 
+  const eventos = crudo.tomar(chatId);
   let body: any;
-  if (w.form.submit_mode === 'structured') {
+  try {
     ({ body } = await invokeChat({
-      headers,
-      body: { form_submission: { form_id: w.form.id, data: w.answers }, session_id: sessionId },
+      headers, body: { ...cuerpoDeEnvio(w), session_id: sessionId, canal_raw: eventos },
     }));
-  } else if (w.form.submit_send) {
-    // `||` is the field separator of submit_send commands (e.g. /nuevo-paciente)
-    // — scrub it from free-text answers so they can't break the parse.
-    const msg = w.form.submit_send.replace(/\{(\w+)\}/g, (_m, k) =>
-      String(w.answers[k] ?? '').replace(/\|{2,}/g, ' ').replace(/\s+/g, ' ').trim());
-    ({ body } = await invokeChat({ headers, body: { message: msg, session_id: sessionId } }));
-  } else {
-    const msg = Object.values(w.answers).join(' ').trim() || 'ok';
-    ({ body } = await invokeChat({ headers, body: { message: msg, session_id: sessionId } }));
-  }
+  } catch (e) { crudo.devolver(chatId, eventos); throw e; }
   await deliver(invokeChat, chatId, body);
 }
 
@@ -813,6 +815,8 @@ async function handleCallback(invokeChat: InvokeChat, cq: any): Promise<void> {
   if (!jwt) return;
   touch(chatId);
   const data = cq?.data;
+  crudo.activar(chatId);
+  crudo.anotar(chatId, { dir: 'in', tipo: 'button', texto: String(data ?? ''), crudo: cq });
 
   // Mid-walk option tap: `fw:<fieldIdx>:<optIdx>` is the chosen option.
   if (typeof data === 'string' && data.startsWith('fw:')) {
@@ -887,6 +891,7 @@ async function registerWebhook(): Promise<void> {
  * can close it on shutdown.
  */
 export function startTelegram(invokeChat: InvokeChat) {
+  cerebro = invokeChat;
   const app = express();
   app.use(express.json({ limit: '5mb' }));
 

@@ -30,6 +30,7 @@ import {
   FICHA_GROUPS,
 } from './flowV1.js';
 import { extraerEpisodio } from './extraerFicha.js';
+import { vaciarRegistrosCrudos } from './canalRaw.js';
 import { icdSearch } from './icdWho.js';
 import { extractPendingQuestions, pendingQuestionsNote } from './pendingQuestions.js';
 import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_ICD } from './episodeImages.js';
@@ -511,6 +512,21 @@ app.post('/api/bot/ficha/recalcular', async (req: Request, res: Response, next: 
 });
 
 /**
+ * Sin paciente activo el agente no tiene dónde guardar: si entrevista igual, el
+ * médico dicta una ficha entera que nunca se persiste (pasó por WhatsApp). La
+ * nota va en cada turno sin paciente, y la respuesta lleva los dos botones.
+ */
+const NOTA_SIN_PACIENTE =
+  'NO hay paciente activo: nada de lo que el usuario dicte se puede guardar. ' +
+  'PROHIBIDO pedir o recoger datos de un paciente (nombre, cédula, edad, motivo, síntomas, antecedentes) ' +
+  'y PROHIBIDO crear el paciente tú. Si quiere registrar o atender a alguien, dile solo que escriba ' +
+  '«nuevo paciente» para crearlo o «paciente» para buscarlo.';
+const ATAJOS_SIN_PACIENTE = [
+  { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
+  { label: '🔍 Buscar paciente', send: 'paciente' },
+];
+
+/**
  * One-line status used by non-UI channels (e.g. Telegram) as the first line of
  * every reply: the active patient's name, or — when there's no patient — a
  * human-readable description of the chat state. Derived from the session's
@@ -732,7 +748,9 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       message = '',
       form_submission: formSubmission,
       explicit: explicitAction = false,
+      canal_raw: canalRaw,
     } = req.body || {};
+    const eventosCrudos: unknown[] = Array.isArray(canalRaw) ? canalRaw : [];
 
     // Una acción que el usuario disparó a propósito (un botón del menú: derivar, enviar
     // caso, nueva consulta) no se confirma: ya la confirmó al tocarla. El gate es para lo
@@ -775,7 +793,18 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
     let activePatientId: string | null = null;
     let activeEpisodeId: string | null = null;
 
-    if ((typeof message === 'string' && message.length > 0) || formSubmission) {
+    // Solo registro crudo, sin turno: el canal vacía su búfer (canalRaw.ts)
+    // cuando pasa un rato sin mandar nada al cerebro. Nunca crea una sesión.
+    const hayTurno = (typeof message === 'string' && message.length > 0) || !!formSubmission;
+    if (!hayTurno && eventosCrudos.length && incomingSessionId) {
+      const s = await loadSession(mcp, incomingSessionId);
+      if (!s) return res.status(404).json({ ok: false, error: 'session not found' });
+      s.canal_raw = [...s.canal_raw, ...eventosCrudos];
+      await saveSession(mcp, s);
+      return res.json({ ok: true, session_id: s.id, solo_registro: true, status_header: '' });
+    }
+
+    if (hayTurno) {
       // Session-managed path.
       let session = incomingSessionId ? await loadSession(mcp, incomingSessionId) : null;
       if (!session) {
@@ -785,6 +814,14 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       }
       sessionId = session.id;
       sessionForHeader = session;   // mutated in place by the flow below
+
+      // Registro crudo del canal: se guarda YA, antes de procesar el turno. Hay
+      // ramas que recargan la sesión de la base y pisarían lo que solo está en
+      // memoria, y si el turno revienta el crudo tiene que haber quedado igual.
+      if (eventosCrudos.length) {
+        session.canal_raw = [...session.canal_raw, ...eventosCrudos];
+        await saveSession(mcp, session);
+      }
 
       // ── slash-style state commands handled server-side, no LLM needed ──
       const trimmed = message.trim();
@@ -2065,6 +2102,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         role: 'system',
         content: `Contexto activo: paciente=${activePatientId ?? '(ninguno)'}, episodio=${activeEpisodeId ?? '(ninguno)'}. ` +
                  `Comandos: "activar paciente <uuid>", "salir paciente", "activar episodio <uuid>", "salir episodio".` +
+                 (activePatientId ? '' : ' ' + NOTA_SIN_PACIENTE) +
                  // Las dudas que quedaron en cola de turnos anteriores, para que
                  // el agente las retome de a una en vez de perderlas.
                  (session.pending_slots?.length ? ' ' + pendingQuestionsNote(session.pending_slots) : ''),
@@ -2127,6 +2165,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       active_episode_id: activeEpisodeId,
       pending_action: pendingAction,
       status_header: statusHeader,
+      ...(sessionId && !activePatientId && !pendingAction ? { quick_replies: ATAJOS_SIN_PACIENTE } : {}),
       ...out,
     });
   } catch (err) { next(err); }
@@ -2182,10 +2221,15 @@ const telegramServer = startTelegram(invokeChat);
 
 async function shutdown(signal: string) {
   console.log(`[${signal}] shutting down cepi-bot`);
+  setTimeout(() => process.exit(1), 5000);
+  // Lo que los canales tengan sin mandar del registro crudo, antes de cerrar.
+  await Promise.race([
+    vaciarRegistrosCrudos().catch(() => {}),
+    new Promise(r => setTimeout(r, 3000)),
+  ]);
   whatsappServer.close();
   telegramServer.close();
   server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000);
 }
 process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));

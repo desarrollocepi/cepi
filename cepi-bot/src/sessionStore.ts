@@ -47,6 +47,12 @@ export interface BotSession {
   estado: 'abierta' | 'cerrada' | 'abandonada';
   /** R-style confirmation gate: present means "the bot is waiting for sí/no". */
   pending_action: PendingAction | null;
+  /**
+   * Registro crudo del canal de chat (canalRaw.ts): lo que la persona mandó y
+   * lo que el bot escribió, tal cual. No va al LLM ni a la UI; es la fuente
+   * para reprocesar la sesión contra lo que quedó en la ficha.
+   */
+  canal_raw: unknown[];
 }
 
 export function emptySession(userId: string | null = null): Omit<BotSession, 'id'> {
@@ -60,6 +66,7 @@ export function emptySession(userId: string | null = null): Omit<BotSession, 'id
     tool_calls: [],
     estado: 'abierta',
     pending_action: null,
+    canal_raw: [],
   };
 }
 
@@ -86,6 +93,7 @@ function toPersistedShape(s: Omit<BotSession, 'id'>): Record<string, unknown> {
     tool_calls:        JSON.stringify(s.tool_calls ?? []),
     estado:            s.estado,
     pending_action:    JSON.stringify(s.pending_action ?? null),
+    canal_raw:         JSON.stringify(s.canal_raw ?? []),
   };
 }
 
@@ -127,6 +135,7 @@ export async function loadSession(
     tool_calls:        safeParseJson<BotSession['tool_calls']>(d.tool_calls, []),
     estado:            (d.estado as BotSession['estado']) || 'abierta',
     pending_action:    safeParseJson<BotSession['pending_action']>(d.pending_action, null),
+    canal_raw:         safeParseJson<unknown[]>(d.canal_raw, []),
   };
 }
 

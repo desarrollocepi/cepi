@@ -2636,6 +2636,20 @@ toque tardío contesta «ya se procesó». En Telegram el botón se retira al ve
 su callback se atiende fuera de la cola por chat, que está ocupada por el turno en espera;
 en WhatsApp el botón no se puede retirar. Sin aviso no hay ventana.
 
+**Captura por el canal.** Un canal no puede pintar un formulario, así que lo recorre: el
+alta de paciente y cada sección de la ficha se preguntan **campo por campo** y recién al
+final se envían al cerebro, igual que lo haría la web (`cepi-bot/src/canalWalk.ts`, común a
+los dos canales). Las opciones salen como botones —inline en Telegram; hasta 3 botones de
+respuesta en WhatsApp, y lista numerada cuando no caben o Meta los rechaza— y siempre vale
+escribir la etiqueta. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
+Las imágenes entran por Telegram; por WhatsApp todavía no: el campo se salta y se avisa.
+
+**Sin paciente activo el agente no entrevista.** No hay dónde guardar, y una entrevista
+libre se pierde entera (pasó: doce turnos dictados por WhatsApp sin un solo dato
+persistido). Sin paciente, «nuevo»/«nuevo paciente» y «paciente»/«buscar» abren el alta y la
+búsqueda también desde el modo `general`; el agente tiene prohibido recoger datos de un
+paciente y su respuesta lleva esos dos atajos como opciones.
+
 ### 27.5 Vincular y desvincular
 
 Lo hace un admin desde la consola (`console.cepi.ec`, §26), que es donde vive la
@@ -2667,6 +2681,27 @@ Se corrige en tres partes:
    del ERP: TodoERP no aprende la palabra telemedicina (regla del repo).
 
 Recién cuando los bots dejan de usarla, `admin@erp.com` se puede desactivar.
+
+### 27.7 Registro crudo de la conversación
+
+`bot_session.turns` guarda lo que el **cerebro** vio: el texto de cada turno que le llegó.
+En un canal pasan cosas que nunca llegan ahí: la respuesta a cada pregunta de un recorrido,
+el toque en un botón, un mensaje cancelado en la ventana de gracia, lo que el bot escribió
+de verdad en pantalla. `bot_session.canal_raw` guarda todo eso **tal cual**: cada evento
+con hora, canal, dirección (`in`/`out`/`sys`) y, en los entrantes, el mensaje como lo
+entregó el proveedor.
+
+- El canal lo acumula por chat y lo manda con el siguiente turno (`canal_raw` en el cuerpo
+  de `/api/bot/chat`); el cerebro lo guarda **antes** de procesar el turno. Tras 30 s sin
+  turno —un recorrido a medias— se manda solo, y también al apagar el proceso.
+- Lo anterior a que exista la sesión entra con el primer turno. Quien no tiene acceso no
+  deja registro.
+- No va al LLM ni a la UI. Es la fuente para **reprocesar la sesión al cerrarla** y
+  comprobar que lo que quedó en la ficha es lo que se dijo. Ese reproceso no está hecho:
+  hoy solo se guarda.
+- El chat web no lo necesita: ahí cada mensaje y cada envío de formulario ya son un turno.
+
+Vive en `cepi-bot/src/canalRaw.ts`.
 
 ---
 

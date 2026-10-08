@@ -62,7 +62,7 @@ function mockFetch(): void {
       if (b.typing_indicator) { typing.push(b.message_id); return json(200, { success: true }); }
       // El aviso con botón es `interactive`; su id de botón queda aparte.
       if (b.type === 'interactive') {
-        botones.push(b.interactive.action.buttons[0].reply.id);
+        for (const x of b.interactive.action.buttons) botones.push(x.reply.id);
         sent.push({ to: b.to, text: b.interactive.body.text });
       } else sent.push({ to: b.to, text: b.text.body });
       return json(200, { messages: [{ id: 'wamid.x' }] });
@@ -187,7 +187,8 @@ describe('aviso de «pensando» con el paciente activo', () => {
     sent.length = 0;
     brainReply = conPaciente('Anotado.');
     await inbound('593990000001', 'tiene prurito hace dos semanas', undefined, 2);
-    expect(sent.map(s => s.text)).toEqual(['⏳ Continuando con Juan Pérez…', 'Anotado.']);
+    expect(sent.map(s => s.text)).toEqual([
+      '⏳ Continuando con Juan Pérez…', '👤 Juan Pérez — ficha §2.1 Antecedentes\nAnotado.']);
   });
 
   it('no lo dice cuando el mensaje suelta o cambia al paciente', async () => {
