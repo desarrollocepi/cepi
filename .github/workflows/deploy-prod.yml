@@ -76,12 +76,14 @@ jobs:
             TodoERP/backend/package-lock.json
             TodoERP/mcp/package-lock.json
             cepi-bot/package-lock.json
+            cepi-frontend/package-lock.json
 
       - name: Dependencias
         run: |
           (cd TodoERP/backend && npm ci --no-audit --no-fund)
           (cd TodoERP/mcp && npm ci --no-audit --no-fund)   # mcp_generality.test.ts importa ../mcp/src
           (cd cepi-bot && npm ci --no-audit --no-fund)
+          (cd cepi-frontend && npm ci --no-audit --no-fund)
 
       - name: Base de tests
         run: bash scripts/deploy/ci-test-db.sh
@@ -92,6 +94,11 @@ jobs:
 
       - name: Tests cepi-bot
         working-directory: cepi-bot
+        run: npx vitest run
+
+      # Componentes de la web con un DOM simulado: no necesitan la base ni el backend.
+      - name: Tests cepi-frontend
+        working-directory: cepi-frontend
         run: npx vitest run
 
   deploy:

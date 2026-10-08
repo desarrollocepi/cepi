@@ -591,7 +591,9 @@ async function send(message, extra = {}) {
   error.value = '';
   // Optimistic echo of my own text (not for form submissions); reloadThread() reconciles it.
   if (message && message.trim()) {
-    messages.value = [...messages.value, { role: 'user', content: message, self: true, is_bot: false }];
+    // Con el episodio activo: sin él, en un paciente con varias consultas el eco caía en
+    // otra página y lo enviado no se veía hasta que contestaba el bot.
+    messages.value = [...messages.value, { role: 'user', content: message, self: true, is_bot: false, episode_id: activeEpisodeId.value }];
     await scrollEnd();
   }
   try {

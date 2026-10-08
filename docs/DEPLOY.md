@@ -29,7 +29,7 @@ Consecuencias:
 
 **tests** — Postgres 18 con pgvector como servicio. `scripts/deploy/ci-test-db.sh` arma la
 base desde cero: esquema, seeds, arranque del backend para que cree las tablas espejo, seeds
-otra vez y datos sintéticos. Luego `vitest` en `TodoERP/backend` y en `cepi-bot`.
+otra vez y datos sintéticos. Luego `vitest` en `TodoERP/backend`, en `cepi-bot` y en `cepi-frontend` (componentes de la web sobre un DOM simulado; no usan la base).
 
 **deploy** — compila `cepi-frontend` y `TodoERP/mcp` en el runner (en el t3.micro `vite build`
 se queda sin memoria), sube el release a `/opt/cepi-deploy/incoming` y ejecuta

@@ -13,6 +13,8 @@ import { fileURLToPath, URL } from 'node:url';
 // without nginx.
 export default defineConfig({
   plugins: [vue()],
+  // Tests de componentes (`npm test`): Vitest con un DOM simulado, sin navegador ni backend.
+  test: { environment: 'happy-dom', include: ['tests/**/*.test.js'], setupFiles: ['tests/setup.js'], restoreMocks: true },
   resolve: {
     alias: {
       // El web-impl de @capacitor-firebase/messaging arrastra el firebase JS SDK;
