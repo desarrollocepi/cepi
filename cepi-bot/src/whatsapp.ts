@@ -44,7 +44,7 @@ import {
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
 import {
-  colaPorChat, cuerpoDeEnvio, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
+  colaPorChat, cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
@@ -899,7 +899,7 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
     // quedaba guardado como dirección).
-    if (/^\//.test(texto) || CAMBIA_PACIENTE.test(texto)) {
+    if (esComando(texto, walk.form.fields[walk.idx]) || CAMBIA_PACIENTE.test(texto)) {
       await guardarParcial(ctx, walk);
       await routeTurn(ctx, { message: texto }, texto);
       return;

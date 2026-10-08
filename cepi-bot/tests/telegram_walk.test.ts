@@ -551,6 +551,15 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     expect(inbound.at(-1).form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { sexo: 'Otro' } });
   });
 
+  it('un comando escrito sin «/» en medio de la ficha va al cerebro, no al campo', async () => {
+    await abrirFicha();
+    await update(msgUpdate(CHAT, 'enviar caso sospecha de melanoma'));
+    expect(inbound.at(-1).message).toBe('enviar caso sospecha de melanoma');
+    await abrirFicha();
+    await update(msgUpdate(CHAT, 'nota paciente refiere prurito'));   // pregunta cerrada: no es una opción
+    expect(inbound.at(-1).message).toBe('nota paciente refiere prurito');
+  });
+
   it('«Omitir restante» con respuestas las GUARDA: envía la sección con lo contestado', async () => {
     await abrirFicha();
     await update(tapUpdate(CHAT, 'fw:0:0'));          // ¿Fuma? → Sí

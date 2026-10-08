@@ -34,7 +34,7 @@ import {
   abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
-import { cuerpoDeEnvio, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
+import { cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
@@ -804,7 +804,7 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
       }
       // Slash-commands, y los comandos que cambian o sueltan al paciente,
       // tampoco: tomarlos como respuesta deja al médico atrapado en la sección.
-      if (/^\//.test(answer) || CAMBIA_PACIENTE.test(answer)) {
+      if (esComando(answer, activeWalk.form.fields[activeWalk.idx]) || CAMBIA_PACIENTE.test(answer)) {
         await guardarParcial(chatId);
         await routeTurn(invokeChat, chatId, answer, jwt, '');
         return;

@@ -49,6 +49,23 @@ export function opcionEscrita(f: BotFormField, texto: string): { value: any } | 
   return o ? { value: o.value } : null;
 }
 
+/** Comandos que nadie escribiría como respuesta a un campo. */
+const COMANDO = /^\s*(enviar\s+caso(\s.*)?|entrantes|turno|reclamar(\s+[0-9a-f-]{36})?|derivar\s+a\s.+|ver\s+chatter|ver\s+(paciente|episodio)|recordatorios|ayuda|comandos|resumen)\s*$/is;
+/** Los que sí podrían ser una respuesta de texto libre («nota prurito desde ayer»). */
+const COMANDO_AMBIGUO = /^\s*(nota|responder)\s+\S/i;
+
+/**
+ * ¿Lo escrito en medio de un recorrido es un comando y no la respuesta al campo?
+ * Con «/» delante siempre lo es. Sin ella, solo los comandos inequívocos; y en
+ * una pregunta cerrada, donde el texto no nombró ninguna opción, también los
+ * que en un campo de texto libre podrían ser la respuesta.
+ */
+export function esComando(texto: string, f?: BotFormField): boolean {
+  if (/^\s*\//.test(texto) || COMANDO.test(texto)) return true;
+  const cerrada = !!f && (f.type === 'radio' || f.type === 'checkbox');
+  return cerrada && !opcionEscrita(f!, texto) && COMANDO_AMBIGUO.test(texto);
+}
+
 /**
  * ¿El campo ya tiene valor guardado? El cerebro manda la sección con lo que ya
  * hay en la ficha (`form.values`). Un canal pregunta solo lo que falta: volver a

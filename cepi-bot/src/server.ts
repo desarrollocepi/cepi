@@ -1849,7 +1849,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           return `  • \`${String(e.id).slice(0, 8)}…\` [${d.estado || '?'}] ${d.motivo_consulta || e.title || 's/motivo'}${who}`;
         });
         const text = rows.length
-          ? `**Bandeja de turno** (${rows.length} caso(s) entrante(s)):\n${lines.join('\n')}\n\nUsá \`reclamar <uuid>\` para tomar uno.`
+          ? `**Bandeja de turno** (${rows.length} caso(s) entrante(s)):\n${lines.join('\n')}\n\nToca «Reclamar» en el caso que vas a tomar.`
           : 'Bandeja de turno vacía: no hay casos entrantes.';
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: text }];
         await saveSession(mcp, session);
@@ -1882,7 +1882,12 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           activeEpisodeId = target;
           text = `Reclamaste el caso \`${String(target).slice(0, 8)}…\` (ahora en triage). Quedó como tu episodio activo.\nPodés \`responder <texto>\` o \`derivar a <especialidad> <motivo>\`.`;
         } else {
-          text = `No pude reclamar el caso: ${(r as any)?.error || 'error'}.`;
+          // Un 403 no es una falla: quien no está de turno no reclama. Se dice así,
+          // no con el error crudo del servidor.
+          const err = String((r as any)?.error || 'error');
+          text = /\b403\b|permission/i.test(err)
+            ? 'No puedes reclamar casos: eso lo hace quien está de turno.'
+            : `No pude reclamar el caso: ${err}.`;
         }
         session.turns = [...session.turns, { role: 'user', content: message },
           { role: 'tool', tool_name: 'entities.claim', content: JSON.stringify(r) }, { role: 'assistant', content: text }];
