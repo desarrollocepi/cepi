@@ -2653,6 +2653,15 @@ guarda antes lo contestado: una respuesta dada no se pierde. La excepción es un
 bot, que borra el recorrido en curso. En WhatsApp los botones llevan en su id qué mandan y
 cuándo salieron, y por eso siguen sirviendo unos minutos tras un reinicio.
 
+**Respuestas con tipo.** Una fecha o un número escritos a mano pasan por
+`cepi-bot/src/validarCampo.ts` antes de guardarse: primero un validador **determinista**
+(«1 enero 2000», «01/01/2000», «1 de enero del 2000» → `2000-01-01`; «35 años» → `35`); si
+no lo entiende, un validador **IA**, que recibe solo el texto de la respuesta y el tipo
+esperado —ni el paciente ni la conversación— y cuya salida vuelve a pasar por el
+determinista; si tampoco, el canal lo dice («No entendí «…» como una fecha») y vuelve a
+preguntar. Nunca se manda al backend un valor que la columna va a rechazar. El cerebro
+aplica la misma regla al recibir una sección, venga de donde venga.
+
 **Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
 JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual
 que una foto subida por la web. En WhatsApp, un campo de imágenes de la ficha (§4.7, §8)

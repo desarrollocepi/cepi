@@ -49,6 +49,7 @@ import {
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
+import { ayudaDeTipo, tipoEsperado, validarRespuesta } from './validarCampo.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -907,6 +908,20 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     if (f?.type === 'image_upload') {
       await sendWhatsappText(from, 'Aquí va una foto, no texto.');
       await askWalkField(ctx);
+      return;
+    }
+    // Campo con tipo (fecha, número): validador determinista, después IA, y si
+    // ninguno lo entiende se dice y se vuelve a preguntar. Nunca se guarda un
+    // valor que la columna va a rechazar.
+    const tipo = f ? tipoEsperado(f) : null;
+    if (f && tipo) {
+      const v = await validarRespuesta(f, texto);
+      if (!v.ok) {
+        await sendWhatsappText(from, `No entendí «${texto}» como ${ayudaDeTipo(tipo)}.`);
+        await askWalkField(ctx);
+        return;
+      }
+      await applyWalkAnswer(ctx, v.value);
       return;
     }
     await applyWalkAnswer(ctx, texto);

@@ -126,6 +126,9 @@ async function cerebro({ body }: { body: any }) {
   if (/^buscar uno$/i.test(msg)) return { status: 200, body: { ...base, text: 'Resultados:\n1. Otro', form: BUSQUEDA, status_header: '📋 Buscando paciente', quick_replies: [
     { label: 'Otro', send: 'activar paciente 33333333-3333-4333-8333-333333333333' },
     { label: '+ Nuevo paciente', send: 'nuevo paciente' }] } };
+  if (/^ficha fecha$/i.test(msg)) return { status: 200, body: { ...base, text: '1.2 Fecha de nacimiento:', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
+    form: { id: 'ficha_grp_g_1_2', title: '1.2 Fecha de nacimiento', submit_mode: 'structured',
+      fields: [{ key: 'fecha_nac', label: 'Fecha de nacimiento', type: 'date' }], actions: [{ label: 'Omitir', send: 'omitir ficha' }] } } };
   if (/^salir paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Paciente activo limpiado.', active_patient_id: null } };
   if (/^activar paciente /i.test(msg)) return { status: 200, body: { ...base, session_id: body.session_id || 'sess-nueva', text: 'Paciente activo: Otro.', active_patient_id: msg.split(' ').pop(), status_header: '👤 Otro' } };
   if (/^nota /i.test(msg)) return { status: 200, body: { ...base, text: 'Anotado.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
@@ -329,6 +332,26 @@ describe('WhatsApp: saltar un campo no es omitir la sección', () => {
     expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_2_1', data: { fuma: false } });
     expect(turnos[1].message).toBe('salir paciente');
     expect(sent.map(s => s.text)).toContain('💾 Guardé lo que llevabas de «2.1 Antecedentes».');
+  });
+});
+
+describe('WhatsApp: una fecha escrita a mano', () => {
+  it('«1 enero 2000» se guarda como fecha, no como texto que el backend rechaza', async () => {
+    await manda({ text: 'cancelar' });
+    await manda({ text: 'ficha fecha' });
+    expect(ultimo().text).toBe('(1/1) Fecha de nacimiento');
+    turnos.length = 0;
+    await manda({ text: '1 enero 2000' });
+    expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_1_2', data: { fecha_nac: '2000-01-01' } });
+  });
+
+  it('lo que ningún validador entiende no se guarda: lo dice y vuelve a preguntar', async () => {
+    await manda({ text: 'ficha fecha' });
+    turnos.length = 0; sent.length = 0;
+    await manda({ text: 'cuando llovía' });
+    expect(turnos).toHaveLength(0);
+    expect(sent.map(s => s.text)).toEqual([
+      'No entendí «cuando llovía» como una fecha (por ejemplo 15/03/1990).', '(1/1) Fecha de nacimiento']);
   });
 });
 

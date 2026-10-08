@@ -38,6 +38,7 @@ import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, yaTi
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
+import { ayudaDeTipo, tipoEsperado, validarRespuesta } from './validarCampo.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -640,7 +641,24 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
         await routeTurn(invokeChat, chatId, answer, jwt, '');
         return;
       }
-      if (answer) { await applyWalkAnswer(invokeChat, chatId, answer); return; }
+      if (answer) {
+        // Campo con tipo (fecha, número): validador determinista, después IA, y
+        // si ninguno lo entiende se dice y se vuelve a preguntar.
+        const campo = activeWalk.form.fields[activeWalk.idx];
+        const tipo = campo ? tipoEsperado(campo) : null;
+        if (campo && tipo) {
+          const v = await validarRespuesta(campo, answer);
+          if (!v.ok) {
+            await sendTelegramText(chatId, `No entendí «${answer}» como ${ayudaDeTipo(tipo)}.`);
+            await askWalkField(invokeChat, chatId);
+            return;
+          }
+          await applyWalkAnswer(invokeChat, chatId, v.value);
+          return;
+        }
+        await applyWalkAnswer(invokeChat, chatId, answer);
+        return;
+      }
       // Empty / contentless message mid-walk: just re-ask the current field.
       await askWalkField(invokeChat, chatId);
       return;
