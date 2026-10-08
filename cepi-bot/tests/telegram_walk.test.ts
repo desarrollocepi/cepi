@@ -25,6 +25,7 @@ delete process.env.TELEGRAM_PUBLIC_URL;             // no webhook self-registrat
 delete process.env.TELEGRAM_WEBHOOK_SECRET;         // no secret check
 
 import { startTelegram } from '../src/telegram.js';
+import { emitirTurnoDePaciente } from '../src/canalEco.js';
 
 /** A syntactically valid JWT whose payload carries a far-future exp. */
 const fakeJwt = 'h.' +
@@ -33,6 +34,9 @@ const fakeJwt = 'h.' +
 
 /** Outbound sendMessage payloads captured from the mocked Telegram API. */
 const sent: Array<{ chat_id: number; text: string; reply_markup?: any }> = [];
+
+/** El hilo del paciente que devuelve TodoERP al eco. */
+let hiloTg: any[] = [];
 
 /** Chat-turn bodies the scripted brain received (message / form_submission). */
 const inbound: any[] = [];
@@ -45,6 +49,9 @@ function mockFetch(): void {
     if (u.includes('api.telegram.org')) {
       if (u.includes('/sendMessage')) sent.push(JSON.parse(init.body));
       return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+    }
+    if (u.includes('/api/patient-thread')) {
+      return new Response(JSON.stringify({ ok: true, messages: hiloTg }), { status: 200 });
     }
     if (u.endsWith('/api/auth/login')) {
       return new Response(JSON.stringify({ token: fakeJwt }), { status: 200 });
@@ -465,5 +472,31 @@ describe('telegram: aviso de «pensando» y ventana de gracia', () => {
     });
     await esperar(100);
     expect(inbound.length).toBe(turnos);
+  });
+});
+
+describe('telegram: eco del hilo del paciente activo', () => {
+  const CHAT = 7002;
+  const esperar = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+  it('lo que se escribe en la web sobre el paciente activo llega al chat', async () => {
+    await update(msgUpdate(CHAT, 'hola'));            // menú
+    await update(msgUpdate(CHAT, 'ver paciente'));    // p-1 activo en sess-pac
+    const desde = sent.length;
+    hiloTg = [
+      { session_id: 'sess-pac', role: 'user', content: 'lo mío', ts: new Date(Date.now() + 1000).toISOString() },
+      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos', author_name: 'Dra. Derma', ts: new Date(Date.now() + 1000).toISOString() },
+    ];
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    await esperar(150);
+    expect(textsTo(CHAT, desde)).toEqual(['💬 *Dra. Derma*\nRevisé las fotos']);
+  });
+
+  it('un turno de otro paciente no llega, ni se repite lo ya enviado', async () => {
+    const desde = sent.length;
+    emitirTurnoDePaciente({ patientId: 'p-otro', sessionId: 'sess-web' });
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    await esperar(150);
+    expect(textsTo(CHAT, desde)).toEqual([]);
   });
 });

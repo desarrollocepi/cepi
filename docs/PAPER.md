@@ -2731,10 +2731,23 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
 - **Una sesión por paciente.** El hilo se arma con las sesiones que tienen activo al
   paciente: activar a otro dentro de la misma sesión se llevaría toda la conversación al
   hilo del nuevo. En WhatsApp, activar a otro paciente o soltar al actual termina la sesión.
-- Meta solo deja escribirle a un número dentro de las 24 h desde su último mensaje: pasado
-  eso el eco no se manda. El acuse «Paciente activo: …» no se reenvía. Tope: 10 por eco.
-- El estado vive en memoria: tras un reinicio del bot el número no tiene paciente activo
-  hasta que lo vuelva a activar, y hasta entonces no recibe eco. Telegram no está suscrito.
+- **El paciente activo dura minutos.** Sin mensajes de la persona durante
+  `CEPI_CANAL_INACTIVIDAD_MS` (5 min por defecto) el canal deja de dar por hecho con quién
+  está: no le reenvía el hilo, y en WhatsApp **retiene** el mensaje siguiente y pregunta
+  «¿Sigues con X?». «Sí» lo procesa con ese paciente; «Cambiar paciente» lo descarta y
+  muestra el menú. Quien vuelve con un comando que cambia de paciente no recibe la pregunta.
+  Telegram resuelve lo mismo con su menú de inicio, que sale solo a los 5 min y ofrece al
+  paciente anterior.
+- **Tras un reinicio del bot pasa lo mismo.** El estado del canal vive en memoria y un
+  deploy lo borra. Cada sesión lleva de qué canal es (`extracted_slots.canal`); con el
+  primer mensaje, WhatsApp busca la última sesión de ese usuario por el canal y, si tiene
+  paciente activo y menos de un día, pregunta si sigue con él. «Sí» retoma **esa** sesión.
+  Un recorrido que estaba a medias no se recupera: sus respuestas sin enviar se pierden.
+- WhatsApp y Telegram reciben el eco. El acuse «Paciente activo: …» no se reenvía. No hay
+  tope de mensajes: cada turno dispara su eco, así que lo normal son dos (el mensaje y la
+  respuesta del asistente).
+- Meta solo deja escribirle a un número dentro de las 24 h desde su último mensaje; con el
+  rato de inactividad de arriba, ese límite ya no se alcanza.
 
 ---
 

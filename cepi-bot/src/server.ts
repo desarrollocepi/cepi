@@ -137,11 +137,13 @@ app.get('/api/bot/sessions', async (req: Request, res: Response, next: NextFunct
         // Patient name from the persisted context, so the session pill can
         // show who the chat is about.
         let patientName = '';
+        let canalDeSesion = '';
         try {
           const slotsRaw = row?.data?.extracted_slots;
           const slots = typeof slotsRaw === 'string' ? JSON.parse(slotsRaw) : (slotsRaw || {});
           const pc = slots?.patient_context;
           if (pc) patientName = [pc.nombre, pc.apellidos].filter(Boolean).join(' ');
+          canalDeSesion = typeof slots?.canal === 'string' ? slots.canal : '';
         } catch {}
         return {
           id:         row.id,
@@ -152,6 +154,7 @@ app.get('/api/bot/sessions', async (req: Request, res: Response, next: NextFunct
           active_patient_id: row?.data?.active_patient_id || null,
           preview,
           patient_name: patientName,
+          canal: canalDeSesion,
         };
       })
       .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
@@ -750,6 +753,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       form_submission: formSubmission,
       explicit: explicitAction = false,
       canal_raw: canalRaw,
+      canal,
     } = req.body || {};
     const eventosCrudos: unknown[] = Array.isArray(canalRaw) ? canalRaw : [];
 
@@ -827,8 +831,12 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       // Registro crudo del canal: se guarda YA, antes de procesar el turno. Hay
       // ramas que recargan la sesión de la base y pisarían lo que solo está en
       // memoria, y si el turno revienta el crudo tiene que haber quedado igual.
-      if (eventosCrudos.length) {
-        session.canal_raw = [...session.canal_raw, ...eventosCrudos];
+      // De qué canal es la sesión («whatsapp», «telegram»): tras un reinicio el
+      // canal la busca por acá para preguntar si sigue con el mismo paciente.
+      const canalNuevo = typeof canal === 'string' && canal && (session.extracted_slots as any)?.canal !== canal;
+      if (canalNuevo) session.extracted_slots = { ...(session.extracted_slots || {}), canal };
+      if (eventosCrudos.length || canalNuevo) {
+        if (eventosCrudos.length) session.canal_raw = [...session.canal_raw, ...eventosCrudos];
         await saveSession(mcp, session);
       }
 

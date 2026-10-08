@@ -77,3 +77,77 @@ export function textoDeEco(m: MensajeDeHilo): string {
   const quien = m.is_bot ? '🤖 *Asistente*' : `💬 *${m.self ? 'Tú (otro dispositivo)' : (m.author_name || 'Profesional')}*`;
   return `${quien}\n${m.content}`;
 }
+
+// ── El eco de un canal ──────────────────────────────────────────────────────
+
+/** Lo que un canal le presta al eco: de quién es cada chat y cómo escribirle. */
+export interface TransporteDeEco<K> {
+  /** Sesión propia del chat: sus mensajes ya los tiene en pantalla y no se le reenvían. */
+  sesionDe(k: K): string | undefined;
+  jwtDe(k: K): string | undefined;
+  /** El JWT del chat venció: pedir otro. `null` si ya no tiene acceso. */
+  renovarJwt(k: K): Promise<string | null>;
+  /** ¿Sigue vigente el paciente activo de ese chat? (inactividad, ventana del proveedor) */
+  vigente(k: K): boolean;
+  enviar(k: K, texto: string): Promise<void>;
+  /** La cola del chat, para no cruzarse con un turno suyo en curso. */
+  enCola(k: K, tarea: () => Promise<void>): Promise<void>;
+}
+
+export interface EcoDeCanal<K> {
+  /** Ese chat tiene activo a este paciente. Si es otro que antes, el eco arranca desde ahora. */
+  fijar(k: K, patientId: string): void;
+  /** Soltó o cambió de paciente: deja de recibir ese hilo. */
+  soltar(k: K): void;
+  pacienteDe(k: K): string | undefined;
+}
+
+interface EstadoDeEco { patientId: string; desde: number; enviados: Set<string>; }
+
+/**
+ * Suscribe un canal al eco. Cuando termina un turno sobre un paciente, a cada
+ * chat que lo tiene activo —salvo al que lo escribió— se le manda lo que le
+ * falta ver, leído con su propio JWT.
+ */
+export function crearEco<K>(canal: string, t: TransporteDeEco<K>): EcoDeCanal<K> {
+  const estados = new Map<K, EstadoDeEco>();
+
+  const ponerAlDia = async (k: K): Promise<void> => {
+    const estado = estados.get(k);
+    let jwt = t.jwtDe(k);
+    if (!estado || !jwt || !t.vigente(k)) return;
+    try {
+      let hilo = await leerHilo(jwt, estado.patientId);
+      if (hilo.status === 401) {
+        const nuevo = await t.renovarJwt(k);
+        if (!nuevo) return;
+        jwt = nuevo;
+        hilo = await leerHilo(jwt, estado.patientId);
+      }
+      if (hilo.status !== 200) { console.error(`[${canal}] eco: hilo ${hilo.status}`); return; }
+      for (const m of mensajesNuevos(hilo.messages, t.sesionDe(k), estado.desde, estado.enviados)) {
+        if (estados.get(k) !== estado) return;        // cambió de paciente mientras tanto
+        await t.enviar(k, textoDeEco(m));
+        estado.enviados.add(claveDeMensaje(m));
+      }
+    } catch (e: any) {
+      console.error(`[${canal}] eco:`, e?.message || e);
+    }
+  };
+
+  alTurnoDePaciente(({ patientId, sessionId }) => {
+    for (const [k, estado] of estados) {
+      if (estado.patientId !== patientId || t.sesionDe(k) === sessionId) continue;
+      void t.enCola(k, () => ponerAlDia(k));
+    }
+  });
+
+  return {
+    fijar(k, patientId) {
+      if (estados.get(k)?.patientId === patientId) return;
+      estados.set(k, { patientId, desde: Date.now(), enviados: new Set() });
+    },
+    soltar(k) { estados.delete(k); },
+    pacienteDe(k) { return estados.get(k)?.patientId; },
+  };
+}

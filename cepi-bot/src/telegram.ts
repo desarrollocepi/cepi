@@ -37,6 +37,7 @@ import {
 import { cuerpoDeEnvio, isWalkableForm, posicion, ultimoCampo, walkOptions, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
+import { crearEco } from './canalEco.js';
 
 const WEBHOOK_PATH = '/telegram/webhook';
 
@@ -181,6 +182,31 @@ const crudo = crearRegistroCrudo('telegram', async (clave, eventos) => {
 
 /** chat_id → nombre del paciente activo en la sesión en curso (aviso de «pensando»). */
 const pacienteActivo = new Map<number, string>();
+
+/** chat_id → id de Telegram de quien escribe, para renovarle el JWT. */
+const chatFrom = new Map<number, number>();
+
+/**
+ * Eco del hilo del paciente activo (canalEco.ts): lo que se escribe sobre él
+ * desde la web, una app u otro canal llega a este chat mientras lo tenga
+ * activo. Deja de valer cuando el chat se reinicia por inactividad (el menú
+ * borra la sesión), cambia de paciente o lo suelta.
+ */
+const eco = crearEco<number>('telegram', {
+  sesionDe: chatId => chatSessions.get(chatId),
+  jwtDe: chatId => chatAuth.get(chatId),
+  renovarJwt: async chatId => {
+    const fromId = chatFrom.get(chatId);
+    if (fromId === undefined) return null;
+    const auth = await resolveUserAuth('telegram', fromId);
+    if (!auth.ok) return null;
+    chatAuth.set(chatId, auth.jwt);
+    return auth.jwt;
+  },
+  vigente: chatId => chatSessions.has(chatId),
+  enviar: (chatId, texto) => sendTelegramText(chatId, texto),
+  enCola: (chatId, tarea) => serialize(chatId, tarea),
+});
 
 /** chat_id → pending idle timer that proactively sends the menu after IDLE_MS. */
 const idleTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -480,6 +506,7 @@ async function resolveImageToken(message: any, jwt: string): Promise<string | nu
 async function sendWelcomeMenu(chatId: number): Promise<void> {
   chatSessions.delete(chatId);   // fresh session on the next turn
   pacienteActivo.delete(chatId);
+  eco.soltar(chatId);
   formWalks.delete(chatId);      // abandon any half-filled ficha walk
   const buttons: QuickReply[] = [
     { label: '➕ Nuevo paciente', send: 'nuevo paciente' },
@@ -511,7 +538,7 @@ async function authorizeChat(chatId: number, fromId: number, nombre?: string): P
   // `nombre` solo bautiza una identidad nueva: ver un nombre en la pantalla de
   // aprobación es la diferencia entre reconocer a alguien y adivinar por el id.
   const auth = await resolveUserAuth('telegram', fromId, nombre);
-  if (auth.ok) { chatAuth.set(chatId, auth.jwt); return auth.jwt; }
+  if (auth.ok) { chatAuth.set(chatId, auth.jwt); chatFrom.set(chatId, fromId); return auth.jwt; }
   if (auth.reason === 'unregistered') {
     await sendTelegramText(chatId,
       `🔒 No estás registrado para usar este bot.\n\n` +
@@ -642,6 +669,16 @@ async function routeTurn(
   const headers: Record<string, string> = {};
   if (jwt) headers['authorization'] = `Bearer ${jwt}`;
   else if (apiKey) headers['x-api-key'] = apiKey;
+  // Una sesión por paciente: el hilo de un paciente se arma con las sesiones
+  // que lo tienen activo, así que activar a otro dentro de la misma sesión se
+  // llevaría toda la conversación al hilo del nuevo. Se empieza una sesión.
+  const otro = turnText.match(/^\/?\s*activar\s+paciente\s+([0-9a-f-]{36})\s*$/i);
+  const actual = eco.pacienteDe(chatId);
+  if (otro && actual && otro[1].toLowerCase() !== actual.toLowerCase()) {
+    chatSessions.delete(chatId);
+    pacienteActivo.delete(chatId);
+    eco.soltar(chatId);
+  }
   const sessionId = chatSessions.get(chatId) || undefined;
 
   if (!(await avisarPensando(chatId, turnText))) return;
@@ -650,7 +687,7 @@ async function routeTurn(
   try {
     ({ body } = await invokeChat({
       headers,
-      body: { message: turnText, session_id: sessionId, canal_raw: eventos },
+      body: { message: turnText, session_id: sessionId, canal: 'telegram', canal_raw: eventos },
     }));
   } catch (e) { crudo.devolver(chatId, eventos); throw e; }
   await deliver(invokeChat, chatId, body);
@@ -679,6 +716,17 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
     const paciente = body?.session_closed ? '' : pacienteDeRespuesta(body);
     if (paciente) pacienteActivo.set(chatId, paciente);
     else pacienteActivo.delete(chatId);
+
+    // Eco del hilo: vale mientras ESTE paciente siga activo en el chat.
+    const pid = body?.session_closed ? '' : String(body?.active_patient_id || '');
+    const previo = eco.pacienteDe(chatId);
+    if (pid) eco.fijar(chatId, pid);
+    // Solo si la respuesta dice explícitamente que no hay paciente: lo soltó, y
+    // la sesión termina con él (una sesión por paciente).
+    if (!pid && previo && 'active_patient_id' in body) {
+      eco.soltar(chatId);
+      chatSessions.delete(chatId);
+    }
   }
 
   // A staged pending_action means the brain is waiting for a sí/no, NOT for a
@@ -770,7 +818,7 @@ async function submitWalk(invokeChat: InvokeChat, chatId: number): Promise<void>
   let body: any;
   try {
     ({ body } = await invokeChat({
-      headers, body: { ...cuerpoDeEnvio(w), session_id: sessionId, canal_raw: eventos },
+      headers, body: { ...cuerpoDeEnvio(w), session_id: sessionId, canal: 'telegram', canal_raw: eventos },
     }));
   } catch (e) { crudo.devolver(chatId, eventos); throw e; }
   await deliver(invokeChat, chatId, body);

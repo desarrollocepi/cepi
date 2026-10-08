@@ -88,3 +88,16 @@ export function cancelarGracia(token: string, dueno: string | number): boolean {
   v.cerrar(false);
   return true;
 }
+
+// ── Vigencia del paciente activo ────────────────────────────────────────────
+
+/**
+ * Cuánto dura «paciente activo» en un canal sin que la persona escriba. Pasado
+ * ese rato el canal no da por hecho que sigue con el mismo: lo pregunta antes de
+ * procesar el mensaje siguiente, y mientras tanto no le reenvía el hilo.
+ * `CEPI_CANAL_INACTIVIDAD_MS`; por defecto 5 minutos.
+ */
+export function inactividadMs(): number {
+  const n = Number(process.env.CEPI_CANAL_INACTIVIDAD_MS ?? 5 * 60 * 1000);
+  return Number.isFinite(n) && n > 0 ? n : 5 * 60 * 1000;
+}

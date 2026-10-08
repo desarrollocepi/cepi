@@ -40,7 +40,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import type { BotForm, BotFormField, QuickReply } from './flowV1.js';
 import {
-  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, pacienteDeRespuesta,
+  abrirGracia, avisoContinuando, cancelarGracia, graciaMs, inactividadMs, pacienteDeRespuesta,
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
 } from './canalAviso.js';
 import {
@@ -48,7 +48,7 @@ import {
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
-import { alTurnoDePaciente, claveDeMensaje, leerHilo, mensajesNuevos, textoDeEco } from './canalEco.js';
+import { crearEco } from './canalEco.js';
 
 /** Cached service-account JWT + its expiry (epoch seconds). */
 let svcJwt: { token: string; exp: number } | null = null;
@@ -169,19 +169,20 @@ const phoneSessions = new Map<string, string>();
 /** phone → nombre del paciente activo en su sesión, para el aviso de «pensando». */
 const pacienteActivo = new Map<string, string>();
 
-/**
- * phone → eco del hilo de su paciente activo (canalEco.ts). `desde` es el
- * momento en que ese paciente quedó activo en el teléfono: lo anterior no se
- * reenvía. Cambiar o soltar al paciente borra la entrada, y con ella el eco.
- */
-interface Eco { patientId: string; desde: number; enviados: Set<string>; }
-const ecos = new Map<string, Eco>();
-
-/** phone → hora del último mensaje entrante. Meta solo deja escribirle dentro de las 24 h. */
+/** phone → hora del último mensaje entrante. */
 const ultimoEntrante = new Map<string, number>();
+/** Meta solo deja escribirle a un número dentro de las 24 h desde su último mensaje. */
 const VENTANA_META_MS = 24 * 60 * 60 * 1000;
-/** Tope de mensajes por eco: un hilo muy activo no inunda el teléfono. */
-const MAX_ECO = 10;
+
+/**
+ * phone → mensaje retenido mientras se pregunta «¿Sigues con X?» (ver
+ * `preguntarSiSigue`). `adoptar`: la sesión a retomar si contesta que sí, cuando
+ * el paciente activo se recuperó de la base tras un reinicio.
+ */
+interface EnEspera { entrada: Entrada; nombre: string; adoptar?: { id: string; patientId: string }; }
+const enEspera = new Map<string, EnEspera>();
+/** Números a los que ya se les buscó la sesión anterior en este proceso. */
+const buscados = new Set<string>();
 
 /** phone → último paciente activo, para ofrecerlo en el menú. */
 const lastPatient = new Map<string, { id: string; name: string }>();
@@ -210,6 +211,26 @@ const crudo = crearRegistroCrudo('whatsapp', async (from, eventos) => {
     body: { session_id: sessionId, canal_raw: eventos },
   });
   return status === 200 && body?.ok !== false;
+});
+
+/**
+ * Eco del hilo del paciente activo (canalEco.ts). Vale mientras el paciente
+ * siga vigente en el teléfono: dentro del rato de inactividad, sin la pregunta
+ * «¿Sigues con X?» pendiente, y dentro de la ventana de Meta.
+ */
+const eco = crearEco<string>('whatsapp', {
+  sesionDe: from => phoneSessions.get(from),
+  jwtDe: from => jwtDe.get(from),
+  renovarJwt: async from => {
+    const auth = await resolveUserAuth(from, undefined, true);
+    if (!auth.ok || auth.pendiente) return null;
+    jwtDe.set(from, auth.jwt);
+    return auth.jwt;
+  },
+  vigente: from => !enEspera.has(from)
+    && Date.now() - (ultimoEntrante.get(from) || 0) <= Math.min(VENTANA_META_MS, inactividadMs()),
+  enviar: (from, texto) => sendWhatsappText(from, texto, 'eco'),
+  enCola: (from, tarea) => enCola(from, tarea),
 });
 
 /** Render a BotForm as plain text so a WhatsApp user can still answer it. */
@@ -248,7 +269,7 @@ function composeReply(body: any): string {
 // contesta con el número. En los dos casos también vale escribir la etiqueta.
 
 /** Una opción lleva un `send` (texto para el cerebro) o un `value` (respuesta de un campo). */
-interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; }
+interface Opcion { label: string; send?: string; value?: any; esValor?: boolean; accion?: 'seguir' | 'cambiar'; }
 
 /** Lo último que se le ofreció a un número: contra esto se resuelve su respuesta. */
 interface Pregunta { serie: number; opciones: Opcion[]; numerada: boolean; }
@@ -583,6 +604,7 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
 
   crudo.activar(from);
   jwtDe.set(from, auth.jwt);
+  const previa = ultimoEntrante.get(from);
   ultimoEntrante.set(from, Date.now());
   const img = imagenDe(msg);
   // El texto de una foto viaja en su `caption`.
@@ -605,6 +627,97 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
     if (formWalks.has(from)) await askWalkField(ctx);
     return;
   }
+
+  const entrada: Entrada = { texto, img, opcion };
+  if (await preguntarSiSigue(ctx, entrada, previa)) return;
+  await procesar(ctx, entrada);
+}
+
+/** Un mensaje entrante ya leído: su texto, su imagen y la opción que eligió. */
+interface Entrada { texto: string; img: ImagenEntrante | null; opcion?: Opcion; }
+
+/** La sesión más reciente de ese usuario por este canal, si tiene paciente activo. */
+async function ultimaSesionDelCanal(jwt: string): Promise<{ id: string; patientId: string; nombre: string } | null> {
+  const base = process.env.CEPI_BOT_URL || `http://localhost:${process.env.PORT || '3002'}`;
+  try {
+    const r = await fetch(`${base}/api/bot/sessions`, { headers: { authorization: `Bearer ${jwt}` } });
+    if (!r.ok) return null;
+    const data: any = await r.json().catch(() => ({}));
+    // Vienen de la más reciente a la más vieja. Solo cuenta la última del canal:
+    // si esa ya no tiene paciente, no hay nada que retomar.
+    const s = (Array.isArray(data?.sessions) ? data.sessions : []).find((x: any) => x?.canal === 'whatsapp');
+    if (!s || s.estado !== 'abierta' || !s.active_patient_id) return null;
+    if (Date.now() - new Date(s.updated_at || s.created_at).getTime() > VENTANA_META_MS) return null;
+    return { id: s.id, patientId: s.active_patient_id, nombre: s.patient_name || 'el mismo paciente' };
+  } catch { return null; }
+}
+
+/**
+ * «Paciente activo» dura minutos (`inactividadMs`). Si la persona vuelve
+ * después de ese rato —o el bot se reinició y perdió lo que tenía en memoria—
+ * no se da por hecho que sigue con el mismo: el mensaje se retiene y se le
+ * pregunta. «Sí» lo procesa con ese paciente; «Cambiar» lo descarta y muestra
+ * el menú. Devuelve `true` si el mensaje quedó atendido acá.
+ */
+async function preguntarSiSigue(ctx: Turno, entrada: Entrada, previa: number | undefined): Promise<boolean> {
+  const { from } = ctx;
+  const { texto, opcion } = entrada;
+  const preguntar = (nombre: string) => sendOpciones(from, `¿Sigues con *${nombre}*?`, [
+    { label: 'Sí, continuar', accion: 'seguir' },
+    { label: 'Cambiar paciente', accion: 'cambiar' },
+  ]);
+
+  const pend = enEspera.get(from);
+  if (pend) {
+    if (opcion?.accion === 'seguir' || /^s[ií]$/i.test(texto)) {
+      enEspera.delete(from);
+      if (pend.adoptar) {
+        phoneSessions.set(from, pend.adoptar.id);
+        pacienteActivo.set(from, pend.nombre);
+        lastPatient.set(from, { id: pend.adoptar.patientId, name: pend.nombre });
+        eco.fijar(from, pend.adoptar.patientId);
+      }
+      await procesar(ctx, pend.entrada);
+      return true;
+    }
+    if (opcion?.accion === 'cambiar' || /^no$/i.test(texto)) {
+      await sendWhatsappText(from, 'No procesé tu mensaje anterior.');
+      await sendMenu(from);
+      return true;
+    }
+    // Otra cosa: pasa a ser el mensaje retenido y se vuelve a preguntar.
+    pend.entrada = entrada;
+    await preguntar(pend.nombre);
+    return true;
+  }
+
+  // Quien llega cambiando de paciente ya contestó la pregunta.
+  const cambia = CAMBIA_PACIENTE.test(texto) || CAMBIA_PACIENTE.test(opcion?.send || '')
+    || /^\/?\s*men[uú]\s*$/i.test(texto);
+  if (cambia) { buscados.add(from); return false; }
+
+  if (phoneSessions.has(from)) {
+    const inactivo = previa !== undefined && Date.now() - previa > inactividadMs();
+    if (!inactivo || !eco.pacienteDe(from)) return false;
+    const nombre = pacienteActivo.get(from) || 'el mismo paciente';
+    enEspera.set(from, { entrada, nombre });
+    await preguntar(nombre);
+    return true;
+  }
+
+  // Sin nada en memoria (primer mensaje tras un reinicio): se busca en la base.
+  if (buscados.has(from)) return false;
+  buscados.add(from);
+  const anterior = await ultimaSesionDelCanal(ctx.jwt);
+  if (!anterior) return false;
+  enEspera.set(from, { entrada, nombre: anterior.nombre, adoptar: { id: anterior.id, patientId: anterior.patientId } });
+  await preguntar(anterior.nombre);
+  return true;
+}
+
+/** Atiende un mensaje entrante ya validado: recorrido en curso, menú, imagen o turno. */
+async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<void> {
+  const { from } = ctx;
 
   // ── En medio de un recorrido: la respuesta es del campo, no del cerebro ──
   let walk = formWalks.get(from);
@@ -673,12 +786,15 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
 
   // Imagen suelta: se sube y va al cerebro con el marcador que usa la web.
   if (img) {
-    const id = await guardarImagen(auth.jwt, img);
+    const id = await guardarImagen(ctx.jwt, img);
     if (!id) { await sendWhatsappText(from, 'No pude procesar la imagen. Prueba de nuevo.'); return; }
     const mensaje = [texto, marcadorAdjunto(img.nombre, id)].filter(Boolean).join('\n');
     await routeTurn(ctx, { message: mensaje }, texto);
     return;
   }
+
+  // Un «Sí, continuar» sin pregunta pendiente no es un mensaje para el cerebro.
+  if (opcion?.accion) { await sendWhatsappText(from, 'Esa opción ya no está vigente.'); return; }
 
   const send = opcion?.send ?? texto;
   await routeTurn(ctx, { message: send }, send);
@@ -709,33 +825,6 @@ async function recibirEnCampo(ctx: Turno, w: FormWalk, f: BotFormField, img: Ima
   await askWalkField(ctx);
 }
 
-/**
- * Manda al teléfono lo que se escribió en el hilo de su paciente activo desde
- * otra sesión (la web, una app, otro canal). Lee el hilo con el JWT del propio
- * usuario del número: recibe lo que vería en la web, ni más ni menos.
- */
-async function ecoPara(from: string): Promise<void> {
-  const eco = ecos.get(from);
-  let jwt = jwtDe.get(from);
-  if (!eco || !jwt) return;
-  if (Date.now() - (ultimoEntrante.get(from) || 0) > VENTANA_META_MS) return;
-  let hilo = await leerHilo(jwt, eco.patientId);
-  if (hilo.status === 401) {
-    // El token es del último mensaje entrante y pudo vencer: se pide otro.
-    const auth = await resolveUserAuth(from, undefined, true);
-    if (!auth.ok || auth.pendiente) return;
-    jwt = auth.jwt; jwtDe.set(from, jwt);
-    hilo = await leerHilo(jwt, eco.patientId);
-  }
-  if (hilo.status !== 200) { console.error(`[whatsapp] eco: hilo ${hilo.status}`); return; }
-  const nuevos = mensajesNuevos(hilo.messages, phoneSessions.get(from), eco.desde, eco.enviados);
-  for (const m of nuevos.slice(-MAX_ECO)) {
-    if (ecos.get(from) !== eco) return;          // cambió de paciente mientras tanto
-    await sendWhatsappText(from, textoDeEco(m), 'eco');
-  }
-  for (const m of nuevos) eco.enviados.add(claveDeMensaje(m));
-}
-
 /** Comandos que sacan de un recorrido aunque no lleven barra. */
 const CAMBIA_PACIENTE = /^\s*((salir|cerrar|olvidar)\s+paciente|activar\s+paciente\s+[0-9a-f-]{36}|nuevo\s+paciente|buscar\s+paciente)\s*$/i;
 
@@ -749,7 +838,8 @@ interface Turno { invokeChat: InvokeChat; from: string; jwt: string; msgId?: str
 async function sendMenu(from: string): Promise<void> {
   phoneSessions.delete(from);
   pacienteActivo.delete(from);
-  ecos.delete(from);
+  eco.soltar(from);
+  enEspera.delete(from);
   formWalks.delete(from);
   const opciones: Opcion[] = [
     { label: 'Nuevo paciente', send: 'nuevo paciente' },
@@ -774,11 +864,11 @@ async function routeTurn(
   // que lo tienen activo, así que activar a otro dentro de la misma sesión se
   // llevaría toda la conversación al hilo del nuevo. Se empieza una sesión.
   const otro = String((cuerpo as any).message || '').match(/^\/?\s*activar\s+paciente\s+([0-9a-f-]{36})\s*$/i);
-  const actual = ecos.get(from)?.patientId;
+  const actual = eco.pacienteDe(from);
   if (otro && actual && otro[1].toLowerCase() !== actual.toLowerCase()) {
     phoneSessions.delete(from);
     pacienteActivo.delete(from);
-    ecos.delete(from);
+    eco.soltar(from);
   }
   const sessionId = phoneSessions.get(from) || undefined;
 
@@ -806,7 +896,7 @@ async function routeTurn(
   try {
     ({ status, body } = await invokeChat({
       headers: { authorization: `Bearer ${ctx.jwt}` },
-      body: { ...cuerpo, session_id: sessionId, canal_raw: eventos },
+      body: { ...cuerpo, session_id: sessionId, canal: 'whatsapp', canal_raw: eventos },
     }));
   } catch (e: any) {
     body = { ok: false, error: e?.message || String(e) };
@@ -838,14 +928,14 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
 
     // Eco del hilo: vale mientras ESTE paciente siga activo en el teléfono.
     const pid = body?.session_closed ? '' : String(body?.active_patient_id || '');
-    const previo = ecos.get(from);
-    if (pid && previo?.patientId !== pid) ecos.set(from, { patientId: pid, desde: Date.now(), enviados: new Set() });
+    const previo = eco.pacienteDe(from);
+    if (pid) eco.fijar(from, pid);
     // Solo si la respuesta dice explícitamente que no hay paciente: una que no
     // trae el campo no es un «lo soltó».
     if (!pid && previo && body && 'active_patient_id' in body) {
       // Soltó al paciente: se corta el eco y la sesión termina con él (una
       // sesión por paciente; la siguiente empieza limpia).
-      ecos.delete(from);
+      eco.soltar(from);
       phoneSessions.delete(from);
     }
   }
@@ -955,15 +1045,6 @@ export function verifyMetaSignature(
  */
 export function startWhatsapp(invokeChat: InvokeChat) {
   cerebro = invokeChat;
-  // Alguien escribió en el hilo de un paciente: le llega a cada número que lo
-  // tiene activo, salvo al que lo escribió. Por la cola del número, para que no
-  // se cruce con un turno suyo en curso.
-  alTurnoDePaciente(({ patientId, sessionId }) => {
-    for (const [from, eco] of ecos) {
-      if (eco.patientId !== patientId || phoneSessions.get(from) === sessionId) continue;
-      void enCola(from, () => ecoPara(from));
-    }
-  });
   const app = express();
   // Keep the raw bytes: the signature is over the body exactly as Meta sent it.
   app.use(express.json({
