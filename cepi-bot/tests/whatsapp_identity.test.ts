@@ -34,8 +34,11 @@ process.env.CEPI_CANAL_GRACIA_MS = '150';
 import { startWhatsapp, phoneCandidates } from '../src/whatsapp.js';
 
 /** A syntactically valid JWT whose payload carries a far-future exp. */
+// El vencimiento se fija una vez: calcularlo en cada llamada daba dos tokens
+// distintos si entre una y otra cambiaba el segundo, y el test fallaba al azar.
+const EXP = Math.floor(Date.now() / 1000) + 86400;
 const jwtFor = (who: string) => 'h.' +
-  Buffer.from(JSON.stringify({ sub: who, exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64') +
+  Buffer.from(JSON.stringify({ sub: who, exp: EXP })).toString('base64') +
   '.s';
 
 /** Phone (as stored on the user) → user the resolve endpoint answers for. */
