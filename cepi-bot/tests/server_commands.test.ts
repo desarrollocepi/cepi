@@ -165,6 +165,30 @@ describe('telemedicine command regexes', () => {
     expect(parsearDestinos('  ').circulos).toEqual([]);
   });
 
+  it('un motivo con comas no se parte en destinos (regresión de producción)', async () => {
+    const { parsearDestinos } = await import('../src/server.js');
+    const CIRCULOS = ['dermatologia', 'medicina_interna', 'pediatria', 'turno'];
+    // «ignorar» se tomaba por otro círculo y el motivo se perdía.
+    const r = parsearDestinos('medicina_interna prueba de derivación, ignorar', CIRCULOS);
+    expect(r.circulos).toEqual(['medicina_interna']);
+    expect(r.motivo).toBe('prueba de derivación, ignorar');
+
+    // Varios destinos y motivo con coma: la lista termina en el que trae texto detrás.
+    const v = parsearDestinos('dermatologia, pediatria sospecha de melanoma, urgente', CIRCULOS);
+    expect(v.circulos).toEqual(['dermatologia', 'pediatria']);
+    expect(v.motivo).toBe('sospecha de melanoma, urgente');
+
+    // Una palabra que no es un círculo es motivo, aunque vaya sola tras una coma.
+    const u = parsearDestinos('dermatologia, urgente', CIRCULOS);
+    expect(u.circulos).toEqual(['dermatologia']);
+    expect(u.motivo).toBe('urgente');
+
+    // Mal dirigido desde el principio: se devuelve cuál no existe, para decirlo.
+    const d = parsearDestinos('dermato sospecha', CIRCULOS);
+    expect(d.circulos).toEqual([]);
+    expect(d.desconocido).toBe('dermato');
+  });
+
   it('matches "derivar a <destinos> [motivo]"', () => {
     // El regex solo separa el comando de sus destinos; quién es quién lo decide
     // `parsearDestinos` (el test de arriba).

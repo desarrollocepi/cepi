@@ -10,6 +10,9 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cepi-estado-tg-'));
+// El cerebro propio (sesiones, estado de la ficha) no existe en este test: que
+// las consultas a él fallen al instante en vez de salir a la red.
+process.env.CEPI_BOT_URL = 'http://bot.test';
 process.env.CEPI_BOT_STATE_DIR = DIR;
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.TELEGRAM_BOT_EMAIL = 'svc@test.local';
@@ -51,6 +54,7 @@ async function update(payload: any): Promise<void> {
 
 beforeAll(async () => {
   globalThis.fetch = (async (url: any, init?: any) => {
+    if (String(url).startsWith('http://bot.test/') && !String(url).includes('/api/bot/sessions')) return new Response('{}', { status: 404 });
     const u = String(url);
     const json = (b: any) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
     if (u.includes('api.telegram.org')) { if (u.includes('/sendMessage')) sent.push(JSON.parse(init.body).text); return json({ ok: true, result: {} }); }

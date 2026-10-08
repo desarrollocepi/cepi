@@ -1251,7 +1251,7 @@ async function omitirSeccion(ctx: Turno, w: FormWalk): Promise<void> {
 function textoConPendiente(body: any): string {
   const texto = composeReply(body);
   const resumen = body?.pending_action?.summary;
-  return resumen && !/¿Confirmas\?/i.test(texto) ? `${texto}\n\n⏳ Sigue pendiente de confirmar: ${resumen}. ¿Confirmas?` : texto;
+  return resumen && !/¿Confirm[aá]s\?/i.test(texto) ? `${texto}\n\n⏳ Sigue pendiente de confirmar: ${resumen}. ¿Confirmas?` : texto;
 }
 
 /**

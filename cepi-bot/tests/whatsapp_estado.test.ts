@@ -13,6 +13,9 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cepi-estado-'));
+// El cerebro propio (sesiones, estado de la ficha) no existe en este test: que
+// las consultas a él fallen al instante en vez de salir a la red.
+process.env.CEPI_BOT_URL = 'http://bot.test';
 process.env.CEPI_BOT_STATE_DIR = DIR;
 process.env.WHATSAPP_TOKEN = 'test-token';
 process.env.WHATSAPP_PHONE_ID = '111';
@@ -61,6 +64,7 @@ async function manda(text: string): Promise<void> {
 
 beforeAll(async () => {
   globalThis.fetch = (async (url: any, init?: any) => {
+    if (String(url).startsWith('http://bot.test/') && !String(url).includes('/api/bot/sessions')) return new Response('{}', { status: 404 });
     const u = String(url);
     const json = (status: number, body: any) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (u.includes('graph.facebook.com')) {

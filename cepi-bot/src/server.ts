@@ -550,6 +550,16 @@ async function avisarHilo(jwt: string, patientId: string, sessionId: string): Pr
 }
 
 /**
+ * «la consulta de Juan Pérez»: cómo nombrar el episodio activo en una pregunta
+ * al médico. Antes decía «el episodio 22fce59a-ad80-…», que no le dice nada.
+ */
+function consultaDe(session: BotSession): string {
+  const pc: any = (session.extracted_slots as any)?.patient_context;
+  const nombre = pc ? [pc.nombre, pc.apellidos].filter(Boolean).join(' ').trim() : '';
+  return nombre ? `la consulta de ${nombre}` : 'la consulta activa';
+}
+
+/**
  * El feed de actividad dicho en texto, para un canal de chat: las últimas
  * entradas, cada una con fecha, autor y qué pasó. Los cambios de campo se
  * cuentan por nombre de campo, sin volcar valores (pueden ser largos).
@@ -559,17 +569,24 @@ export function resumenDeChatter(data: unknown, max = 10): string {
   if (!lista.length) return 'Sin actividad registrada.';
   const fecha = (v: any) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
   const orden = [...lista].sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
-  const lineas = orden.slice(0, max).map(e => {
+  const soloInterno = (e: any) => e?.type === 'change' && e?.changes && typeof e.changes === 'object'
+    && Object.values(e.changes).length > 0
+    && Object.values(e.changes).every((c: any) => /^Ficha\s+—/.test(String(c?.label || '')));
+  const visibles = orden.filter(e => !soloInterno(e));
+  const lineas = visibles.slice(0, max).map(e => {
     const quien = e?.author_name || 'Sistema';
+    // Los campos «Ficha — …» son el recálculo interno de completitud: no son
+    // algo que alguien haya hecho, y solos no merecen una línea.
     const campos = e?.changes && typeof e.changes === 'object'
-      ? Object.values(e.changes).map((c: any) => c?.label).filter(Boolean) : [];
+      ? Object.values(e.changes).map((c: any) => String(c?.label || '')).filter(l => l && !/^Ficha\s+—/.test(l)) : [];
     const que = e?.type === 'note' ? String(e?.body || '').trim()
       : e?.type === 'create' ? 'creó el registro'
       : campos.length ? `actualizó ${campos.slice(0, 6).join(', ')}${campos.length > 6 ? '…' : ''}`
       : String(e?.body || 'cambio').trim();
     return `• ${fecha(e?.created_at)} ${quien}: ${que}`.replace(/\s+/g, ' ').slice(0, 300);
   });
-  const resto = orden.length - lineas.length;
+  if (!lineas.length) return 'Sin actividad registrada.';
+  const resto = visibles.length - lineas.length;
   return lineas.join('\n') + (resto > 0 ? `\n(y ${resto} entrada(s) anteriores)` : '');
 }
 
@@ -631,26 +648,46 @@ const UUID_DESTINO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 /**
  * Los destinos de "derivar a …": círculos (slug) y personas (uuid), separados por comas, y
- * lo que sobra del último es el motivo. Con un solo destino se comporta como siempre
+ * después el motivo. Con un solo destino se comporta como siempre
  * ("derivar a dermatologia sospecha de melanoma").
+ *
+ * La lista de destinos TERMINA en el primero que trae texto detrás: desde ahí todo es
+ * motivo, comas incluidas. Antes un motivo con coma se partía y lo que seguía a la coma
+ * se tomaba por otro círculo ("derivar a medicina_interna revisar, urgente" derivaba
+ * también al círculo «urgente» y perdía el motivo).
+ *
+ * `conocidos`, si viene, son los slugs de los círculos que existen: una palabra que no
+ * es ninguno de ellos tampoco es un destino, es el comienzo del motivo. `desconocidos`
+ * devuelve el primer destino inválido cuando no hubo ninguno válido antes.
  */
-export function parsearDestinos(texto: string): { circulos: string[]; personas: string[]; motivo: string } {
+export function parsearDestinos(texto: string, conocidos?: string[]): {
+  circulos: string[]; personas: string[]; motivo: string; desconocido?: string;
+} {
   const circulos: string[] = [];
   const personas: string[] = [];
-  let motivo = '';
+  const validos = conocidos ? new Set(conocidos.map(c => c.toLowerCase())) : null;
   const trozos = texto.split(',');
-  trozos.forEach((trozo, i) => {
-    const t = trozo.trim();
-    if (!t) return;
+  let motivo = '';
+  let desconocido: string | undefined;
+  for (let i = 0; i < trozos.length; i++) {
+    const t = trozos[i].trim();
+    if (!t) continue;
+    const resto = () => trozos.slice(i).join(',').trim();
     const m = t.match(/^([0-9a-f-]{36}|[a-z][a-z0-9_-]*)\b\s*([\s\S]*)$/i);
-    if (!m) { if (i === trozos.length - 1) motivo = t; return; }
-    const destino = m[1];
-    const resto = (m[2] || '').trim();
-    if (UUID_DESTINO.test(destino)) personas.push(destino.toLowerCase());
-    else circulos.push(destino.toLowerCase());
-    if (resto && i === trozos.length - 1) motivo = resto;
-  });
-  return { circulos, personas: Array.from(new Set(personas)), motivo };
+    if (!m) { motivo = resto(); break; }
+    const destino = m[1].toLowerCase();
+    const esPersona = UUID_DESTINO.test(destino);
+    if (!esPersona && validos && !validos.has(destino)) {
+      // No es un círculo: si todavía no hay destinos, el pedido está mal dirigido.
+      if (!circulos.length && !personas.length) desconocido = destino;
+      motivo = resto();
+      break;
+    }
+    if (esPersona) personas.push(destino); else circulos.push(destino);
+    const detras = (m[2] || '').trim();
+    if (detras) { motivo = [detras, ...trozos.slice(i + 1)].join(',').trim(); break; }
+  }
+  return { circulos: Array.from(new Set(circulos)), personas: Array.from(new Set(personas)), motivo, desconocido };
 }
 
 /** Consent entity (PAPER §8 image-consent records). Mirrors flowV1's constant. */
@@ -1771,7 +1808,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         const userId2 = ((me2 as any)?.data?.user?.id as string) || null;
         const reason = motivo || 'Teleconsulta enviada a turno para triage';
         session.pending_action = {
-          summary: `Enviar episodio ${activeEpisodeId} a la bandeja de turno`,
+          summary: `Enviar ${consultaDe(session)} a la bandeja de turno`,
           batch: [
             { tool: 'entities.update', args: { id: activeEpisodeId, record_type: 'business',
               data: { medico_primario_id: userId2, ...(motivo ? { motivo_consulta: motivo } : {}) } } },
@@ -1782,7 +1819,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           createdAt: new Date().toISOString(),
         };
         if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
-        const ackText = `Voy a enviar el episodio ${activeEpisodeId} a la bandeja de turno.\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
+        const ackText = `Voy a enviar ${consultaDe(session)} a la bandeja de turno.\n  • motivo: ${reason}\n\n¿Confirmas? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
         return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
@@ -1811,8 +1848,15 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           : 'Bandeja de turno vacía: no hay casos entrantes.';
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: text }];
         await saveSession(mcp, session);
+        // La lista muestra el id recortado: sin un botón por caso no hay forma de
+        // reclamar desde un canal (y en la web ahorra copiar el uuid).
+        const porReclamar = rows.filter((e: any) => !e?.data?.responsable_actual_id).slice(0, 8).map((e: any) => ({
+          label: `Reclamar: ${String(e?.data?.motivo_consulta || e.title || String(e.id).slice(0, 8)).slice(0, 40)}`,
+          send: `reclamar ${e.id}`,
+        }));
         return res.json({ ok: true, session_id: sessionId, text, history: session.turns, toolCalls: calls,
-          active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
+          active_patient_id: activePatientId, active_episode_id: activeEpisodeId,
+          ...(porReclamar.length ? { quick_replies: porReclamar } : {}) });
       }
 
       // ── "reclamar [<uuid>]" — el médico en turno toma un caso ──
@@ -1856,9 +1900,18 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
             active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
         }
-        const { circulos, personas, motivo } = parsearDestinos(deriveMatch[1]);
+        // Los círculos que existen: así una palabra del motivo no pasa por destino.
+        let conocidos: string[] | undefined;
+        try {
+          const g: any = await mcp.call('groups.list', {});
+          const filas: any[] = Array.isArray(g?.data?.data) ? g.data.data : Array.isArray(g?.data) ? g.data : [];
+          if (g?.ok && filas.length) conocidos = filas.map(x => String(x?.slug || '')).filter(Boolean);
+        } catch { conocidos = undefined; }
+        const { circulos, personas, motivo, desconocido } = parsearDestinos(deriveMatch[1], conocidos);
         if (!circulos.length && !personas.length) {
-          const ackText = 'Dime a quién derivar: un círculo (dermatologia) o una persona, separados por comas.';
+          const ackText = desconocido && conocidos
+            ? `No conozco el círculo «${desconocido}». Círculos: ${conocidos.join(', ')}.`
+            : 'Dime a quién derivar: un círculo (dermatologia) o una persona, separados por comas.';
           session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
           await saveSession(mcp, session);
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],
@@ -1883,13 +1936,13 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           reason, status_value: 'derivada',
         } });
         session.pending_action = {
-          summary: `Derivar episodio ${activeEpisodeId} ${comoTexto}`,
+          summary: `Derivar ${consultaDe(session)} ${comoTexto}`,
           batch,
           successMessage: `Caso derivado ${comoTexto}: {{reviewers}}. Se les notificó.`,
           createdAt: new Date().toISOString(),
         };
         if (!gateOn) return res.json(await executePendingActionResult(session, mcp, message, sessionId));
-        const ackText = `Voy a derivar el episodio ${activeEpisodeId} ${comoTexto} (${destinos.length} destino(s)).\n  • motivo: ${reason}\n\n¿Confirmás? (sí / no)`;
+        const ackText = `Voy a derivar ${consultaDe(session)} ${comoTexto} (${destinos.length} destino(s)).\n  • motivo: ${reason}\n\n¿Confirmas? (sí / no)`;
         session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
         return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],

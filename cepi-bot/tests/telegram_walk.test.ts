@@ -14,6 +14,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { AddressInfo } from 'node:net';
 
 // ── Env must be set before importing the adapter ───────────────────────────
+// El cerebro propio (sesiones, estado de la ficha) no existe en este test: que
+// las consultas a él fallen al instante en vez de salir a la red.
+process.env.CEPI_BOT_URL = 'http://bot.test';
 process.env.TELEGRAM_BOT_TOKEN = 'test-token';
 process.env.TELEGRAM_BOT_EMAIL = 'svc@test.local';
 process.env.TELEGRAM_BOT_PASSWORD = 'secret';
@@ -45,6 +48,7 @@ const inbound: any[] = [];
 const realFetch = globalThis.fetch;
 function mockFetch(): void {
   globalThis.fetch = (async (url: any, init?: any) => {
+    if (String(url).startsWith('http://bot.test/') && !String(url).includes('/api/bot/sessions')) return new Response('{}', { status: 404 });
     const u = String(url);
     if (u.includes('api.telegram.org')) {
       if (u.includes('/sendMessage')) sent.push(JSON.parse(init.body));

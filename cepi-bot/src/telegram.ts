@@ -922,7 +922,7 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
     const texto = composeReply(body);
     // Los botones Sí/No salen mientras haya una acción pendiente; si la respuesta
     // habla de otra cosa, hay que decir a qué se le está diciendo que sí.
-    await sendTelegramText(chatId, resumen && !/¿Confirmas\?/i.test(texto)
+    await sendTelegramText(chatId, resumen && !/¿Confirm[aá]s\?/i.test(texto)
       ? `${texto}\n\n⏳ Sigue pendiente de confirmar: ${resumen}. ¿Confirmas?` : texto, keyboard);
     // La respuesta no traía pregunta: si la ficha sigue abierta, se retoma. Un
     // comando (una nota, ver el chatter) no puede dejar al médico sin saber qué sigue.
