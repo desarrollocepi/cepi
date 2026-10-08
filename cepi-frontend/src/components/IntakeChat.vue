@@ -784,6 +784,32 @@ async function reloadThread() {
   }
 }
 
+// El hilo es de todos los que escriben sobre el paciente, y no todos escriben
+// desde acá: un colega en su sesión, o el mismo médico por WhatsApp (PAPER §27.8).
+// Sin esto, lo ajeno aparecía recién al mandar un mensaje propio. Se consulta
+// cada pocos segundos con la pestaña a la vista y sin un envío en curso, y solo
+// se repinta si de verdad cambió: no se le mueve el scroll a quien está leyendo.
+const REFRESCO_HILO_MS = 5000;
+function huellaDelHilo(list) {
+  const u = list[list.length - 1];
+  return `${list.length}|${u?.ts || ''}|${(u?.content || '').length}`;
+}
+async function refrescarHilo() {
+  const uuid = currentPatientId.value;
+  if (!uuid || busy.value || document.hidden) return;
+  try {
+    const r = await getPatientThread(uuid);
+    if (currentPatientId.value !== uuid || busy.value) return;
+    const nuevos = Array.isArray(r?.messages) ? r.messages : [];
+    if (huellaDelHilo(nuevos) === huellaDelHilo(messages.value)) return;
+    messages.value = nuevos;
+    await scrollEnd();
+  } catch { /* el próximo intento lo recupera; un fallo de red no es un error del chat */ }
+}
+let relojHilo = null;
+onMounted(() => { relojHilo = setInterval(refrescarHilo, REFRESCO_HILO_MS); });
+onUnmounted(() => { if (relojHilo) clearInterval(relojHilo); });
+
 // Resume the caller's most-recent OPEN session for this patient (for writing).
 // Returns its id, or null when none exists (one is then created lazily on the
 // first message — so merely browsing a patient never spawns a session).

@@ -31,6 +31,7 @@ import {
 } from './flowV1.js';
 import { extraerEpisodio } from './extraerFicha.js';
 import { vaciarRegistrosCrudos } from './canalRaw.js';
+import { emitirTurnoDePaciente } from './canalEco.js';
 import { icdSearch } from './icdWho.js';
 import { extractPendingQuestions, pendingQuestionsNote } from './pendingQuestions.js';
 import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_ICD } from './episodeImages.js';
@@ -777,6 +778,14 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       if (payload && typeof payload === 'object'
           && payload.status_header === undefined && payload.session_id) {
         payload.status_header = computeStatusHeader(sessionForHeader);
+      }
+      // Eco del hilo del paciente a los canales (canalEco.ts). Con un respiro:
+      // hay ramas que terminan de guardar la sesión después de responder.
+      if (payload && payload.ok !== false && !payload.solo_registro
+          && payload.session_id && payload.active_patient_id) {
+        const ev = { patientId: String(payload.active_patient_id), sessionId: String(payload.session_id) };
+        const t = setTimeout(() => emitirTurnoDePaciente(ev), 400);
+        if (typeof (t as any).unref === 'function') (t as any).unref();
       }
       return _json(payload);
     };

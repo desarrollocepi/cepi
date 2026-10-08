@@ -2711,6 +2711,31 @@ entregó el proveedor.
 
 Vive en `cepi-bot/src/canalRaw.ts`.
 
+### 27.8 El canal participa del hilo del paciente
+
+El hilo de un paciente es uno solo: la mezcla cronológica de las sesiones de todos los que
+escribieron sobre él (`GET /api/patient-thread`). Quien tiene a ese paciente **activo** en
+WhatsApp está en ese mismo hilo, en los dos sentidos:
+
+- **WhatsApp → web y apps.** Sus turnos son turnos de una `bot_session` con ese paciente
+  activo, así que ya salen en el hilo. La web lo vuelve a leer cada 5 s con la pestaña a la
+  vista; las apps nativas lo leen al abrir al paciente y tras cada envío propio.
+- **Web y apps → WhatsApp.** Cuando termina un turno con paciente activo, venga de donde
+  venga, el cerebro avisa (`cepi-bot/src/canalEco.ts`) y el canal le manda lo nuevo a cada
+  número que tiene a ese paciente activo, salvo al que lo escribió. El aviso no lleva
+  contenido: el canal **vuelve a leer el hilo con el JWT del usuario del número**, y por eso
+  recibe exactamente lo que vería en la web, con sus permisos y su organización. Un rol que
+  solo ve sus propias sesiones recibe solo lo suyo (lo que escribió desde otro dispositivo).
+- **Vale mientras el paciente siga activo en el teléfono.** Al cambiar de paciente o
+  soltarlo, el eco de ese hilo se corta. Solo se reenvía lo posterior a haberlo activado.
+- **Una sesión por paciente.** El hilo se arma con las sesiones que tienen activo al
+  paciente: activar a otro dentro de la misma sesión se llevaría toda la conversación al
+  hilo del nuevo. En WhatsApp, activar a otro paciente o soltar al actual termina la sesión.
+- Meta solo deja escribirle a un número dentro de las 24 h desde su último mensaje: pasado
+  eso el eco no se manda. El acuse «Paciente activo: …» no se reenvía. Tope: 10 por eco.
+- El estado vive en memoria: tras un reinicio del bot el número no tiene paciente activo
+  hasta que lo vuelva a activar, y hasta entonces no recibe eco. Telegram no está suscrito.
+
 ---
 
 **Fin del documento.**

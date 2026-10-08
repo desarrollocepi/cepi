@@ -20,6 +20,7 @@ process.env.WHATSAPP_WEBHOOK_PORT = '0';
 process.env.CEPI_CANAL_GRACIA_MS = '0';
 
 import { startWhatsapp } from '../src/whatsapp.js';
+import { emitirTurnoDePaciente } from '../src/canalEco.js';
 
 const jwt = 'h.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64') + '.s';
 const FROM = '593990000001';
@@ -30,6 +31,9 @@ const sent: Salida[] = [];
 const turnos: any[] = [];
 /** Si está, Meta rechaza los mensajes interactivos (para probar la caída a texto). */
 let rechazarBotones = false;
+/** El hilo del paciente que devuelve TodoERP, y quién lo leyó. */
+let hilo: any[] = [];
+const lecturasDeHilo: Array<{ url: string; auth: string }> = [];
 /** Ids de media que el bot le pidió a Meta, y lo que subió a TodoERP. */
 const descargas: string[] = [];
 const subidas: Array<{ auth: string; nombre: string; tipo: string; bytes: number }> = [];
@@ -50,6 +54,10 @@ function mockFetch(): void {
     if (u.startsWith('https://lookaside.test/media/')) {
       if (init?.headers?.Authorization !== 'Bearer test-token') return json(401, {});
       return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), { status: 200 });
+    }
+    if (u.includes('/api/patient-thread')) {
+      lecturasDeHilo.push({ url: u, auth: init.headers.authorization });
+      return json(200, { ok: true, messages: hilo });
     }
     if (u.endsWith('/api/attachments')) {
       const f = (init.body as FormData).get('file') as File;
@@ -103,6 +111,9 @@ async function cerebro({ body }: { body: any }) {
   if (/^\/nuevo-paciente /.test(msg)) return { status: 200, body: { ...base, text: 'Listo, quedó registrado. Empecemos la ficha:', form: FICHA_FORM, active_patient_id: 'p-1', status_header: '👤 Paciente Prueba — ficha §2.1 Antecedentes' } };
   if (/\[adjunto:/.test(msg)) return { status: 200, body: { ...base, text: '¿Esta imagen es de la lesión o un formulario de consentimiento?', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
     quick_replies: [{ label: '🔬 Imagen de lesión', send: 'imagen lesion' }, { label: '📄 Consentimiento', send: 'imagen consentimiento' }] } };
+  if (/^salir paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Paciente activo limpiado.', active_patient_id: null } };
+  if (/^activar paciente /i.test(msg)) return { status: 200, body: { ...base, session_id: body.session_id || 'sess-nueva', text: 'Paciente activo: Otro.', active_patient_id: msg.split(' ').pop(), status_header: '👤 Otro' } };
+  if (/^nota /i.test(msg)) return { status: 200, body: { ...base, text: 'Anotado.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
   if (/^omitir ficha$/i.test(msg)) return { status: 200, body: { ...base, text: 'Sección omitida.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
   return { status: 200, body: { ...base, text: 'Escribe «nuevo paciente» para crear uno.', quick_replies: ATAJOS } };
 }
@@ -272,5 +283,74 @@ describe('WhatsApp: registro crudo', () => {
     // Y lo que el bot escribió y nunca pasó por el cerebro (el menú) también.
     expect(crudo.some(e => e.dir === 'out' && /¿Qué quieres hacer\?/.test(e.texto))).toBe(true);
     expect(crudo.some(e => e.dir === 'in' && e.texto === 'cancelar')).toBe(true);
+  });
+});
+
+describe('WhatsApp: eco del hilo del paciente activo', () => {
+  const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
+  const enUnRato = () => new Date(Date.now() + 1000).toISOString();
+  const OTRO = '22222222-2222-4222-8222-222222222222';
+
+  it('lo que se escribe en la web sobre el paciente activo llega al teléfono', async () => {
+    await manda({ text: 'cancelar' });
+    await manda({ text: 'nota control en 7 días' });          // deja a p-1 activo en sess-wa
+    sent.length = 0; lecturasDeHilo.length = 0;
+    hilo = [
+      { session_id: 'sess-wa', role: 'user', content: 'nota control en 7 días', ts: enUnRato(), author_name: 'Ana' },
+      { session_id: 'sess-web', role: 'user', content: 'Revisé las fotos, parece queratosis', ts: enUnRato(), author_name: 'Dra. Derma' },
+      { session_id: 'sess-web', role: 'assistant', content: 'Paciente activo: Paciente Prueba', ts: enUnRato(), is_bot: true },
+      { session_id: 'sess-web', role: 'assistant', content: 'Anotado en la ficha.', ts: enUnRato(), is_bot: true },
+      { session_id: 'sess-web', role: 'user', content: 'viejo', ts: '2020-01-01T00:00:00Z', author_name: 'Dra. Derma' },
+    ];
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    await esperar(150);
+    // Lee el hilo con el JWT del usuario del número: recibe lo que vería en la web.
+    expect(lecturasDeHilo).toEqual([{ url: expect.stringContaining('patient_id=p-1'), auth: `Bearer ${jwt}` }]);
+    // Ni lo suyo, ni lo anterior a tener al paciente activo, ni el acuse de activación.
+    expect(sent.map(s => s.text)).toEqual([
+      '💬 *Dra. Derma*\nRevisé las fotos, parece queratosis', '🤖 *Asistente*\nAnotado en la ficha.']);
+  });
+
+  it('no repite lo ya enviado, y un turno propio no dispara eco', async () => {
+    sent.length = 0;
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-wa' });
+    await esperar(150);
+    expect(sent).toEqual([]);
+  });
+
+  it('el turno de otro paciente no le llega', async () => {
+    sent.length = 0; lecturasDeHilo.length = 0;
+    emitirTurnoDePaciente({ patientId: 'p-otro', sessionId: 'sess-web' });
+    await esperar(100);
+    expect(lecturasDeHilo).toEqual([]);
+  });
+
+  it('activar a otro paciente empieza una sesión nueva y corta el eco del anterior', async () => {
+    await manda({ text: `activar paciente ${OTRO}` });
+    expect(turnos.at(-1).session_id).toBeUndefined();        // no arrastra la sesión de p-1
+    sent.length = 0; lecturasDeHilo.length = 0;
+    hilo = [{ session_id: 'sess-web', role: 'user', content: 'otro mensaje sobre p-1', ts: enUnRato(), author_name: 'Dra. Derma' }];
+    emitirTurnoDePaciente({ patientId: 'p-1', sessionId: 'sess-web' });
+    await esperar(100);
+    expect(sent).toEqual([]);
+    expect(lecturasDeHilo).toEqual([]);
+  });
+
+  it('«salir paciente» en medio de una sección sale del recorrido, no se guarda como respuesta', async () => {
+    await manda({ text: 'nuevo paciente' });
+    await manda({ text: '111' }); await manda({ text: 'A' }); await manda({ text: 'B' });   // abre la ficha
+    expect(ultimo().text).toBe('(1/4) ¿Fuma?');
+    turnos.length = 0;
+    await manda({ text: 'salir paciente' });
+    expect(turnos.map(t => t.message)).toEqual(['salir paciente']);
+    expect(ultimo().text).toBe('Paciente activo limpiado.');
+  });
+
+  it('al soltar al paciente la sesión termina con él', async () => {
+    await manda({ text: 'nota x' });
+    await manda({ text: 'salir paciente' });
+    await manda({ text: 'hola' });
+    expect(turnos.at(-1).session_id).toBeUndefined();
   });
 });
