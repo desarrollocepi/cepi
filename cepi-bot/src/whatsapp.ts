@@ -257,7 +257,9 @@ function renderForm(form: BotForm): string {
 function composeReply(body: any): string {
   const header = String(body?.status_header || '').trim();
   let text = String(body?.text || '').trim();
-  if (body?.form) text += '\n' + renderForm(body.form);
+  // El formulario de búsqueda es un solo cuadro de texto: en un chat ya es el
+  // propio chat, y pintarlo solo mete ruido debajo de los resultados.
+  if (body?.form && body.form.id !== 'patient_search') text += '\n' + renderForm(body.form);
   text = text || '…';
   return header ? `${header}\n${text}` : text;
 }
@@ -279,6 +281,9 @@ let seriePregunta = 0;
 const BOTON_OPCION = 'op:';
 const MAX_BOTONES = 3;
 const MAX_TITULO = 20;
+/** Una lista admite 10 filas, con título de 24 caracteres y descripción de 72. */
+const MAX_FILAS = 10;
+const MAX_TITULO_FILA = 24;
 
 /** Para comparar lo que la persona escribió con una etiqueta: sin tildes, emojis ni signos. */
 function llano(t: string): string {
@@ -286,19 +291,48 @@ function llano(t: string): string {
     .replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Recorta una etiqueta al largo que admite Meta. */
+function recortar(t: string, max: number): string {
+  const limpio = t.trim();
+  return limpio.length <= max ? limpio : limpio.slice(0, max - 1).trimEnd() + '…';
+}
+
 /**
  * Manda un texto con sus opciones. `elegibles` son las respuestas posibles;
- * `acciones`, salidas laterales (Omitir, Nuevo paciente). Si Meta rechaza los
- * botones, cae a la lista numerada: la persona nunca se queda sin cómo contestar.
+ * `acciones`, salidas laterales (Omitir, Nuevo paciente). Hasta 3 salen como
+ * botones, hasta 10 como lista desplegable, y si Meta rechaza el mensaje —o son
+ * más— como lista numerada: la persona nunca se queda sin cómo contestar.
  */
 async function sendOpciones(to: string, text: string, elegibles: Opcion[], acciones: Opcion[] = []): Promise<void> {
+  // La misma salida puede venir dos veces (el cerebro la ofrece y el formulario
+  // también): Meta rechaza el mensaje entero por un título repetido.
+  const yaEsta = new Set(elegibles.map(o => o.send ?? `v:${llano(o.label)}`));
+  acciones = acciones.filter(a => !yaEsta.has(a.send ?? `v:${llano(a.label)}`));
   const todas = [...elegibles, ...acciones];
   if (!todas.length) { preguntas.delete(to); await sendWhatsappText(to, text); return; }
   const serie = ++seriePregunta;
-  const caben = todas.length <= MAX_BOTONES && todas.every(o => o.label.trim().length <= MAX_TITULO);
-  if (caben) {
+  const ids = todas.map((_o, i) => `${BOTON_OPCION}${serie}:${i}`);
+  const sinRepetir = (max: number) => new Set(todas.map(o => llano(recortar(o.label, max)))).size === todas.length;
+
+  if (todas.length <= MAX_BOTONES && sinRepetir(MAX_TITULO)) {
     preguntas.set(to, { serie, opciones: todas, numerada: false });
-    if (await sendWhatsappBotones(to, text, todas.map((o, i) => ({ id: `${BOTON_OPCION}${serie}:${i}`, title: o.label.trim() })))) return;
+    if (await sendWhatsappInteractivo(to, text, {
+      type: 'button',
+      action: { buttons: todas.map((o, i) => ({ type: 'reply', reply: { id: ids[i], title: recortar(o.label, MAX_TITULO) } })) },
+    }, todas.map(o => o.label))) return;
+  } else if (todas.length <= MAX_FILAS) {
+    preguntas.set(to, { serie, opciones: todas, numerada: false });
+    if (await sendWhatsappInteractivo(to, text, {
+      type: 'list',
+      action: {
+        button: 'Ver opciones',
+        sections: [{ title: 'Opciones', rows: todas.map((o, i) => ({
+          id: ids[i], title: recortar(o.label, MAX_TITULO_FILA),
+          // El título se recorta; la etiqueta completa va en la descripción.
+          ...(o.label.trim().length > MAX_TITULO_FILA ? { description: recortar(o.label, 72) } : {}),
+        })) }],
+      },
+    }, todas.map(o => o.label))) return;
   }
   const lineas = elegibles.map((o, i) => `${i + 1}. ${o.label}`);
   const salidas = acciones.map(a => `_${a.label}: escribe «${a.send}»_`);
@@ -312,7 +346,7 @@ async function sendOpciones(to: string, text: string, elegibles: Opcion[], accio
  */
 function resolverOpcion(from: string, msg: any): { opcion?: Opcion; vencida?: boolean } {
   const p = preguntas.get(from);
-  const id = msg?.interactive?.button_reply?.id;
+  const id = msg?.interactive?.button_reply?.id ?? msg?.interactive?.list_reply?.id;
   if (typeof id === 'string' && id.startsWith(BOTON_OPCION)) {
     const [serie, i] = id.slice(BOTON_OPCION.length).split(':').map(n => parseInt(n, 10));
     const opcion = p && p.serie === serie ? p.opciones[i] : undefined;
@@ -357,11 +391,11 @@ async function sendWhatsappText(to: string, text: string, tipo = 'text'): Promis
 }
 
 /**
- * Mensaje interactivo con botones de respuesta. `false` si no salió (Meta lo
- * rechazó o no hay credenciales): quien llama cae a texto.
+ * Mensaje interactivo: botones de respuesta o lista desplegable. `false` si no
+ * salió (Meta lo rechazó o no hay credenciales): quien llama cae a texto.
  */
-async function sendWhatsappBotones(
-  to: string, text: string, botones: Array<{ id: string; title: string }>,
+async function sendWhatsappInteractivo(
+  to: string, text: string, interactivo: { type: 'button' | 'list'; action: unknown }, etiquetas: string[],
 ): Promise<boolean> {
   const tok     = process.env.WHATSAPP_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_ID;
@@ -374,18 +408,14 @@ async function sendWhatsappBotones(
         messaging_product: 'whatsapp',
         to,
         type: 'interactive',
-        interactive: {
-          type: 'button',
-          body: { text: text.slice(0, 1024) },
-          action: { buttons: botones.map(b => ({ type: 'reply', reply: b })) },
-        },
+        interactive: { ...interactivo, body: { text: text.slice(0, 1024) } },
       }),
     });
-    if (!r.ok) { console.error(`[whatsapp] botones failed ${r.status}: ${await r.text()}`); return false; }
-    crudo.anotar(to, { dir: 'out', tipo: 'botones', texto: text, crudo: botones });
+    if (!r.ok) { console.error(`[whatsapp] ${interactivo.type} failed ${r.status}: ${await r.text()}`); return false; }
+    crudo.anotar(to, { dir: 'out', tipo: interactivo.type === 'list' ? 'lista' : 'botones', texto: text, crudo: etiquetas });
     return true;
   } catch (e: any) {
-    console.error('[whatsapp] botones error:', e?.message || e);
+    console.error(`[whatsapp] ${interactivo.type} error:`, e?.message || e);
     return false;
   }
 }
@@ -611,7 +641,7 @@ async function handleInbound(invokeChat: InvokeChat, msg: any, nombre?: string):
   const texto = String(msg?.text?.body ?? msg?.image?.caption ?? msg?.document?.caption ?? '').trim();
   crudo.anotar(from, {
     dir: 'in', tipo: String(msg?.type || 'text'),
-    texto: texto || String(msg?.interactive?.button_reply?.title || ''), crudo: msg,
+    texto: texto || String(msg?.interactive?.button_reply?.title || msg?.interactive?.list_reply?.title || ''), crudo: msg,
   });
   const ctx: Turno = { invokeChat, from, jwt: auth.jwt, msgId: msg?.id };
 
@@ -959,6 +989,13 @@ async function deliver(ctx: Turno, body: any): Promise<void> {
     : body?.pending_action
       ? [{ label: '✅ Sí', send: 'sí' }, { label: '❌ No', send: 'no' }]
       : [];
+  // Búsqueda con un único resultado: se activa sin hacerle elegir entre una
+  // sola opción. Con varios, elige de la lista.
+  const hallados = rapidas.filter(o => /^activar\s+paciente\s+[0-9a-f-]{36}$/i.test(o.send || ''));
+  if (hallados.length === 1 && !body?.active_patient_id) {
+    await routeTurn(ctx, { message: hallados[0].send! }, '');
+    return;
+  }
   const acciones: Opcion[] = (body?.form?.actions || []).map((a: any) => ({ label: a.label, send: a.send }));
   await sendOpciones(from, composeReply(body), rapidas, acciones);
 }

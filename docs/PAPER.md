@@ -2639,9 +2639,12 @@ en WhatsApp el botón no se puede retirar. Sin aviso no hay ventana.
 **Captura por el canal.** Un canal no puede pintar un formulario, así que lo recorre: el
 alta de paciente y cada sección de la ficha se preguntan **campo por campo** y recién al
 final se envían al cerebro, igual que lo haría la web (`cepi-bot/src/canalWalk.ts`, común a
-los dos canales). Las opciones salen como botones —inline en Telegram; hasta 3 botones de
-respuesta en WhatsApp, y lista numerada cuando no caben o Meta los rechaza— y siempre vale
-escribir la etiqueta. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
+los dos canales). Las opciones salen como botones —inline en Telegram; en WhatsApp hasta 3 botones
+de respuesta, hasta 10 como lista desplegable, y lista numerada si son más o Meta rechaza el
+mensaje— y siempre vale escribir la etiqueta. Los títulos se recortan al largo que admite
+Meta y una salida repetida sale una sola vez (un título duplicado hace que Meta rechace el
+mensaje entero). En WhatsApp, una búsqueda con un único resultado activa a ese paciente sin
+hacerle elegir. Una pregunta cerrada contestada con otra cosa se vuelve a preguntar.
 
 **Imágenes.** El canal baja la foto de su proveedor y la sube a TodoERP como adjunto con el
 JWT de quien la mandó (`cepi-bot/src/canalAdjuntos.ts`); desde ahí es un id de adjunto, igual

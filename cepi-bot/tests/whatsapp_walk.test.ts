@@ -31,6 +31,8 @@ const sent: Salida[] = [];
 const turnos: any[] = [];
 /** Si está, Meta rechaza los mensajes interactivos (para probar la caída a texto). */
 let rechazarBotones = false;
+/** Tipo de cada mensaje interactivo que salió: `button` o `list`. */
+const tipos: string[] = [];
 /** El hilo del paciente que devuelve TodoERP, y quién lo leyó. */
 let hilo: any[] = [];
 const lecturasDeHilo: Array<{ url: string; auth: string }> = [];
@@ -69,7 +71,11 @@ function mockFetch(): void {
       if (b.typing_indicator) return json(200, { success: true });
       if (b.type === 'interactive') {
         if (rechazarBotones) return json(400, { error: { message: 'no' } });
-        vistos = b.interactive.action.buttons.map((x: any) => x.reply);
+        // Botones de respuesta, o las filas de una lista desplegable.
+        vistos = b.interactive.type === 'list'
+          ? b.interactive.action.sections[0].rows.map((x: any) => ({ id: x.id, title: x.title }))
+          : b.interactive.action.buttons.map((x: any) => x.reply);
+        tipos.push(b.interactive.type);
         sent.push({ text: b.interactive.body.text, botones: vistos });
       } else sent.push({ text: b.text.body, botones: [] });
       return json(200, { messages: [{ id: 'wamid.x' }] });
@@ -111,6 +117,15 @@ async function cerebro({ body }: { body: any }) {
   if (/^\/nuevo-paciente /.test(msg)) return { status: 200, body: { ...base, text: 'Listo, quedó registrado. Empecemos la ficha:', form: FICHA_FORM, active_patient_id: 'p-1', status_header: '👤 Paciente Prueba — ficha §2.1 Antecedentes' } };
   if (/\[adjunto:/.test(msg)) return { status: 200, body: { ...base, text: '¿Esta imagen es de la lesión o un formulario de consentimiento?', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
     quick_replies: [{ label: '🔬 Imagen de lesión', send: 'imagen lesion' }, { label: '📄 Consentimiento', send: 'imagen consentimiento' }] } };
+  const BUSQUEDA = { id: 'patient_search', title: 'Buscar paciente', fields: [{ key: 'patient', label: 'Cédula o nombre', type: 'entity_search' }],
+    actions: [{ label: '+ Nuevo paciente', send: 'nuevo paciente' }] };
+  if (/^buscar varios$/i.test(msg)) return { status: 200, body: { ...base, text: 'Resultados:\n1. Ana Pérez\n2. María Fernanda de los Ángeles', form: BUSQUEDA, status_header: '📋 Buscando paciente', quick_replies: [
+    { label: 'Ana Pérez', send: 'activar paciente 11111111-1111-4111-8111-111111111111' },
+    { label: 'María Fernanda de los Ángeles', send: 'activar paciente 22222222-2222-4222-8222-222222222222' },
+    { label: '+ Nuevo paciente', send: 'nuevo paciente' }] } };
+  if (/^buscar uno$/i.test(msg)) return { status: 200, body: { ...base, text: 'Resultados:\n1. Otro', form: BUSQUEDA, status_header: '📋 Buscando paciente', quick_replies: [
+    { label: 'Otro', send: 'activar paciente 33333333-3333-4333-8333-333333333333' },
+    { label: '+ Nuevo paciente', send: 'nuevo paciente' }] } };
   if (/^salir paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Paciente activo limpiado.', active_patient_id: null } };
   if (/^activar paciente /i.test(msg)) return { status: 200, body: { ...base, session_id: body.session_id || 'sess-nueva', text: 'Paciente activo: Otro.', active_patient_id: msg.split(' ').pop(), status_header: '👤 Otro' } };
   if (/^nota /i.test(msg)) return { status: 200, body: { ...base, text: 'Anotado.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
@@ -187,14 +202,15 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(turnos).toHaveLength(0);
   });
 
-  it('«no» escrito vale como el botón; más de 3 opciones salen numeradas', async () => {
+  it('«no» escrito vale como el botón; más de 3 opciones salen como lista desplegable', async () => {
     await manda({ text: 'no' });
-    expect(ultimo().botones).toEqual([]);
-    expect(ultimo().text).toBe('(2/4) Fototipo\n\n1. I\n2. II\n3. III\n4. IV\n5. V\n6. VI\n\n_Omitir: escribe «omitir ficha»_');
+    expect(tipos.at(-1)).toBe('list');
+    expect(ultimo().text).toBe('(2/4) Fototipo');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'Omitir']);
   });
 
-  it('el número elige la opción y el campo de imágenes pide la foto, sin «Listo» todavía', async () => {
-    await manda({ text: '3' });
+  it('la fila elegida responde el campo, y el de imágenes pide la foto sin «Listo» todavía', async () => {
+    await manda({ boton: boton('III') });
     expect(ultimo().text).toBe('(3/4) Imágenes de la lesión\nEnvía la(s) imagen(es) como foto.');
     expect(ultimo().botones.map(b => b.title)).toEqual(['Omitir']);
   });
@@ -238,6 +254,22 @@ describe('WhatsApp: recorrido de una sección de la ficha', () => {
     expect(ultimo().text).toBe('Hola 👋 ¿Qué quieres hacer?\nPaciente anterior: Paciente Prueba');
     expect(ultimo().botones.map(b => b.title)).toEqual(['Nuevo paciente', 'Buscar paciente', 'Paciente anterior']);
     expect(turnos).toHaveLength(0);
+  });
+
+  it('una salida que viene dos veces (cerebro y formulario) sale una sola: Meta rechaza títulos repetidos', async () => {
+    await manda({ text: 'buscar varios' });
+    expect(tipos.at(-1)).toBe('button');
+    expect(ultimo().botones.map(b => b.title)).toEqual(['Ana Pérez', 'María Fernanda de l…', '+ Nuevo paciente']);
+    // No pinta el formulario de búsqueda debajo de los resultados.
+    expect(ultimo().text).not.toContain('Cédula o nombre');
+  });
+
+  it('la búsqueda con un único resultado activa al paciente sin hacerle elegir', async () => {
+    turnos.length = 0; sent.length = 0;
+    await manda({ text: 'buscar uno' });
+    expect(turnos.map(t => t.message)).toEqual(['buscar uno', 'activar paciente 33333333-3333-4333-8333-333333333333']);
+    expect(sent.map(s => s.text)).toEqual(['👤 Otro\nPaciente activo: Otro.']);
+    await manda({ text: 'salir paciente' });
   });
 
   it('si Meta rechaza los botones, las opciones salen numeradas y el número funciona', async () => {

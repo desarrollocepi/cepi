@@ -62,7 +62,7 @@ function mockFetch(): void {
       if (b.typing_indicator) { typing.push(b.message_id); return json(200, { success: true }); }
       // El aviso con botón es `interactive`; su id de botón queda aparte.
       if (b.type === 'interactive') {
-        for (const x of b.interactive.action.buttons) botones.push(x.reply.id);
+        for (const x of b.interactive.action.buttons || []) botones.push(x.reply.id);
         sent.push({ to: b.to, text: b.interactive.body.text });
       } else sent.push({ to: b.to, text: b.text.body });
       return json(200, { messages: [{ id: 'wamid.x' }] });
