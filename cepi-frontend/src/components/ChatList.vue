@@ -10,13 +10,13 @@
          sin pacientes se ve gris, no se esconde. Tocar el elegido lo suelta. -->
     <div class="filtros" role="group" aria-label="Filtrar por estado de la ficha">
       <button
-        type="button" class="filtro" :class="{ on: !estadoElegido }" :disabled="!cargado"
+        type="button" class="filtro" :class="{ on: !estadoElegido }" :disabled="!cargado || verArchivados"
         :aria-pressed="!estadoElegido" @click="estadoElegido = ''"
       >Todos · {{ all.length }}</button>
       <button
         v-for="e in ESTADOS_FICHA" :key="e.id" type="button" class="filtro"
         :class="{ on: estadoElegido === e.id }" :aria-pressed="estadoElegido === e.id"
-        :disabled="!cargado || (!conteo[e.id] && estadoElegido !== e.id)"
+        :disabled="!cargado || verArchivados || (!conteo[e.id] && estadoElegido !== e.id)"
         :title="conteo[e.id] ? `Ver solo «${e.etiqueta}»` : `Ningún paciente en «${e.etiqueta}»`"
         @click="estadoElegido = estadoElegido === e.id ? '' : e.id"
       ><span class="led" :class="{ hueco: e.hueco }" :style="{ '--led': e.color }" />{{ e.etiqueta }} · {{ conteo[e.id] || 0 }}</button>
@@ -34,7 +34,37 @@
       <p v-if="createError" class="error">{{ createError }}</p>
     </form>
 
-    <div class="rows" v-if="filtered.length">
+    <!-- Los archivados (D-Aux-23): la misma lista en otro modo, con «Restaurar» en cada fila.
+         Entrar es de quien puede archivar; quien no, no ve el botón (excepción por permisos). -->
+    <button
+      v-if="puedeBorrar" type="button" class="verarch" :aria-pressed="verArchivados"
+      @click="alternarArchivados()"
+    >{{ verArchivados ? '‹ Volver a los pacientes' : '🗄️ Ver los archivados' }}</button>
+
+    <template v-if="verArchivados">
+      <div v-if="archivadosFiltrados.length" class="rows">
+        <div v-for="p in archivadosFiltrados" :key="p.id" class="row arch">
+          <span class="avatar gen">{{ initials(p) }}</span>
+          <span class="info">
+            <span class="name">{{ fullName(p) }}</span>
+            <span class="cc">CC: {{ p.data?.cedula || '—' }}</span>
+          </span>
+          <button
+            type="button" class="restaurar" :disabled="!!restaurando"
+            :title="restaurando ? 'Espera a que termine la restauración en curso' : `Devolver a ${fullName(p)} a la lista`"
+            @click="restaurar(p)"
+          >{{ restaurando === p.id ? 'Restaurando…' : 'Restaurar' }}</button>
+        </div>
+      </div>
+      <p v-else-if="cargandoArchivados" class="empty">Cargando archivados…</p>
+      <p v-else-if="!errorArchivados" class="empty">{{ q.trim() ? 'Sin coincidencias' : 'No hay pacientes archivados' }}</p>
+      <p v-if="errorArchivados" class="error">
+        {{ errorArchivados }}
+        <button type="button" class="reintentar" :disabled="cargandoArchivados" @click="cargarArchivados()">Reintentar</button>
+      </p>
+    </template>
+
+    <div class="rows" v-else-if="filtered.length">
       <button
         v-for="p in filtered"
         :key="p.id"
@@ -73,7 +103,7 @@
          primera carga, y se leía como una org vacía. -->
     <p v-else-if="!cargado && !error" class="empty">Cargando pacientes…</p>
     <p v-else-if="!busy && cargado" class="empty">{{ vacio }}</p>
-    <p v-if="error" class="error">
+    <p v-if="error && !verArchivados" class="error">
       {{ error }}
       <button type="button" class="reintentar" :disabled="busy" @click="load()">Reintentar</button>
     </p>
@@ -105,7 +135,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { listPatients, createPatient, getReviewQueue, getPatientAssignments, eliminarPaciente } from '../api.js';
+import {
+  listPatients, createPatient, getReviewQueue, getPatientAssignments, eliminarPaciente,
+  listarPacientesArchivados, restaurarPaciente,
+} from '../api.js';
 import { ESTADOS_FICHA, estadoFicha, normalizar } from '../estadoFicha.js';
 
 const props = defineProps({
@@ -182,6 +215,52 @@ async function pedirArchivado() {
     error.value = `No se pudo archivar a ${nombre}: ${e?.message || e}`;
   } finally {
     borrando.value = '';
+  }
+}
+
+// ── Archivados ──
+const verArchivados = ref(false);
+const archivados = ref([]);
+const cargandoArchivados = ref(false);
+const errorArchivados = ref('');
+const restaurando = ref('');
+const archivadosFiltrados = computed(() => {
+  const t = normalizar(q.value.trim());
+  return archivados.value.filter((p) => !t || normalizar(`${fullName(p)} ${p.data?.cedula || ''}`).includes(t));
+});
+
+function alternarArchivados() {
+  verArchivados.value = !verArchivados.value;
+  cerrarMenu();
+  if (verArchivados.value) cargarArchivados();
+}
+
+async function cargarArchivados() {
+  cargandoArchivados.value = true;
+  errorArchivados.value = '';
+  try {
+    const r = await listarPacientesArchivados();
+    archivados.value = Array.isArray(r?.data) ? r.data : [];
+  } catch (e) {
+    errorArchivados.value = `No se pudieron cargar los archivados: ${e?.message || e}`;
+  } finally {
+    cargandoArchivados.value = false;
+  }
+}
+
+async function restaurar(p) {
+  const nombre = fullName(p);
+  restaurando.value = p.id;
+  errorArchivados.value = '';
+  try {
+    await restaurarPaciente(p.id);
+    archivados.value = archivados.value.filter((x) => x.id !== p.id);
+    avisar(`${nombre} volvió a la lista`);
+    load(true);
+  } catch (e) {
+    errorArchivados.value = `No se pudo restaurar a ${nombre}: ${e?.message || e}`;
+  } finally {
+    restaurando.value = '';
   }
 }
 
@@ -403,6 +482,18 @@ defineExpose({ reload: load });
   margin: 0; padding: 8px 14px; border-top: 1px solid var(--border);
   background: #f0fdf4; color: #166534; font-size: 0.82rem;
 }
+.verarch {
+  margin: 2px 10px 6px; padding: 7px; border: 1px solid var(--border); border-radius: 20px;
+  background: var(--bg); color: var(--text-muted); font-weight: 600; font-size: 0.82rem; cursor: pointer;
+}
+.verarch[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.row.arch { cursor: default; }
+.row.arch:hover { background: transparent; }
+.restaurar {
+  flex-shrink: 0; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 16px;
+  background: #fff; color: var(--accent); font-weight: 700; font-size: 0.8rem; cursor: pointer;
+}
+.restaurar:disabled { opacity: .5; cursor: not-allowed; }
 .rev-badge {
   flex-shrink: 0; margin-left: auto; align-self: center;
   background: #f97316; color: #fff; border-radius: 12px;

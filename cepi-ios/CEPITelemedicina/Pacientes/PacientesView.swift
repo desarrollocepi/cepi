@@ -7,6 +7,9 @@ struct PacientesView: View {
     @Environment(\.scenePhase) private var fase
     @State private var modelo = PacientesModelo()
     @State private var seleccion: FilaPaciente.ID?
+    @State private var seccion: PacienteView.Seccion = .chat
+    /// La sección pedida desde el menú de la fila para el paciente que se está por abrir.
+    @State private var seccionPedida: PacienteView.Seccion?
     @State private var busqueda = ""
     @State private var estadoElegido: EstadoFicha?
     @State private var creando = false
@@ -20,7 +23,7 @@ struct PacientesView: View {
         } detail: {
             if let id = seleccion, let fila = modelo.fila(id) {
                 // `.id`: otro paciente es otro hilo, con su estado desde cero.
-                PacienteView(fila: fila) { seleccion = nil }
+                PacienteView(fila: fila, seccion: $seccion) { seleccion = nil }
                     .id(fila.id)
             } else {
                 ContentUnavailableView(
@@ -42,12 +45,17 @@ struct PacientesView: View {
         }
         // El paciente abierto es de la org anterior: se cierra al cambiar.
         .onChange(of: sesion.usuario?.orgActiva) { seleccion = nil }
+        // Otro paciente abre en el chat, salvo que el menú de la fila haya pedido otra sección.
+        .onChange(of: seleccion) {
+            seccion = seccionPedida ?? .chat
+            seccionPedida = nil
+        }
         .eliminarCuenta(confirmar: $confirmarBorrado)
-        .alert("¿Eliminar a \(aBorrar?.nombre ?? "")?", isPresented: Binding(
+        .alert("¿Archivar a \(aBorrar?.nombre ?? "")?", isPresented: Binding(
             get: { aBorrar != nil },
             set: { if !$0 { aBorrar = nil } }
         )) {
-            Button("Eliminar", role: .destructive) {
+            Button("Archivar", role: .destructive) {
                 if let fila = aBorrar { Task { await borrar(fila) } }
             }
             Button("Cancelar", role: .cancel) {}
@@ -85,13 +93,15 @@ struct PacientesView: View {
                 fila: fila,
                 revision: modelo.revision[fila.id],
                 asignacion: modelo.asignaciones[fila.id],
-                estado: modelo.estado(fila.id)
-            )
-            // Borrar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve: es
+                estado: modelo.estado(fila.id),
+                puedeArchivar: puedeBorrarPacientes
+            ) { accion in elegir(accion, fila) }
+            // Archivar un paciente es de supermédico (D-Aux-23). Quien no puede, no lo ve: es
             // la excepción por permisos de la regla de no ocultar botones.
             .swipeActions(edge: .trailing) {
                 if puedeBorrarPacientes {
-                    Button("Eliminar", systemImage: "trash", role: .destructive) { aBorrar = fila }
+                    Button("Archivar", systemImage: "archivebox") { aBorrar = fila }
+                        .tint(.orange)
                 }
             }
         }
@@ -166,6 +176,25 @@ private extension PacientesView {
             || permisos.contains("entity:\(CEPIAPI.definicionPaciente):record:delete")
     }
 
+    func elegir(_ accion: PacienteFila.Accion, _ fila: FilaPaciente) {
+        switch accion {
+        case .chat: abrir(fila, en: .chat)
+        case .ficha: abrir(fila, en: .ficha)
+        case .imagenes: abrir(fila, en: .imagenes)
+        case .copiarCedula: UIPasteboard.general.string = fila.cedula
+        case .archivar: aBorrar = fila
+        }
+    }
+
+    func abrir(_ fila: FilaPaciente, en destino: PacienteView.Seccion) {
+        if seleccion == fila.id {
+            seccion = destino
+        } else {
+            seccionPedida = destino
+            seleccion = fila.id
+        }
+    }
+
     func borrar(_ fila: FilaPaciente) async {
         aBorrar = nil
         if seleccion == fila.id { seleccion = nil }
@@ -173,7 +202,7 @@ private extension PacientesView {
             try await sesion.api.eliminarPaciente(fila.id)
             await modelo.cargar(api: sesion.api)
         } catch {
-            modelo.mostrarError("No se pudo eliminar a \(fila.nombre): \(error.localizedDescription)")
+            modelo.mostrarError("No se pudo archivar a \(fila.nombre): \(error.localizedDescription)")
         }
     }
 }

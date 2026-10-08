@@ -13,11 +13,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,9 +46,9 @@ import ec.cepi.telemedicina.app.Marca
 
 /**
  * Una fila de la lista. El LED de la derecha es el estado de la ficha actual: va al costado y no
- * en una línea más, para que la fila no crezca. Borrar un paciente es de supermédico (D-Aux-23)
- * y va en el menú de pulsación larga; quien no puede, no lo ve: es la excepción por permisos de
- * la regla de no ocultar botones.
+ * en una línea más, para que la fila no crezca. El «⋮» (y la pulsación larga) abre las acciones
+ * del paciente, como el menú de ChatList.vue. Archivar es de supermédico (D-Aux-23); quien no
+ * puede, no lo ve: es la excepción por permisos de la regla de no ocultar botones.
  */
 @Composable
 fun FilaPacienteVista(
@@ -55,7 +57,9 @@ fun FilaPacienteVista(
     asignacion: Asignacion?,
     estado: EstadoFicha,
     puedeBorrar: Boolean,
-    alAbrir: () -> Unit,
+    /** Abre al paciente en la sección dada: 0 chat, 1 ficha, 2 imágenes. */
+    alAbrir: (Int) -> Unit,
+    alCopiarCedula: () -> Unit,
     alBorrar: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -67,11 +71,11 @@ fun FilaPacienteVista(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = alAbrir,
-                    onLongClick = if (puedeBorrar) ({ menu = true }) else null,
-                    onLongClickLabel = if (puedeBorrar) "Eliminar paciente" else null,
+                    onClick = { alAbrir(0) },
+                    onLongClick = { menu = true },
+                    onLongClickLabel = "Acciones",
                 )
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         ) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -135,20 +139,37 @@ fun FilaPacienteVista(
                 )
             }
 
+            Box {
+                IconButton(onClick = { menu = true }) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "Acciones de ${fila.nombre}",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    fun elegir(accion: () -> Unit) {
+                        menu = false
+                        accion()
+                    }
+                    DropdownMenuItem(text = { Text("Abrir el chat") }, onClick = { elegir { alAbrir(0) } })
+                    DropdownMenuItem(text = { Text("Ver la ficha") }, onClick = { elegir { alAbrir(1) } })
+                    DropdownMenuItem(text = { Text("Ver las imágenes") }, onClick = { elegir { alAbrir(2) } })
+                    DropdownMenuItem(
+                        text = { Text(if (fila.cedula == null) "Copiar la cédula (no tiene)" else "Copiar la cédula") },
+                        enabled = fila.cedula != null,
+                        onClick = { elegir(alCopiarCedula) },
+                    )
+                    if (puedeBorrar) {
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Archivar paciente") }, onClick = { elegir(alBorrar) })
+                    }
+                }
+            }
+
             LedEstado(
                 estado,
                 Modifier.semantics { contentDescription = "Ficha: ${estado.etiqueta}" },
-            )
-        }
-
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(
-                text = { Text("Eliminar paciente", color = MaterialTheme.colorScheme.error) },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                onClick = {
-                    menu = false
-                    alBorrar()
-                },
             )
         }
     }

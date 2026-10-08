@@ -1956,12 +1956,20 @@ pierde y nada que la referencie queda colgando. Si después se crea un paciente 
 cédula en la misma organización, **reaparece el registro anterior** en vez de duplicarse. El
 botón solo lo ve quien tiene el permiso: es la excepción de la regla de no ocultar botones.
 
-En la web el borrado se llama **«Archivar paciente»** y vive en el menú de acciones de cada
-fila de la lista (`ChatList.vue`, botón «⋯»), no en un basurero suelto: es lo que hace —el
-paciente sale de las listas y su historia se conserva— y un basurero al lado de cada chat
-se leía como "cerrar el chat". El menú lo tiene todo usuario, con abrir el chat, ver la
-ficha, ver las imágenes y copiar la cédula; «Archivar» es la única entrada que depende del
-permiso. iOS (deslizar la fila) y Android (pulsación larga) siguen diciendo «Eliminar».
+Para el usuario el borrado se llama **«Archivar paciente»** y vive en el **menú de acciones**
+de cada fila de la lista, no en un basurero suelto: es lo que hace —el paciente sale de las
+listas y su historia se conserva— y un basurero al lado de cada chat se leía como "cerrar el
+chat". El menú lo tiene todo usuario, con abrir el chat, ver la ficha, ver las imágenes y
+copiar la cédula; «Archivar» es la única entrada que depende del permiso. Es el mismo menú
+en las tres: «⋯» en la web (`ChatList.vue`) y en iOS (`PacienteFila.swift`, además de
+deslizar la fila), «⋮» o pulsación larga en Android (`FilaPacienteVista.kt`).
+
+**Archivados y restaurar.** Quien puede archivar tiene en la web «Ver los archivados»: la
+misma lista en otro modo, con «Restaurar» en cada fila. No hizo falta backend nuevo: son
+`GET /api/entities?active=false` y `PATCH /api/entities/:id?record_type=business&restore=true`,
+que el ERP ya tenía. El paciente vuelve con todo lo que tenía. Las apps nativas todavía no
+tienen esta vista. Ojo: el `PATCH` de restaurar solo comprueba el alcance de la organización,
+no el permiso de borrar; hoy la puerta es que solo quien lo tiene ve el botón.
 
 Las dos reglas viven en TodoERP como capacidades **genéricas** que la definición del
 paciente enciende (`TodoERP/CLAUDE.md`), no como un caso especial del paciente:

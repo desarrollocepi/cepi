@@ -78,6 +78,7 @@ fun Principal(entorno: Entorno) {
     var seccion by rememberSaveable { mutableIntStateOf(Seccion.Pacientes.ordinal) }
     // Solo debug: CEPI_DEV_PACIENTE abre ese paciente al entrar.
     var abierto by rememberSaveable { mutableStateOf(entorno.config.devPaciente) }
+    var seccionAlAbrir by rememberSaveable { mutableStateOf(0) }
     var creando by rememberSaveable { mutableStateOf(false) }
     var borrarCuenta by rememberSaveable { mutableStateOf(false) }
     var errorOrganizacion by remember { mutableStateOf<String?>(null) }
@@ -122,9 +123,11 @@ fun Principal(entorno: Entorno) {
     PedirPermisoDeNotificaciones()
 
     val id = abierto
+    // Cerrado el paciente, el siguiente abre en el chat salvo que el menú de la lista pida otra sección.
+    LaunchedEffect(id) { if (id == null) seccionAlAbrir = 0 }
     if (id != null) {
         BackHandler { abierto = null }
-        PacienteAbierto(entorno, id, modelo.fila(id)) { abierto = null }
+        PacienteAbierto(entorno, id, modelo.fila(id), seccionAlAbrir) { abierto = null }
     } else {
         Scaffold(
             topBar = {
@@ -182,7 +185,10 @@ fun Principal(entorno: Entorno) {
                     sesion = sesion,
                     modelo = modelo,
                     relleno = relleno,
-                    alAbrir = { abierto = it },
+                    alAbrir = { paciente, enSeccion ->
+                        seccionAlAbrir = enSeccion
+                        abierto = paciente
+                    },
                     alFallar = { alcance.launch { avisos.showSnackbar(it) } },
                 )
                 Seccion.Galeria -> Galeria(galeria, organizacion, relleno)

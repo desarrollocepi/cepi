@@ -347,6 +347,22 @@ export async function eliminarPaciente(id) {
   return call(`/api/entities/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+/** Los pacientes archivados (borrado suave) de la org activa: `active=false` en la lista del ERP. */
+export async function listarPacientesArchivados({ limit = 500 } = {}) {
+  const params = new URLSearchParams({
+    type: 'business',
+    entity_id: '11000000-0000-0000-0000-000000000000',
+    active: 'false',
+    limit: String(limit),
+  });
+  return call(`/api/entities?${params.toString()}`, { method: 'GET' });
+}
+
+/** Devuelve un paciente archivado a las listas, con todo lo que tenía. */
+export async function restaurarPaciente(id) {
+  return call(`/api/entities/${encodeURIComponent(id)}?record_type=business&restore=true`, { method: 'PATCH' });
+}
+
 export async function getEpisodeImages(episodeId) {
   return call(`/api/bot/episode-images?episode_id=${encodeURIComponent(episodeId)}`, { method: 'GET' });
 }
