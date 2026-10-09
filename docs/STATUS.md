@@ -19,10 +19,24 @@ de 11 tareas de configuración: sin eso no se abre ninguna pista con revisión. 
   fotos, información sanitaria e IDs de dispositivo (token de push); todo cifrado en tránsito,
   obligatorio y para el funcionamiento de la app. URL de eliminación:
   `privacidad.html#eliminar-cuenta`. No se puede enviar hasta completar "Audiencia objetivo".
-- **Faltan 3, encadenadas**: "Datos de inicio de sesión" → "Audiencia objetivo" → enviar
-  "Seguridad de los datos". La primera pide las credenciales de la cuenta demo del revisor, que
-  en producción todavía no existe (pendiente desde el 2026-09-17: solo en `cepi-testing`, con un
-  colega en un círculo para poder mostrar la derivación).
+- **Configuración completa (11 de 11).** Cuenta demo creada en prod por SQL directo:
+  `revisor@cepi.ec` (`medico_primario`) y `colega.sandbox@cepi.ec` (`especialista`, círculo
+  `dermatologia`), las dos solo en `cepi-testing`; claves en el `.env` local. Audiencia: 18+.
+- **Pista cerrada (Alpha)** lista: Ecuador, lista "Testers internos CEPI", versión 7. En
+  "Resumen de publicación" quedan 14 cambios con las comprobaciones previas en verde; el botón
+  "Enviar 14 cambios a revisión" lo presiona el usuario (el clasificador se lo niega al agente).
+- **Smoke test del build release contra prod** con la cuenta del revisor: login, lista (6
+  ficticios), chat con el asistente, ficha, formulario de sección, derivar a Dermatología,
+  galería y sesión persistente, bien. Sin probar: cámara, dictado, Google y llegada de un push.
+  - Fallo encontrado y corregido: entrar por `telemedicina.cepi.ec` dejaba al revisor pendiente
+    en `cepi`; esa org le aparecía en el menú y, al elegirla, quedaba en "Cuenta pendiente" sin
+    selector para volver. TodoERP `c680e81`: una cuenta que solo existe en sandbox no se suma a
+    la org del dominio (`soloDeSandbox`, test `sandbox_login_por_dominio`). PAPER §13.7.
+  - **Pendiente (apps):** la pantalla de cuenta pendiente no tiene selector de organización. Un
+    médico aprobado en una org y pendiente en otra queda atrapado igual; solo sale cerrando sesión.
+  - El AVD `Medium_Phone_API_36.0` apunta a `google_apis_playstore`, que no está instalada. Se
+    arranca con `-sysdir …/android-36/google_apis/x86_64 -gpu host`; con GPU del host la Ficha
+    no tumba el emulador.
 - Versión **7 (2.3.0)** activa en la pista interna (menú de acciones por paciente).
 
 **Política de privacidad.** `privacidad.html` ahora dice cómo eliminar la cuenta desde la app y
@@ -38,7 +52,7 @@ interno a una distribución con revisión:
    backend no tiene `/auth/apple`. Hay que decidir: agregarlo (backend + iOS + llave de Apple
    para revocar al borrar la cuenta), quitar Google en iOS, o alegar la excepción de app de
    empresa en las notas de revisión.
-3. La misma cuenta demo del revisor que pide Play.
+3. La cuenta demo del revisor ya existe (la de Play).
 4. Capturas 6,9" y 13" (iPad: el target es universal), ficha, "App Privacy" y edad.
 5. Sin dictado ni push en iOS (fases 4 y 5 de §24.9 a medias): no bloquea la revisión, sí la
    paridad con Android.
