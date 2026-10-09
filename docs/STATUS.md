@@ -55,8 +55,7 @@ interno a una distribución con revisión:
    política y cuestionario de App Privacy (10 tipos de dato, todos "App Functionality",
    vinculados al usuario, sin tracking).
 2. **Build 11 subido y asociado (2026-10-09)**, App Privacy publicada, versión en publicación
-   manual y borrador de envío listo ("Item Ready to Submit, 1.0 (11)"); falta el clic del
-   usuario en "Submit for Review". Distribución **no listada**: formulario enviado a Apple el
+   manual y **enviada a revisión el 2026-10-09** (1.0 build 11; Apple indica hasta 48 horas). Distribución **no listada**: formulario enviado a Apple el
    2026-10-09 (antes del envío a revisión; si lo declinan por eso, se reenvía). Por ssh la
    firma falla (`errSecInternalComponent`) aunque la sesión gráfica esté abierta: el archive y
    el export se corren como LaunchAgent en `gui/<uid>` (`launchctl bootstrap`), que sí ve el
