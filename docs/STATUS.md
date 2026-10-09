@@ -46,14 +46,23 @@ exige como URL pública.
 **App Store (iOS).** Build 11 en el repo, tests de unidad en verde en la Mac; **no se subió**: por ssh `xcodebuild archive` falla al firmar con `errSecInternalComponent` (llavero bloqueado, hace falta la clave de la sesión de la Mac). Lo que falta para pasar de TestFlight
 interno a una distribución con revisión:
 
-1. Sesión de App Store Connect: el perfil de navegador del proyecto no la tiene (2FA de
-   `developer@cepi.ec`); sin ella no se cargan ficha, capturas ni notas para el revisor.
-2. **Guía 4.8**: la app ofrece "Continuar con Google" y no "Iniciar sesión con Apple". El
-   backend no tiene `/auth/apple`. Hay que decidir: agregarlo (backend + iOS + llave de Apple
-   para revocar al borrar la cuenta), quitar Google en iOS, o alegar la excepción de app de
-   empresa en las notas de revisión.
-3. La cuenta demo del revisor ya existe (la de Play).
-4. Capturas 6,9" y 13" (iPad: el target es universal), ficha, "App Privacy" y edad.
+1. **App Store Connect, versión 1.0 (cargado el 2026-10-08, sesión en el perfil de
+   navegador del proyecto):** textos, URLs, copyright, contacto de revisión, cuenta demo y
+   notas; capturas de iPhone 6,3" (2) y iPad 13" (1) del simulador con la cuenta del revisor;
+   categoría Medical (secundaria Business), subtítulo, derechos de contenido (sin contenido de
+   terceros) y edad (**16+**: información médica frecuente, desnudez clínica infrecuente,
+   mensajería entre usuarios); precio gratis y disponibilidad **solo Ecuador**; URL de la
+   política y cuestionario de App Privacy (10 tipos de dato, todos "App Functionality",
+   vinculados al usuario, sin tracking).
+2. **Falta:** subir el build 11 y asociarlo; presionar "Publish" en App Privacy (es una
+   declaración jurada: la presiona el usuario); elegir el método de distribución —pública,
+   no listada (formulario aparte) o privada por Apple Business Manager; **no se puede cambiar
+   tras la aprobación**, hoy está en "Public" sin enviar—; "Add for Review".
+3. **Guía 4.8**: la app ofrece "Continuar con Google" y no "Iniciar sesión con Apple". Las
+   notas de revisión explican que toda cuenta requiere aprobación de un administrador y
+   ofrecen agregarlo si lo exigen. El backend no tiene `/auth/apple`.
+4. En iPad vertical la app abre con la lista oculta ("Elige un paciente" sobre blanco) y en
+   el hilo aparece una burbuja vacía del usuario al abrir un formulario. Cosmético.
 5. Sin dictado ni push en iOS (fases 4 y 5 de §24.9 a medias): no bloquea la revisión, sí la
    paridad con Android.
 6. El icono dice "Dermatosito" y la app se llama "CEPI Telemedicina".
