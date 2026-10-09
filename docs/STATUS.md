@@ -43,7 +43,7 @@ de 11 tareas de configuración: sin eso no se abre ninguna pista con revisión. 
 la web, qué se borra y qué se conserva (anclas `#eliminar-cuenta` y `#tus-derechos`): Play lo
 exige como URL pública.
 
-**App Store (iOS).** Build 11 en el repo, tests de unidad en verde en la Mac; **no se subió**: por ssh `xcodebuild archive` falla al firmar con `errSecInternalComponent` (llavero bloqueado, hace falta la clave de la sesión de la Mac). Lo que falta para pasar de TestFlight
+**App Store (iOS).** Build 11 en TestFlight y en la versión 1.0. Lo que falta para pasar de TestFlight
 interno a una distribución con revisión:
 
 1. **App Store Connect, versión 1.0 (cargado el 2026-10-08, sesión en el perfil de
@@ -54,10 +54,13 @@ interno a una distribución con revisión:
    mensajería entre usuarios); precio gratis y disponibilidad **solo Ecuador**; URL de la
    política y cuestionario de App Privacy (10 tipos de dato, todos "App Functionality",
    vinculados al usuario, sin tracking).
-2. **Falta:** subir el build 11 y asociarlo; presionar "Publish" en App Privacy (es una
-   declaración jurada: la presiona el usuario); elegir el método de distribución —pública,
-   no listada (formulario aparte) o privada por Apple Business Manager; **no se puede cambiar
-   tras la aprobación**, hoy está en "Public" sin enviar—; "Add for Review".
+2. **Build 11 subido y asociado (2026-10-09)**, App Privacy publicada, versión en publicación
+   manual y borrador de envío listo ("Item Ready to Submit, 1.0 (11)"); falta el clic del
+   usuario en "Submit for Review". Distribución **no listada**: formulario enviado a Apple el
+   2026-10-09 (antes del envío a revisión; si lo declinan por eso, se reenvía). Por ssh la
+   firma falla (`errSecInternalComponent`) aunque la sesión gráfica esté abierta: el archive y
+   el export se corren como LaunchAgent en `gui/<uid>` (`launchctl bootstrap`), que sí ve el
+   llavero. "No Accounts with App Store Connect Access" = sesión de Xcode vencida.
 3. **Guía 4.8**: la app ofrece "Continuar con Google" y no "Iniciar sesión con Apple". Las
    notas de revisión explican que toda cuenta requiere aprobación de un administrador y
    ofrecen agregarlo si lo exigen. El backend no tiene `/auth/apple`.
