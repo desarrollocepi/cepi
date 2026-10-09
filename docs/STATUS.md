@@ -24,7 +24,7 @@ de 11 tareas de configuración: sin eso no se abre ninguna pista con revisión. 
   `dermatologia`), las dos solo en `cepi-testing`; claves en el `.env` local. Audiencia: 18+.
 - **Pista cerrada (Alpha)** lista: Ecuador, lista "Testers internos CEPI", versión 7. En
   "Resumen de publicación" quedan 14 cambios con las comprobaciones previas en verde; el botón
-  "Enviar 14 cambios a revisión" lo presiona el usuario (el clasificador se lo niega al agente).
+  "Enviar 14 cambios a revisión" lo presionó el usuario: **en revisión desde el 2026-10-09**.
 - **Smoke test del build release contra prod** con la cuenta del revisor: login, lista (6
   ficticios), chat con el asistente, ficha, formulario de sección, derivar a Dermatología,
   galería y sesión persistente, bien. Sin probar: cámara, dictado, Google y llegada de un push.
