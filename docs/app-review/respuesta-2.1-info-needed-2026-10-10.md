@@ -119,9 +119,8 @@ licensed dermatology center in Ecuador; the app is its internal tool.
   una cuenta desechable de la sandbox (`revisor.borrar.26ba7d@cepi.ec`), que ya no existe.
 - cepi.ec no publica el permiso de funcionamiento y el portal de ACESS no respondía. Si Apple
   pide más, el documento sanitario propiamente dicho es el permiso de ACESS.
-- En la sandbox de prod quedan activos dos pacientes de las grabaciones: "Revisión Apple 29A2"
-  (`ba12eb64-7805-488a-be0d-59c7e4fbc258`) y "Revisión Apple 1327"
-  (`6465bb59-6c9b-48f5-890e-b4e66ce4933e`). Falta darlos de baja.
+- Los dos pacientes de las grabaciones en la sandbox de prod ("Revisión Apple 29A2" y
+  "Revisión Apple 1327") se dieron de baja el 2026-10-10 (borrado lógico, `active = false`).
 - El iPhone de pruebas volvió al build 11 de TestFlight. Para automatizarlo con XCTest hace
   falta Ajustes > Desarrollador > "Enable UI Automation"; apagado, el test muere con
   "Timed out while enabling automation mode". Los tests de la grabación no están en el repo.
