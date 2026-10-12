@@ -120,6 +120,8 @@ licensed dermatology center in Ecuador; the app is its internal tool.
   tiene un "Waiting for Review" posterior. Apple no escribió después del rechazo: el hilo
   tiene dos mensajes, el suyo del 2026-10-09 y la respuesta del 2026-10-10. Guardar las
   Notes devolvió el ítem a "Ready for Review"; eso no lo pone en cola.
+- **Reenviada a revisión el 2026-10-12 a las 09:03**: el usuario presionó "Resubmit to App
+  Review" y el historial de la versión pasó a "Waiting for Review".
 - Los clips se grabaron con XCTest en el iPhone 11 físico contra producción. El borrado usó
   una cuenta desechable de la sandbox (`revisor.borrar.26ba7d@cepi.ec`), que ya no existe.
 - cepi.ec no publica el permiso de funcionamiento y el portal de ACESS no respondía. Si Apple

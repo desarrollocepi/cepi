@@ -59,8 +59,8 @@ interno a una distribución con revisión:
    2026-10-09 (antes del envío a revisión; si lo declinan por eso, se reenvía).
    **Rechazada el 2026-10-09 por la guía 2.1 (Information Needed)**. La respuesta, con dos
    videos y el registro del SRI, se envió el 2026-10-10, pero **el reenvío no quedó
-   registrado**: al 2026-10-12 el envío sigue en "Unresolved Issues" y la versión en "Ready
-   for Review", sin pasar a "Waiting for Review". Falta presionar "Resubmit to App Review".
+   registrado** ese día: la versión quedó en "Ready for Review" y el envío en "Unresolved
+   Issues". **Reenviada el 2026-10-12 a las 09:03** ("Waiting for Review" en el historial).
    Detalle en `docs/app-review/respuesta-2.1-info-needed-2026-10-10.md`. Por ssh la
    firma falla (`errSecInternalComponent`) aunque la sesión gráfica esté abierta: el archive y
    el export se corren como LaunchAgent en `gui/<uid>` (`launchctl bootstrap`), que sí ve el
