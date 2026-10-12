@@ -57,9 +57,11 @@ interno a una distribución con revisión:
 2. **Build 11 subido y asociado (2026-10-09)**, App Privacy publicada, versión en publicación
    manual y **enviada a revisión el 2026-10-09** (1.0 build 11; Apple indica hasta 48 horas). Distribución **no listada**: formulario enviado a Apple el
    2026-10-09 (antes del envío a revisión; si lo declinan por eso, se reenvía).
-   **Rechazada el 2026-10-09 por la guía 2.1 (Information Needed)** y **reenviada el
-   2026-10-10** con la respuesta, dos videos y el registro del SRI: detalle en
-   `docs/app-review/respuesta-2.1-info-needed-2026-10-10.md`. Por ssh la
+   **Rechazada el 2026-10-09 por la guía 2.1 (Information Needed)**. La respuesta, con dos
+   videos y el registro del SRI, se envió el 2026-10-10, pero **el reenvío no quedó
+   registrado**: al 2026-10-12 el envío sigue en "Unresolved Issues" y la versión en "Ready
+   for Review", sin pasar a "Waiting for Review". Falta presionar "Resubmit to App Review".
+   Detalle en `docs/app-review/respuesta-2.1-info-needed-2026-10-10.md`. Por ssh la
    firma falla (`errSecInternalComponent`) aunque la sesión gráfica esté abierta: el archive y
    el export se corren como LaunchAgent en `gui/<uid>` (`launchctl bootstrap`), que sí ve el
    llavero. "No Accounts with App Store Connect Access" = sesión de Xcode vencida.

@@ -114,7 +114,12 @@ licensed dermatology center in Ecuador; the app is its internal tool.
   campo admite 4000 caracteres: el texto enviado es la sección A abreviada, con los seis puntos.
 - **Notes de App Review Information guardadas**: a las notas del 2026-10-08 se les agregó un
   anexo con propósito, segunda cuenta demo, servicios externos, regiones y el RUC.
-- **Reenviada a revisión** el 2026-10-10: el usuario presionó "Resubmit to App Review".
+- **El reenvío no quedó registrado.** Revisado el 2026-10-12: el envío sigue en "Unresolved
+  Issues", el ítem iOS 1.0 (11) en "Ready for Review" y el botón "Resubmit to App Review"
+  activo. El historial de la versión termina en "Ready for Review" (2026-10-10 11:41) y no
+  tiene un "Waiting for Review" posterior. Apple no escribió después del rechazo: el hilo
+  tiene dos mensajes, el suyo del 2026-10-09 y la respuesta del 2026-10-10. Guardar las
+  Notes devolvió el ítem a "Ready for Review"; eso no lo pone en cola.
 - Los clips se grabaron con XCTest en el iPhone 11 físico contra producción. El borrado usó
   una cuenta desechable de la sandbox (`revisor.borrar.26ba7d@cepi.ec`), que ya no existe.
 - cepi.ec no publica el permiso de funcionamiento y el portal de ACESS no respondía. Si Apple
