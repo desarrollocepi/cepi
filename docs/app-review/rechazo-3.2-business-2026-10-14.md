@@ -40,4 +40,8 @@ respondió el 2026-10-10 y no se recomienda.
 
 ## Estado
 
-- 2026-10-14: rechazo recibido y registrado. Pendiente el paso 1.
+- 2026-10-14: rechazo recibido y registrado.
+- El correo de developer@cepi.ec llega al buzón de desarrollo@cepi.ec. Ahí, buscando en todas
+  las carpetas (spam incluido), solo está el acuse automático de Apple Support del 2026-10-09
+  ("We received and are reviewing your request for unlisted app distribution… within three
+  business days"). No hay respuesta a la solicitud. Los tres días hábiles vencen hoy.
