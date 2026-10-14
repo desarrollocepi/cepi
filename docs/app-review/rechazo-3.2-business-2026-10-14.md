@@ -27,7 +27,7 @@ salir como unlisted.
 ## Qué hacer
 
 1. **Buscar el correo de Apple sobre la solicitud de distribución no listada** enviada el
-   2026-10-09. Llega al correo del Account Holder de la cuenta Cempiel Cia. Ltda.
+   2026-10-09. Llega a **developer@cepi.ec**, Account Holder de la cuenta Cempiel Cia. Ltda. (Roberto Rodriguez).
 2. Si no llegó, responder en "Reply to App Review" que la solicitud está hecha y preguntar
    su estado. **No** presionar "Resubmit to App Review" mientras tanto.
 3. Si la aprueban: reenviar la versión 1.0 (11) a revisión sin cambios.
