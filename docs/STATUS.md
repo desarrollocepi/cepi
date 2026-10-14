@@ -61,7 +61,11 @@ interno a una distribución con revisión:
    videos y el registro del SRI, se envió el 2026-10-10, pero **el reenvío no quedó
    registrado** ese día: la versión quedó en "Ready for Review" y el envío en "Unresolved
    Issues". **Reenviada el 2026-10-12 a las 09:03** ("Waiting for Review" en el historial).
-   Detalle en `docs/app-review/respuesta-2.1-info-needed-2026-10-10.md`. Por ssh la
+   Detalle en `docs/app-review/respuesta-2.1-info-needed-2026-10-10.md`.
+   **Rechazada otra vez el 2026-10-14 por la guía 3.2 (Business)**: app de una sola
+   organización en distribución pública. No se reenvía hasta que Apple conteste la
+   solicitud de distribución no listada del 2026-10-09
+   (`docs/app-review/rechazo-3.2-business-2026-10-14.md`). Por ssh la
    firma falla (`errSecInternalComponent`) aunque la sesión gráfica esté abierta: el archive y
    el export se corren como LaunchAgent en `gui/<uid>` (`launchctl bootstrap`), que sí ve el
    llavero. "No Accounts with App Store Connect Access" = sesión de Xcode vencida.
