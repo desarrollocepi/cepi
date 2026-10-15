@@ -1042,6 +1042,16 @@ registro o inicia sesión con ese email (contraseña o Google), y entonces entra
 ese rol, sin pasar por pendiente; si ya tenía un rol de verdad ahí, no se le baja. Vence a
 los 30 días; se puede revocar y reenviar; invitar de nuevo reemplaza la anterior.
 
+**Rechazar una solicitud** (migración 027). Quien entró a una org como pendiente se puede
+rechazar ahí (`POST /admin/users/:id/orgs/:orgId/reject`; `DELETE` lo deshace). Es un estado
+de la **membresía** (`user_organizations.rejected_at`, `rejected_by`), no un rol ni de la
+cuenta: la persona sigue pendiente y sin permisos en esa org, y en otra puede estar
+aprobada. Sale de `?role=pendiente` y aparece en `?estado=rechazado`; darle un rol limpia el
+rechazo. A un aprobado no se lo rechaza (409): se le cambia el rol. En la consola: botón por
+fila, filtro «Rechazados» y selección múltiple para aprobar con un rol o rechazar en bloque.
+La app todavía le muestra a un rechazado la pantalla de «pendiente».
+Tests: `tests/auth/rechazos.test.ts`.
+
 **Registro con verificación.** `POST /auth/register` crea la cuenta **inactiva** (rol
 general `user`, pendiente en las orgs por defecto y en la del dominio) y manda por Brevo un
 código de 6 dígitos (sin enlace). `POST /auth/verify-email` la activa; el código vence a los
