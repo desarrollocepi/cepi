@@ -20,14 +20,16 @@ Corregido y en prod:
   cuentas de spam registradas solas (nombre.NNNNN@gmail.com, 24/09 y 08/10). Derivar,
   asignar y recordar ahora exige estar aprobado en la org (TodoERP `ee5cdb5`, PAPER §13.8).
 
+Resuelto después, el mismo día:
+- Las 8 cuentas de spam quedaron **rechazadas** en `cepi` (rechazo silencioso).
+- Ficha en los canales: un relato clínico largo en un campo que no es `textarea` va al
+  asistente en vez de guardarse como respuesta; «cancelar»/«salir» dejan la sección sin
+  soltar al paciente (solo «menú» vuelve al inicio). Probado en vivo en Telegram.
+- Sin voseo en los textos del bot ni en los prompts del LLM (que ahora piden tratar de tú).
+
 Pendiente:
-- Rechazar las 8 cuentas de spam desde la consola (Usuarios → Pendientes, selección múltiple).
-- `turno` quedó sin nadie aprobado en `cepi`: `residente@` y `derma1@` no tienen rol ahí
-  (solo el general `user`). «Enviar caso» a turno no le llega a nadie.
-- El recorrido de la ficha toma cualquier texto como respuesta: un resumen clínico quedó
-  guardado como «Dirección». Al terminar una sección encadena la siguiente sin salida;
-  «cancelar» además suelta al paciente activo, y el texto libre no llega al asistente.
-- Voseo en el bot: «¿Qué querés hacer?», «Completá», «Escribí».
+- `turno` sin nadie aprobado en `cepi`: `residente@` y `derma1@` no tienen rol ahí (solo el
+  general `user`). «Enviar caso» a turno no le llega a nadie. Decidir quién hace turno.
 
 ## 2026-10-15 — Smoke test de prod con las cuentas de los revisores
 
