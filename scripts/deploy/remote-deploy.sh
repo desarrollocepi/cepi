@@ -161,7 +161,42 @@ salud() {   # 200 en los dos servicios, y siguen en pie 10 s después
   return 1
 }
 
-reiniciar() { pm2_ restart "${SERVICIOS[@]}" >> "$LOG" 2>&1; }
+# Solo se reinicia lo que cambió. Reiniciar el bot corta lo que esté atendiendo:
+# el webhook de Telegram responde 200 antes de procesar, así que un mensaje que
+# llega en ese momento se pierde (pasó el 2026-10-15 con un deploy de solo docs).
+REINICIAR=()
+difiere() {   # $1 = dir o archivo del release; ¿cambia respecto de lo vivo?
+  if [[ -d $STAGE/$1 ]]; then
+    # Sin `| grep -q`: con pipefail, grep cierra el tubo, rsync muere por SIGPIPE y da falso.
+    [[ -n $(rsync -a --delete --dry-run --itemize-changes "$STAGE/$1/" "$LIVE/$1/" 2>/dev/null) ]]
+  else
+    ! cmp -s "$STAGE/$1" "$LIVE/$1"
+  fi
+}
+servicios_que_cambian() {   # $1 = SQL pendiente, $2 = paquetes npm a reinstalar
+  local mcp=0 back=0 bot=0 x
+  difiere TodoERP/mcp/dist && mcp=1
+  for x in TodoERP/mcp/package.json TodoERP/mcp/package-lock.json; do difiere "$x" && mcp=1; done
+  grep -q '^TodoERP/mcp$' <<< "$2" && mcp=1
+  difiere TodoERP/backend/src && back=1
+  for x in TodoERP/backend/package.json TodoERP/backend/package-lock.json TodoERP/backend/tsconfig.json; do
+    difiere "$x" && back=1
+  done
+  grep -q '^TodoERP/backend$' <<< "$2" && back=1
+  [[ -n $1 ]] && back=1
+  difiere cepi-bot/src && bot=1
+  for x in cepi-bot/package.json cepi-bot/package-lock.json cepi-bot/tsconfig.json; do difiere "$x" && bot=1; done
+  grep -q '^cepi-bot$' <<< "$2" && bot=1
+  (( mcp )) && bot=1   # el bot lanza el MCP
+  (( back )) && echo todoerp-backend
+  (( bot )) && echo cepi-bot
+  return 0
+}
+reiniciar() {
+  if (( ${#REINICIAR[@]} == 0 )); then echo "sin código de servicios que cambie: no se reinicia nada"; return 0; fi
+  echo "reinicio: ${REINICIAR[*]}"
+  pm2_ restart "${REINICIAR[@]}" >> "$LOG" 2>&1
+}
 
 NPM_REINSTALADOS=()
 revertir_codigo() {
@@ -206,6 +241,7 @@ dry-run|deploy)
   fi
 
   REINSTALAR=$(npm_que_cambia)
+  mapfile -t REINICIAR < <(servicios_que_cambian "$PENDIENTE" "$REINSTALAR")
 
   if [[ $MODO == dry-run ]]; then
     paso "2. cambios de código que aplicaría"
@@ -214,6 +250,7 @@ dry-run|deploy)
       printf '  %-24s %s cambios\n' "$d" "$n"
     done
     echo "  npm ci en: $(echo ${REINSTALAR:-ninguno})"
+    echo "  reiniciaría: ${REINICIAR[*]:-nada}"
     paso "dry-run terminado: no se tocó nada vivo"
     exit 0
   fi
