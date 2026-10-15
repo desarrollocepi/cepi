@@ -4,6 +4,15 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## 2026-10-15 — Prod caído por el vault local sin socket
+
+Tres deploys seguidos fallaron (11:53, 12:21 y 12:23 UTC): `todoerp-backend 000 · cepi-bot
+000` y el rollback tampoco levantó. La API dio 502 hasta las ~12:40 UTC. Causa: el daemon
+`dotrino-vault` de esta máquina estaba corriendo sin conexión al proxy ("WebSocket not
+connected"), así que `dotrino-env` no recibía los secretos al reiniciar. Arreglo:
+`systemctl --user restart dotrino-vault`; prod volvió solo en ~70 s. Es el mismo incidente
+del 2026-09-18 (memoria `vault-cepi-local`).
+
 ## Sesión 2026-10-08 — Deuda para publicar las apps en las tiendas
 
 **Play (Android).** La app seguía como *borrador* ("ec.cepi.telemedicina (unreviewed)") con 1
