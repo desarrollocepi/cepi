@@ -4,6 +4,28 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## 2026-10-15 — Smoke test de prod con las cuentas de los revisores
+
+Por API y por la web (headless, móvil y escritorio), con `revisor@cepi.ec` y
+`colega.sandbox@cepi.ec`, contra producción:
+
+- Bien: login, solo ven `cepi-testing` (cambiar a `cepi` da 403), 6 pacientes ficticios,
+  alta de paciente, hilo y chat con el asistente, ficha y episodios, CIE-10, galería, círculos
+  y miembros solo de la sandbox, derivar a dermatología y que le llegue a la colega.
+- Corregido: las pestañas Chat / Ficha / Imágenes de la web no tenían CSS (botones nativos).
+- Corregido en TodoERP `24d6ca0`: el column sync nunca quitaba el NOT NULL de un campo que
+  dejaba de ser `required` (en local `entity_patient.apellidos` rompía toda alta sin
+  apellidos). En prod no se pudo mirar la base; si existía, la reconciliación del arranque
+  del deploy de hoy ya lo quitó.
+- Queda en la sandbox de prod un paciente **"Smoke Revisor"** (cédula 1773608342) que creó
+  el smoke test: `medico_primario` no puede borrar pacientes y la cuenta del revisor lo ve
+  arriba de la lista. Darlo de baja con una cuenta que tenga el permiso.
+- El asistente respondió "¿Presenta picor?" a un mensaje que ya decía "pruriginosa".
+- Los 3 tests de TodoERP que fallaban en local eran de la base local, no de CI: el NOT NULL
+  de arriba (2) y `patologia_multiorg`, que dejaba un paciente por corrida y 42 orgs de
+  prueba acumuladas. Suite completa: 534 de TodoERP, 274 del bot, 329 de la web, en verde.
+- Sin probar: WhatsApp y Telegram en vivo, la consola con sesión, las apps nativas.
+
 ## 2026-10-15 — Prod caído por el vault local sin socket
 
 Tres deploys seguidos fallaron (11:53, 12:21 y 12:23 UTC): `todoerp-backend 000 · cepi-bot
