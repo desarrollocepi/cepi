@@ -4,6 +4,31 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## 2026-10-15 — Smoke test en vivo de Telegram y WhatsApp
+
+Telegram (@cepiecbot) y WhatsApp (+593 99 899 4582) contra prod: menú, alta de paciente,
+búsqueda por cédula, ficha por campos (texto, fecha, botones y lista de WhatsApp), derivar a
+`medicina_interna` (solo seyacat). Funcionan. Los pacientes de prueba («Smoke Telegram» en
+`cepi`, «Smoke Revisor» en la sandbox) se dieron de baja.
+
+Corregido y en prod:
+- **Cada deploy reiniciaba el bot y perdía los mensajes que llegaban en ese momento** (el
+  webhook responde 200 antes de procesar). Pasó en vivo: «Smoke» se perdió y el nombre quedó
+  «hola». `remote-deploy.sh` ahora reinicia solo el servicio cuyo código, dependencias o SQL
+  cambió, comparando por contenido. Un deploy de docs o de la web ya no reinicia nada.
+- **«Toda la red» y los círculos incluían a pendientes y rechazados.** En `cepi` eran 8
+  cuentas de spam registradas solas (nombre.NNNNN@gmail.com, 24/09 y 08/10). Derivar,
+  asignar y recordar ahora exige estar aprobado en la org (TodoERP `ee5cdb5`, PAPER §13.8).
+
+Pendiente:
+- Rechazar las 8 cuentas de spam desde la consola (Usuarios → Pendientes, selección múltiple).
+- `turno` quedó sin nadie aprobado en `cepi`: `residente@` y `derma1@` no tienen rol ahí
+  (solo el general `user`). «Enviar caso» a turno no le llega a nadie.
+- El recorrido de la ficha toma cualquier texto como respuesta: un resumen clínico quedó
+  guardado como «Dirección». Al terminar una sección encadena la siguiente sin salida;
+  «cancelar» además suelta al paciente activo, y el texto libre no llega al asistente.
+- Voseo en el bot: «¿Qué querés hacer?», «Completá», «Escribí».
+
 ## 2026-10-15 — Smoke test de prod con las cuentas de los revisores
 
 Por API y por la web (headless, móvil y escritorio), con `revisor@cepi.ec` y
