@@ -281,6 +281,15 @@ onUnmounted(() => { mq.removeEventListener('change', onMq); });
 .shell-detail { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .shell-chat { flex: 1; min-height: 0; }
 .mchat-bar { display: none; }
+/* Pestañas Chat / Ficha / Imágenes. Sin estilo salían como botones nativos del navegador. */
+.shell-secciones { display: flex; gap: 6px; flex-shrink: 0; padding: 0 0 8px; }
+.shell-secciones button {
+  padding: 7px 16px; border: 1px solid var(--border); border-radius: 18px;
+  background: var(--bot-bg, #fff); color: var(--text-muted, #64748b);
+  font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.shell-secciones button:hover:not(.on) { border-color: var(--accent); color: var(--accent); }
+.shell-secciones button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 @media (max-width: 768px) {
   .shell { grid-template-columns: 1fr; gap: 0; }
@@ -296,6 +305,8 @@ onUnmounted(() => { mq.removeEventListener('change', onMq); });
     border: 1.5px solid var(--border); background: #fff; color: var(--accent);
     font-size: 1.1rem; font-weight: 700; cursor: pointer; flex-shrink: 0;
   }
+  .shell-secciones { padding: 6px 10px; background: var(--accent-band, #f1f5f9); border-bottom: 1px solid var(--border); }
+  .shell-secciones button { flex: 1; padding: 6px 8px; }
   .mtitle { font-weight: 700; font-size: 0.95rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 </style>
