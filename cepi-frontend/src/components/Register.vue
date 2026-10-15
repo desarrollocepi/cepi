@@ -21,12 +21,14 @@
     <p class="hint">
       <a href="#" @click.prevent="$emit('go-login')">← Volver a ingresar</a>
     </p>
+    <AvisoAcceso />
   </form>
 </template>
 
 <script setup>
 import { ref } from 'vue';
 import { register } from '../api.js';
+import AvisoAcceso from './AvisoAcceso.vue';
 
 const emit = defineEmits(['go-login', 'registered']);
 

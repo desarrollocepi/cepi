@@ -11,7 +11,8 @@
     <div class="sep"><span>o</span></div>
     <GoogleSignIn @credential="onGoogle" />
     <p v-if="error" class="error">{{ error }}</p>
-    <p class="hint">¿No tenés cuenta? <a href="#" @click.prevent="$emit('go-register')">Crear cuenta</a></p>
+    <p class="hint">¿No tienes cuenta? <a href="#" @click.prevent="$emit('go-register')">Crear cuenta</a></p>
+    <AvisoAcceso />
   </form>
 </template>
 
@@ -19,6 +20,7 @@
 import { ref } from 'vue';
 import { login, googleLogin } from '../api.js';
 import GoogleSignIn from './GoogleSignIn.vue';
+import AvisoAcceso from './AvisoAcceso.vue';
 
 const emit = defineEmits(['logged-in', 'go-register']);
 const email = ref('');

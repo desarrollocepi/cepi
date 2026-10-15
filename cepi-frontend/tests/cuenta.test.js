@@ -70,6 +70,18 @@ describe('Login', () => {
   });
 });
 
+describe('Aviso de acceso', () => {
+  // La app se descarga libremente pero no es pública: el ingreso y el registro lo dicen.
+  it('aparece en el ingreso y en el registro', () => {
+    for (const w of [mount(Login, { global: { stubs: { GoogleSignIn: Google } } }), mount(Register)]) {
+      const aviso = w.find('.aviso');
+      expect(aviso.exists()).toBe(true);
+      expect(aviso.text()).toContain('No es un servicio para pacientes ni para el público');
+      expect(aviso.text()).toContain('administrador de CEPI');
+    }
+  });
+});
+
 describe('Register', () => {
   it('manda los datos y pasa a la verificación con el email en minúsculas', async () => {
     api.register.mockResolvedValue({});
