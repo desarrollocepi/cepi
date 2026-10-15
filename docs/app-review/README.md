@@ -72,12 +72,14 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 - Enlace de descarga: `https://play.google.com/apps/testing/ec.cepi.telemedicina` (la ficha
   pública `details?id=…` da 404 mientras la app esté solo en la pista cerrada). Está en el
   aviso de acceso de telemedicina.cepi.ec desde el 2026-10-15.
-- Producción: **inactiva**. No se envió a propósito: en Play, producción es pública y la app
-  es solo para médicos de CEPI (PAPER §24.7, §25.7). La pista cerrada es el equivalente de la
-  distribución no listada de iOS.
-- [ ] Decidir si Android pasa a producción. Si iOS sale como no listada, la paridad pide algo
-      parecido en Android: seguir en pista cerrada (médicos agregados a la lista de testers)
-      o producción pública con registro que exige aprobación de un admin.
+- [x] 2026-10-15 — **Producción enviada a revisión** (10:20 hora de Ecuador): versión 7 (2.3.0),
+      lanzamiento completo, solo Ecuador. Decisión del usuario: la app va a producción
+      normal; que aparezca en las búsquedas de Play no importa, el acceso lo controla la
+      aprobación de la cuenta. Google indica hasta 7 días. La publicación gestionada está
+      desactivada: al aprobarse se publica sola.
+- [ ] Al publicarse: cambiar el botón de Play en `cepi-frontend/src/components/AvisoAcceso.vue`
+      a `https://play.google.com/store/apps/details?id=ec.cepi.telemedicina` y quitar la nota
+      de la lista de testers.
 
 ## Paridad de versiones
 
