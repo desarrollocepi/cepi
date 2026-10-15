@@ -1060,6 +1060,13 @@ revisores, asignados y dueños de recordatorios explícitos exigen un rol de ver
 (`aprobadoEn` en `orgScope.ts`). Antes «toda la red» incluía a los pendientes, y en prod eso
 eran cuentas de spam. Tests: `tests/auth/alcanzables_aprobados.test.ts`.
 
+**Respaldo de una derivación sin destinatarios** (2026-10-15, seed médico 024). Si el destino
+de una derivación (un círculo, «toda la red»; no una persona elegida a mano) no tiene a
+nadie aprobado, va a los roles de `organizations.data.fallback_reviewer_roles` de la org, y
+la respuesta lo marca (`fallback: true`) para que el canal no diga «se notificó al turno».
+En las orgs de CEPI el respaldo es el **supermédico**. Tests:
+`tests/derivacion_respaldo.test.ts`.
+
 **Registro con verificación.** `POST /auth/register` crea la cuenta **inactiva** (rol
 general `user`, pendiente en las orgs por defecto y en la del dominio) y manda por Brevo un
 código de 6 dígitos (sin enlace). `POST /auth/verify-email` la activa; el código vence a los

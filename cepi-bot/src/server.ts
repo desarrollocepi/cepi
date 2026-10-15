@@ -742,9 +742,15 @@ async function executePendingActionResult(
     const conDatos = (t: string) => t
       .replace(/\{\{count\}\}/g, String(ids.length))
       .replace(/\{\{reviewers\}\}/g, nombres.length ? nombres.join(', ') : 'nadie');
-    const ackText = errs.length
-      ? `${conDatos(pa.successMessage)} (con ${errs.length} error(es): ${errs.join('; ')})`
+    // El destino pedido no tenía a nadie aprobado y el backend lo mandó al respaldo de la
+    // org (en CEPI, el supermédico): el mensaje de éxito pensado para el destino mentiría.
+    const respaldo = batchCalls.some(c => (c.result as any)?.data?.fallback === true);
+    const exito = respaldo
+      ? `El destino no tenía a nadie disponible: el caso fue a ${nombres.join(', ') || 'nadie'} (respaldo de la organización). Se les notificó.`
       : conDatos(pa.successMessage);
+    const ackText = errs.length
+      ? `${exito} (con ${errs.length} error(es): ${errs.join('; ')})`
+      : exito;
     session.pending_action = null;
     session.turns = [
       ...session.turns,

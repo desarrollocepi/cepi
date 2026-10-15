@@ -28,8 +28,8 @@ Resuelto después, el mismo día:
 - Sin voseo en los textos del bot ni en los prompts del LLM (que ahora piden tratar de tú).
 
 Pendiente:
-- `turno` sin nadie aprobado en `cepi`: `residente@` y `derma1@` no tienen rol ahí (solo el
-  general `user`). «Enviar caso» a turno no le llega a nadie. Decidir quién hace turno.
+- `turno` sigue sin nadie aprobado en `cepi`, pero ya no deja el caso en el aire: una
+  derivación sin destinatarios va al supermédico de la org (seed 024, PAPER §13.8).
 
 ## 2026-10-15 — Smoke test de prod con las cuentas de los revisores
 
