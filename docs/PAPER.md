@@ -1049,7 +1049,8 @@ cuenta: la persona sigue pendiente y sin permisos en esa org, y en otra puede es
 aprobada. Sale de `?role=pendiente` y aparece en `?estado=rechazado`; darle un rol limpia el
 rechazo. A un aprobado no se lo rechaza (409): se le cambia el rol. En la consola: botón por
 fila, filtro «Rechazados» y selección múltiple para aprobar con un rol o rechazar en bloque.
-La app todavía le muestra a un rechazado la pantalla de «pendiente».
+El rechazo es **silencioso a propósito** (decisión del 2026-10-15): la app le sigue mostrando
+«pendiente» y no se le avisa por ningún canal.
 Tests: `tests/auth/rechazos.test.ts`.
 
 **Registro con verificación.** `POST /auth/register` crea la cuenta **inactiva** (rol
