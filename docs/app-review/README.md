@@ -1,4 +1,4 @@
-# Camino a la aprobación de iOS — lista de pasos
+# Camino a la aprobación en las tiendas — lista de pasos
 
 Lista viva para publicar CEPI Telemedicina 1.0 en la App Store. Se actualiza cada vez que
 pasa algo: un paso hecho se marca `[x]` con fecha; un paso nuevo se agrega donde toca. El
@@ -59,3 +59,24 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 - Alternativa sin App Store: TestFlight externo (máximo 10 000 testers, builds vencen a los
   90 días). Ver PAPER §24.7.
 - Decidir con el usuario y registrar la decisión en PAPER §24.7.
+
+---
+
+# Android (Play)
+
+- App `4974089655011192327`, cuenta Cempiel (`desarrollo@cepi.ec`), paquete `ec.cepi.telemedicina`.
+- [x] 2026-10-09 — Envío 1 (prueba cerrada Alpha, ficha, contenido, configuración) a revisión.
+- [x] 2026-10-09 — **Aprobado y publicado** el mismo día (Actividad de envíos: "Publicada").
+      Versión 7 (2.3.0) en la pista cerrada Alpha, solo Ecuador, lista "Testers internos CEPI".
+- Producción: **inactiva**. No se envió a propósito: en Play, producción es pública y la app
+  es solo para médicos de CEPI (PAPER §24.7, §25.7). La pista cerrada es el equivalente de la
+  distribución no listada de iOS.
+- [ ] Decidir si Android pasa a producción. Si iOS sale como no listada, la paridad pide algo
+      parecido en Android: seguir en pista cerrada (médicos agregados a la lista de testers)
+      o producción pública con registro que exige aprobación de un admin.
+
+## Paridad de versiones
+
+Android 7 (2.3.0) e iOS 1.0 (11) salieron del mismo commit (`05d312e`, 2026-10-08) y no hay
+cambios en `cepi-android/` ni `cepi-ios/` después. Diferencia funcional: iOS no tiene dictado
+ni push (PAPER §24.9, fases 4 y 5); Android sí.
