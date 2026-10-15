@@ -167,8 +167,10 @@ salud() {   # 200 en los dos servicios, y siguen en pie 10 s después
 REINICIAR=()
 difiere() {   # $1 = dir o archivo del release; ¿cambia respecto de lo vivo?
   if [[ -d $STAGE/$1 ]]; then
+    # Por contenido (-c, sin -t): el release sale de un checkout nuevo en cada corrida y
+    # todas las fechas cambian, así que por fecha y tamaño todo «difiere».
     # Sin `| grep -q`: con pipefail, grep cierra el tubo, rsync muere por SIGPIPE y da falso.
-    [[ -n $(rsync -a --delete --dry-run --itemize-changes "$STAGE/$1/" "$LIVE/$1/" 2>/dev/null) ]]
+    [[ -n $(rsync -rlc --delete --dry-run --itemize-changes "$STAGE/$1/" "$LIVE/$1/" 2>/dev/null) ]]
   else
     ! cmp -s "$STAGE/$1" "$LIVE/$1"
   fi
