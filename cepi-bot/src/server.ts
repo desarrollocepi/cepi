@@ -1061,7 +1061,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             patient_context: { id: pid, ...patientData },
             active_form: null,
           };
-          const ackText = `${greet}\n\nModo información (no presencial). ¿Qué querés saber del paciente?`;
+          const ackText = `${greet}\n\nModo información (no presencial). ¿Qué quieres saber del paciente?`;
           session.turns = [...session.turns,
             { role: 'user', content: message }, { role: 'assistant', content: ackText }];
           await saveSession(mcp, session);
@@ -1198,7 +1198,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           active_form: fichaForm,
         };
         const ackText = lead + (fichaForm ? '\n\nSeguimos con la ficha clínica:'
-          : '\n\nLa ficha está completa — revisá lo que quieras desde los marcadores.');
+          : '\n\nLa ficha está completa — revisa lo que quieras desde los marcadores.');
         session.turns = [...session.turns,
           { role: 'user', content: message }, { role: 'assistant', content: ackText }];
         await saveSession(mcp, session);
@@ -1216,7 +1216,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       if (closeSession) {
         session.estado = 'cerrada';
         session.pending_action = null;
-        const ackText = 'Sesión cerrada. Iniciá una nueva cuando quieras.';
+        const ackText = 'Sesión cerrada. Inicia una nueva cuando quieras.';
         session.turns = [
           ...session.turns,
           { role: 'user',      content: message },
@@ -1566,7 +1566,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         if (!images.length) {
           text = wantIds.length
             ? 'No encontré esas imágenes en el episodio.'
-            : 'No hay imágenes clínicas en el episodio. Adjuntá una primero (📎).';
+            : 'No hay imágenes clínicas en el episodio. Adjunta una primero (📎).';
         } else {
           const blocks = images.map((img, i) => {
             const head = `**Imagen ${i + 1}**` +
@@ -1593,7 +1593,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
             '',
             ...blocks,
             '',
-            'Recordá: las clasificaciones son informativas. El diagnóstico es decisión del médico (D-Aux-1).',
+            'Recuerda: las clasificaciones son informativas. El diagnóstico es decisión del médico (D-Aux-1).',
           ].join('\n');
         }
         const userTurn = wantIds.length
@@ -1652,7 +1652,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           top       ? `  • Clase top: ${top.label} (${(top.confidence * 100).toFixed(0)}%)` : null,
           mapped    ? `  • Mapping CIE-10 propuesto: **${mapped[0]}** — ${mapped[1]}` : null,
           '',
-          'Recordá: la sugerencia es informativa. El diagnóstico es decisión del médico (D-Aux-1).',
+          'Recuerda: la sugerencia es informativa. El diagnóstico es decisión del médico (D-Aux-1).',
           mapped    ? `Para registrarlo: \`diagnostico ${mapped[0]} ${mapped[1]}\`` : null,
         ].filter(Boolean).join('\n');
         session.turns = [...session.turns,
@@ -1821,7 +1821,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       const sendCaseMatch = message.trim().match(/^\/?\s*enviar\s+caso\b\s*(.*)$/i);
       if (sendCaseMatch) {
         if (!activeEpisodeId) {
-          const ackText = 'Necesito un episodio activo (la ficha del caso) antes de enviarlo. Activá o creá uno.';
+          const ackText = 'Necesito un episodio activo (la ficha del caso) antes de enviarlo. Activa o crea uno.';
           session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
           await saveSession(mcp, session);
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns,
@@ -1888,7 +1888,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       if (claimMatch) {
         const target = claimMatch[1] || activeEpisodeId;
         if (!target) {
-          const ackText = 'Indicá qué caso reclamar: `reclamar <uuid>` (o activá un episodio).';
+          const ackText = 'Indica qué caso reclamar: `reclamar <uuid>` (o activa un episodio).';
           session.turns = [...session.turns, { role: 'user', content: message }, { role: 'assistant', content: ackText }];
           await saveSession(mcp, session);
           return res.json({ ok: true, session_id: sessionId, text: ackText, history: session.turns, toolCalls: [],

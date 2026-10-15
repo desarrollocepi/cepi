@@ -35,7 +35,7 @@ import {
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
   fetchConReintento,
 } from './canalAviso.js';
-import { cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
+import { cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
@@ -391,7 +391,7 @@ function renderForm(form: BotForm): string {
     lines.push(`• ${f.label}${req}${opts}`);
   }
   if (form.submit_send) {
-    lines.push('', 'Respondé con los datos y los registro.');
+    lines.push('', 'Responde con los datos y los registro.');
   }
   return lines.join('\n');
 }
@@ -647,7 +647,7 @@ async function sendWelcomeMenu(chatId: number): Promise<void> {
   ];
   const prev = lastPatient.get(chatId);
   if (prev) buttons.push({ label: `↩️ Anterior: ${prev.name}`, send: `activar paciente ${prev.id}` });
-  await sendTelegramText(chatId, 'Hola 👋 ¿Qué querés hacer?', buildKeyboard(buttons));
+  await sendTelegramText(chatId, 'Hola 👋 ¿Qué quieres hacer?', buildKeyboard(buttons));
 }
 
 /** True when this chat has been idle long enough to count as a new conversation. */
@@ -691,7 +691,7 @@ async function authorizeChat(chatId: number, fromId: number, nombre?: string): P
       `Tu ID de Telegram es: ${fromId}\n` +
       `Pasáselo al administrador para que te dé acceso.`);
   } else {
-    await sendTelegramText(chatId, 'No pude validar tu identidad ahora mismo. Probá de nuevo en un rato.');
+    await sendTelegramText(chatId, 'No pude validar tu identidad ahora mismo. Prueba de nuevo en un rato.');
   }
   return null;
 }
@@ -718,7 +718,7 @@ async function handleInbound(invokeChat: InvokeChat, message: any): Promise<void
   if (linkCmd) {
     const r = await linkExternal(jwt, 'telegram', linkCmd[1], linkCmd[2]);
     const msg = r === 'ok' ? `✅ Vinculé el ID ${linkCmd[1]} con ${linkCmd[2]}.`
-      : r === 'forbidden' ? 'No tenés permiso para vincular usuarios.'
+      : r === 'forbidden' ? 'No tienes permiso para vincular usuarios.'
       : r === 'user_not_found' ? `No encontré un usuario con email ${linkCmd[2]}.`
       : 'No pude completar la vinculación.';
     await sendTelegramText(chatId, msg);
@@ -779,7 +779,7 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
       } else {
         await sendTelegramText(chatId,
           'Estoy registrando los datos del paciente — todavía no puedo recibir imágenes. ' +
-          'Respondé el campo que te pedí (o escribí "cancelar").');
+          'Responde el campo que te pedí (o escribe "cancelar").');
         await askWalkField(invokeChat, chatId);
         return;
       }
@@ -789,6 +789,14 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
       const answer = String(message?.text || message?.caption || '').trim();
       if (/^\/?\s*(cancelar|salir|men[uú])\s*$/i.test(answer)) {
         await guardarParcial(chatId);
+        // En la ficha, «cancelar»/«salir» dejan la sección pero NO al paciente: el menú
+        // reinicia la conversación y lo soltaba. Solo «menú» vuelve al inicio.
+        if (fichaWalk && !/men[uú]/i.test(answer)) {
+          await sendTelegramText(chatId,
+            'Dejé la ficha a un lado; sigues con el mismo paciente. Escribe lo que necesites ' +
+            '(la ficha se retoma después) o «menú» para volver al inicio.');
+          return;
+        }
         await sendWelcomeMenu(chatId);
         return;
       }
@@ -805,7 +813,8 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
       }
       // Slash-commands, y los comandos que cambian o sueltan al paciente,
       // tampoco: tomarlos como respuesta deja al médico atrapado en la sección.
-      if (esComando(answer, activeWalk.form.fields[activeWalk.idx]) || CAMBIA_PACIENTE.test(answer)) {
+      if (esComando(answer, activeWalk.form.fields[activeWalk.idx]) || CAMBIA_PACIENTE.test(answer)
+          || (fichaWalk && esRelatoLibre(answer, activeWalk.form.fields[activeWalk.idx]))) {
         await guardarParcial(chatId);
         await routeTurn(invokeChat, chatId, answer, jwt, '');
         return;
@@ -870,7 +879,7 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
   if (hasImage) {
     imageToken = await resolveImageToken(message, jwt);
     if (imageToken === null) {
-      await sendTelegramText(chatId, 'No pude procesar la imagen. Probá de nuevo.');
+      await sendTelegramText(chatId, 'No pude procesar la imagen. Prueba de nuevo.');
       return;
     }
   }
@@ -1013,7 +1022,7 @@ async function deliver(invokeChat: InvokeChat, chatId: number, body: any): Promi
   if (isWalkableForm(body?.form) && !body?.pending_action) {
     // Ficha sections are shown whole as context; short forms (new patient)
     // go straight to their first question after the brain's intro text —
-    // rendering the field list + "Respondé con los datos" would contradict
+    // rendering the field list + "Responde con los datos" would contradict
     // the one-by-one walk that follows.
     const intro = body.form.id.startsWith('ficha_grp_')
       ? composeReply(body) + '\n\n«Saltar» deja un campo sin contestar. «Omitir restante» termina la sección: lo ya contestado se guarda.'

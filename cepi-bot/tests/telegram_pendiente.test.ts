@@ -90,7 +90,7 @@ describe('telegram: identidad pendiente', () => {
 
   it('ya aprobada, entra: primer contacto muestra el menú', async () => {
     await update(msg(501, 'hola'));
-    expect(sent.at(-1)!.text).toContain('¿Qué querés hacer?');
+    expect(sent.at(-1)!.text).toContain('¿Qué quieres hacer?');
   });
 });
 

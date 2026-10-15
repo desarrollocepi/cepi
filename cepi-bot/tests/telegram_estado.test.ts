@@ -74,7 +74,7 @@ afterAll(() => { globalThis.fetch = realFetch; server.close(); fs.rmSync(DIR, { 
 describe('telegram: el estado sobrevive a un reinicio', () => {
   it('la respuesta completa la sección que estaba a medias: sin menú, en la misma sesión', async () => {
     await update({ message: { chat: { id: CHAT }, from: { id: CHAT }, text: '0999999999' } });
-    expect(sent.some(t => /¿Qué querés hacer\?/.test(t))).toBe(false);
+    expect(sent.some(t => /¿Qué quieres hacer\?/.test(t))).toBe(false);
     expect(turnos).toHaveLength(1);
     expect(turnos[0].session_id).toBe('sess-previa');
     expect(turnos[0].form_submission).toEqual({ form_id: 'ficha_grp_g_1_1', data: { direccion: 'Av. Uno', telefono: '0999999999' } });

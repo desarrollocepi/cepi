@@ -67,6 +67,19 @@ export function esComando(texto: string, f?: BotFormField): boolean {
 }
 
 /**
+ * ¿Lo escrito en medio de la ficha es un relato clínico y no la respuesta al campo?
+ * Pasó en el smoke test del 2026-10-15: «Paciente de 34 años con placa eritematosa…»
+ * quedó guardado como Dirección. Un texto largo, de varias palabras, en un campo que
+ * no es de texto largo (`textarea`) va al asistente, que extrae lo que corresponda; la
+ * ficha se retoma después.
+ */
+export function esRelatoLibre(texto: string, f?: BotFormField): boolean {
+  if (!f || f.type === 'textarea' || f.type === 'heading') return false;
+  const t = texto.trim();
+  return t.length >= 80 && t.split(/\s+/).length >= 10;
+}
+
+/**
  * ¿El campo ya tiene valor guardado? El cerebro manda la sección con lo que ya
  * hay en la ficha (`form.values`). Un canal pregunta solo lo que falta: volver a
  * pedir lo ya contestado —por ejemplo tras guardar media sección— cansa y

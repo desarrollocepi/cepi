@@ -95,7 +95,7 @@ const PATIENT_SEARCH_FORM: BotForm = {
       entity_id: PATIENT_ENTITY_ID,
       min_chars: 3,
       page_size: 20,
-      placeholder: 'Escribí al menos 3 caracteres…',
+      placeholder: 'Escribe al menos 3 caracteres…',
       on_select_send: 'activar paciente {id}',
       result_label: ['nombre', 'apellidos'],
       result_sub: 'cedula',
@@ -976,7 +976,7 @@ async function handleImageGroupSubmit(
   const summary = `📋 ${grp?.label || ''}`;
 
   if (!attachmentIds.length) {
-    const text = 'No subiste ninguna imagen. Elegí al menos un archivo y volvé a guardar.';
+    const text = 'No subiste ninguna imagen. Elige al menos un archivo y vuelve a guardar.';
     await appendAndSave(session, summary, text, mcp);
     return { text, form: fichaGroupForm(gid), bookmarks: await fichaBookmarks(mcp, session) };
   }
@@ -1018,7 +1018,7 @@ async function handleImageGroupSubmit(
       const short = aid.slice(0, 8);
       if (!r.adequate) {
         const why = r.reasons.length ? r.reasons.join('; ') : (r.error || 'no apta');
-        notes.push(`  • Imagen ${short}… descartada — ${why}. Subí otra.`);
+        notes.push(`  • Imagen ${short}… descartada — ${why}. Sube otra.`);
         continue;
       }
       notes.push(r.has_face
@@ -1088,7 +1088,7 @@ async function handleImageGroupSubmit(
     await appendAndSave(session, summary, text, mcp);
     return { text, form, await_isic: awaitIsic, bookmarks: await fichaBookmarks(mcp, session) };
   }
-  const text = `${lines.join('\n\n')}\n\nFicha completa. Revisá lo que quieras desde los marcadores.`;
+  const text = `${lines.join('\n\n')}\n\nFicha completa. Revisa lo que quieras desde los marcadores.`;
   await appendAndSave(session, summary, text, mcp);
   return { text, form: null, await_isic: awaitIsic, bookmarks: await fichaBookmarks(mcp, session) };
 }
@@ -1159,7 +1159,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
 
   if (mode === 'unset' && /^\s*\/?\s*(informaci[oó]n\s+paciente|info\s+paciente)\s*$/i.test(trimmed)) {
     setSlot(session, 'mode', 'patient_info');
-    const text = 'Información de paciente (consulta no presencial). Buscá el paciente.';
+    const text = 'Información de paciente (consulta no presencial). Busca el paciente.';
     await appendAndSave(session, message, text, mcp);
     return { text, form: PATIENT_SEARCH_FORM };
   }
@@ -1178,7 +1178,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
 
   if (sinPaciente && /^\s*\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente)\s*$/i.test(trimmed)) {
     setSlot(session, 'mode', 'patient');
-    const text = 'Completá los datos del nuevo paciente.';
+    const text = 'Completa los datos del nuevo paciente.';
     await appendAndSave(session, message, text, mcp);
     return { text, form: PATIENT_NEW_FORM };
   }
@@ -1237,7 +1237,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
 
     // Trigger new-patient form
     if (/^\s*\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente)\s*$/i.test(trimmed)) {
-      const text = 'Completá los datos del nuevo paciente.';
+      const text = 'Completa los datos del nuevo paciente.';
       await appendAndSave(session, message, text, mcp);
       return { text, form: PATIENT_NEW_FORM };
     }
@@ -1250,7 +1250,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
     });
     const list = Array.isArray(r.data) ? r.data : [];
     if (list.length === 0) {
-      const text = `Sin coincidencias para "${trimmed}". Probá de nuevo o crea uno.`;
+      const text = `Sin coincidencias para "${trimmed}". Prueba de nuevo o crea uno.`;
       await appendAndSave(session, message, text, mcp);
       return { text, form: PATIENT_SEARCH_FORM };
     }
@@ -1305,7 +1305,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
         await appendAndSave(session, 'Omitir', text, mcp);
         return { text, form, bookmarks: await fichaBookmarks(mcp, session) };
       }
-      const text = 'Última sección. Revisá lo que falte desde los marcadores.';
+      const text = 'Última sección. Revisa lo que falte desde los marcadores.';
       await appendAndSave(session, 'Omitir', text, mcp);
       return { text, form: null, bookmarks: await fichaBookmarks(mcp, session) };
     }
@@ -1450,7 +1450,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
     // Fallback — stay conversational, never surface internal commands.
     const text =
       `En modo información puedo contarte el historial de consultas de ${nombre} ` +
-      `o sus datos (edad, contacto, etc.). ¿Qué necesitás saber?`;
+      `o sus datos (edad, contacto, etc.). ¿Qué necesitas saber?`;
     await appendAndSave(session, message, text, mcp);
     return { text };
   }

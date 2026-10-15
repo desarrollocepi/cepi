@@ -130,7 +130,7 @@ async function scriptedBrain({ body }: { body: any; headers?: Record<string, str
   if (/^\/?\s*(nuevo|nuevo\s+paciente|crear\s+paciente)\s*$/i.test(msg)) {
     return { status: 200, body: {
       ok: true, session_id: 'sess-1',
-      text: 'Completá los datos del nuevo paciente.',
+      text: 'Completa los datos del nuevo paciente.',
       form: PATIENT_NEW_FORM, quick_replies: [], pending_action: null,
     } };
   }
@@ -168,7 +168,7 @@ async function scriptedBrain({ body }: { body: any; headers?: Record<string, str
   // Anything else emulates flowV1's fallthrough: patient SEARCH (the bug path).
   return { status: 200, body: {
     ok: true, session_id: 'sess-1',
-    text: `Sin coincidencias para "${msg}". Probá de nuevo o crea uno.`,
+    text: `Sin coincidencias para "${msg}". Prueba de nuevo o crea uno.`,
   } };
 }
 
@@ -238,7 +238,7 @@ describe('telegram new-patient walk', () => {
   it('first contact shows the welcome menu (message swallowed)', async () => {
     await update(msgUpdate(CHAT, 'hola'));
     const texts = textsTo(CHAT);
-    expect(texts.some(t => t.includes('¿Qué querés hacer?'))).toBe(true);
+    expect(texts.some(t => t.includes('¿Qué quieres hacer?'))).toBe(true);
     expect(inbound.length).toBe(0);             // nothing reached the brain
   });
 
@@ -252,18 +252,18 @@ describe('telegram new-patient walk', () => {
     const OTRO = 7091;
     fallosDeEnvio = 2;
     await update(msgUpdate(OTRO, 'hola'));
-    expect(lastTo(OTRO).text).toContain('¿Qué querés hacer?');
+    expect(lastTo(OTRO).text).toContain('¿Qué quieres hacer?');
     expect(fallosDeEnvio).toBe(0);
   });
 
   it('tapping "nuevo paciente" starts the field-by-field walk', async () => {
     await update(tapUpdate(CHAT, 'nuevo paciente'));
     const texts = textsTo(CHAT);
-    expect(texts.some(t => t.includes('Completá los datos del nuevo paciente.'))).toBe(true);
+    expect(texts.some(t => t.includes('Completa los datos del nuevo paciente.'))).toBe(true);
     expect(texts.some(t => t.includes('(1/3) Cédula'))).toBe(true);
-    // The intro must NOT render the flat form ("Respondé con los datos…"):
+    // The intro must NOT render the flat form ("Responde con los datos…"):
     // that wording contradicts the one-by-one walk.
-    expect(texts.some(t => t.includes('Respondé con los datos'))).toBe(false);
+    expect(texts.some(t => t.includes('Responde con los datos'))).toBe(false);
   });
 
   it('a bare cédula is captured by the walk, NOT routed to search (the bug)', async () => {
@@ -295,7 +295,7 @@ describe('telegram walk guards', () => {
     const before = inbound.length;
     await update(msgUpdate(CHAT, 'cancelar'));
     const texts = textsTo(CHAT, mark);
-    expect(texts.some(t => t.includes('¿Qué querés hacer?'))).toBe(true);
+    expect(texts.some(t => t.includes('¿Qué quieres hacer?'))).toBe(true);
     expect(inbound.some(b => b?.message === 'cancelar')).toBe(false);
     // Non-vacuous: the abandoned walk must reach the brain for NOTHING — no new
     // turn of any kind (no captured field answer, no /nuevo-paciente submit).
@@ -309,7 +309,7 @@ describe('telegram walk guards', () => {
       await update(tapUpdate(CHAT, 'nuevo paciente'));
       const before = inbound.length;
       await update(msgUpdate(CHAT, word));
-      expect(lastTo(CHAT).text).toContain('¿Qué querés hacer?');
+      expect(lastTo(CHAT).text).toContain('¿Qué quieres hacer?');
       expect(inbound.length).toBe(before);
     }
   });
@@ -586,6 +586,28 @@ describe('telegram: saltar un campo no es omitir la sección', () => {
     await update(tapUpdate(CHAT, 'omitir ficha'));
     expect(inbound.at(-1).message).toBe('omitir ficha');
     expect(inbound.at(-1).form_submission).toBeUndefined();
+  });
+
+  it('un relato clínico escrito en medio de la ficha va al asistente, no al campo', async () => {
+    await abrirFicha();
+    const relato = 'Paciente de 34 años con placa eritematosa descamativa en codo derecho desde hace 2 meses, con prurito.';
+    const desde = sent.length;
+    await update(msgUpdate(CHAT, relato));
+    expect(inbound.at(-1).message).toBe(relato);
+    expect(textsTo(CHAT, desde)).not.toContain('Elige una de las opciones.');
+  });
+
+  it('«cancelar» en la ficha deja la sección pero no al paciente; «menú» sí vuelve al inicio', async () => {
+    await abrirFicha();
+    let desde = sent.length;
+    await update(msgUpdate(CHAT, 'cancelar'));
+    const textos = textsTo(CHAT, desde);
+    expect(textos.some(t => t.startsWith('Dejé la ficha a un lado; sigues con el mismo paciente.'))).toBe(true);
+    expect(textos.some(t => t.startsWith('Hola 👋'))).toBe(false);
+    await abrirFicha();
+    desde = sent.length;
+    await update(msgUpdate(CHAT, 'menú'));
+    expect(textsTo(CHAT, desde).some(t => t.startsWith('Hola 👋'))).toBe(true);
   });
 
   it('salir de la sección por otro camino también guarda lo contestado', async () => {

@@ -45,7 +45,7 @@ import {
   fetchConReintento,
 } from './canalAviso.js';
 import {
-  colaPorChat, cuerpoDeEnvio, esComando, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
+  colaPorChat, cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
@@ -890,6 +890,14 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     }
     if (/^\/?\s*(cancelar|salir|men[uú])\s*$/i.test(texto)) {
       await guardarParcial(ctx, walk);
+      // En la ficha, «cancelar»/«salir» dejan la sección pero NO al paciente; solo
+      // «menú» vuelve al inicio (el menú reinicia la conversación).
+      if (walk.form.id.startsWith('ficha_grp_') && !/men[uú]/i.test(texto)) {
+        await sendWhatsappText(from,
+          'Dejé la ficha a un lado; sigues con el mismo paciente. Escribe lo que necesites ' +
+          '(la ficha se retoma después) o «menú» para volver al inicio.');
+        return;
+      }
       await sendMenu(from);
       return;
     }
@@ -900,7 +908,8 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
     // quedaba guardado como dirección).
-    if (esComando(texto, walk.form.fields[walk.idx]) || CAMBIA_PACIENTE.test(texto)) {
+    if (esComando(texto, walk.form.fields[walk.idx]) || CAMBIA_PACIENTE.test(texto)
+        || (walk.form.id.startsWith('ficha_grp_') && esRelatoLibre(texto, walk.form.fields[walk.idx]))) {
       await guardarParcial(ctx, walk);
       await routeTurn(ctx, { message: texto }, texto);
       return;

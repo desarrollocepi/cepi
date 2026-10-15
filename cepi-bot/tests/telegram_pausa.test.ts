@@ -98,7 +98,7 @@ describe('telegram: la inactividad pausa, no reinicia', () => {
     await esperar(320);                      // se pausa
     turnos.length = 0; sent.length = 0;
     await update(tap('ps:no'));
-    expect(sent.at(-1)!.text).toContain('¿Qué querés hacer?');
+    expect(sent.at(-1)!.text).toContain('¿Qué quieres hacer?');
     expect(turnos).toHaveLength(0);
   });
 });

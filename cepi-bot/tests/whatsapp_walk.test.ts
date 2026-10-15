@@ -117,7 +117,7 @@ async function cerebro({ body }: { body: any }) {
   const msg = String(body?.message || '');
   if (!msg && !body?.form_submission) return { status: 200, body: { ok: true, session_id: body.session_id, solo_registro: true } };
   if (body?.form_submission) return { status: 200, body: { ...base, text: 'Antecedentes guardados.', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba' } };
-  if (/^nuevo paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Completá los datos del nuevo paciente.', form: PATIENT_NEW_FORM, status_header: '📋 Creando paciente' } };
+  if (/^nuevo paciente$/i.test(msg)) return { status: 200, body: { ...base, text: 'Completa los datos del nuevo paciente.', form: PATIENT_NEW_FORM, status_header: '📋 Creando paciente' } };
   if (/^\/nuevo-paciente /.test(msg)) return { status: 200, body: { ...base, text: 'Listo, quedó registrado. Empecemos la ficha:', form: FICHA_FORM, active_patient_id: 'p-1', status_header: '👤 Paciente Prueba — ficha §2.1 Antecedentes' } };
   if (/\[adjunto:/.test(msg)) return { status: 200, body: { ...base, text: '¿Esta imagen es de la lesión o un formulario de consentimiento?', active_patient_id: 'p-1', status_header: '👤 Paciente Prueba',
     quick_replies: [{ label: '🔬 Imagen de lesión', send: 'imagen lesion' }, { label: '📄 Consentimiento', send: 'imagen consentimiento' }] } };
@@ -187,7 +187,7 @@ describe('WhatsApp: alta de paciente campo por campo', () => {
     await manda({ boton: boton('➕ Nuevo paciente') });
     expect(turnos.at(-1).message).toBe('nuevo paciente');
     expect(sent.map(s => s.text)).toEqual([
-      '📋 Creando paciente\nCompletá los datos del nuevo paciente.', '(1/3) Cédula (Ej: 12345678)']);
+      '📋 Creando paciente\nCompleta los datos del nuevo paciente.', '(1/3) Cédula (Ej: 12345678)']);
   });
 
   it('la cédula la toma el recorrido, NO va al cerebro como búsqueda', async () => {
