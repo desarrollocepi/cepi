@@ -1053,6 +1053,13 @@ El rechazo es **silencioso a propósito** (decisión del 2026-10-15): la app le 
 «pendiente» y no se le avisa por ningún canal.
 Tests: `tests/auth/rechazos.test.ts`.
 
+**Alcanzable = aprobado** (2026-10-15). A quien se registró solo y nadie aprobó no se le
+deriva, asigna ni recuerda nada: «toda la red» (grupo virtual `all`), los círculos y los
+revisores, asignados y dueños de recordatorios explícitos exigen un rol de verdad en la org
+(ni `pendiente`, ni `user`, ni ninguno) y que la solicitud no esté rechazada
+(`aprobadoEn` en `orgScope.ts`). Antes «toda la red» incluía a los pendientes, y en prod eso
+eran cuentas de spam. Tests: `tests/auth/alcanzables_aprobados.test.ts`.
+
 **Registro con verificación.** `POST /auth/register` crea la cuenta **inactiva** (rol
 general `user`, pendiente en las orgs por defecto y en la del dominio) y manda por Brevo un
 código de 6 dígitos (sin enlace). `POST /auth/verify-email` la activa; el código vence a los
