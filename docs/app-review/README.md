@@ -37,7 +37,8 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
        - https://telemedicina.cepi.ec/privacidad.html responde.
 4. [ ] **Reenviar** 1.0 (11) con "Resubmit to App Review" (lo presiona el usuario).
 5. [ ] **Aprobada:** presionar "Release" (publicación manual) y guardar el enlace no listado
-       de la App Store aquí y en STATUS.
+       de la App Store aquí y en STATUS. Ponerlo en `cepi-frontend/src/components/AvisoAcceso.vue`:
+       el botón "iPhone · App Store" está deshabilitado esperando ese enlace.
 6. [ ] Repartir el enlace a los médicos. Cada cuenta nueva sigue entrando como `pendiente`
        hasta que un admin la aprueba.
 
@@ -68,6 +69,9 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 - [x] 2026-10-09 — Envío 1 (prueba cerrada Alpha, ficha, contenido, configuración) a revisión.
 - [x] 2026-10-09 — **Aprobado y publicado** el mismo día (Actividad de envíos: "Publicada").
       Versión 7 (2.3.0) en la pista cerrada Alpha, solo Ecuador, lista "Testers internos CEPI".
+- Enlace de descarga: `https://play.google.com/apps/testing/ec.cepi.telemedicina` (la ficha
+  pública `details?id=…` da 404 mientras la app esté solo en la pista cerrada). Está en el
+  aviso de acceso de telemedicina.cepi.ec desde el 2026-10-15.
 - Producción: **inactiva**. No se envió a propósito: en Play, producción es pública y la app
   es solo para médicos de CEPI (PAPER §24.7, §25.7). La pista cerrada es el equivalente de la
   distribución no listada de iOS.
