@@ -56,3 +56,5 @@ respondió el 2026-10-10 y no se recomienda.
   Questions, **Case ID 102999076357**. Pide el estado de la solicitud y repite el resumen de la
   app (uso interno de CEPI, solo Ecuador). Apple contesta por correo a developer@cepi.ec
   (llega a desarrollo@cepi.ec).
+- 2026-10-16 17:53: respuesta en "Reply to App Review" (sexto mensaje del hilo) con el Case ID
+  102999076357; repite que no se reenvía hasta tener el resultado de la solicitud unlisted.
