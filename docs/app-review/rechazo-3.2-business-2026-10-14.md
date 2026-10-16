@@ -49,3 +49,10 @@ respondió el 2026-10-10 y no se recomienda.
   que la app es de una organización, que la solicitud unlisted se hizo el 2026-10-09 desde
   developer@cepi.ec con acuse ese mismo día, pide su estado y aclara que no se reenvía hasta
   tener respuesta. La versión sigue en "Rejected" y el envío en "Unresolved Issues".
+- 2026-10-16 07:10: App Review contesta que no tiene el estado de la solicitud unlisted y manda a
+  preguntar por Contact Us (Distribution → Other Distribution Questions) con el Case ID. El acuse
+  del 2026-10-09 no trae Case ID.
+- 2026-10-16: caso abierto desde developer@cepi.ec en Distribution → Other Distribution
+  Questions, **Case ID 102999076357**. Pide el estado de la solicitud y repite el resumen de la
+  app (uso interno de CEPI, solo Ecuador). Apple contesta por correo a developer@cepi.ec
+  (llega a desarrollo@cepi.ec).
