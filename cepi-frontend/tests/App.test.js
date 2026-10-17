@@ -213,6 +213,39 @@ describe('App — menú', () => {
     expect(w.find('.top-burger').exists()).toBe(false);
   });
 
+  describe('acciones del topbar que no caben', () => {
+    // jsdom no mide: cada hijo del topbar ocupa 100 px y el topbar `ancho`.
+    let ancho;
+    beforeEach(() => {
+      ancho = 3000;
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(100);
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
+        return this.classList.contains('topbar') ? ancho : 0;
+      });
+    });
+    afterEach(() => { vi.restoreAllMocks(); window.innerWidth = 1024; });
+
+    it('en el teléfono van siempre al burger', async () => {
+      window.innerWidth = 400;
+      const { w } = await montar();
+      expect(w.find('.topbar').classes()).toContain('compacta');
+    });
+
+    it('en tablet pasan al burger si no caben y vuelven a la fila cuando hay sitio', async () => {
+      window.innerWidth = 1024;
+      const { w } = await montar();
+      expect(w.find('.topbar').classes()).not.toContain('compacta');
+      ancho = 500;
+      window.dispatchEvent(new Event('resize'));
+      await flushPromises();
+      expect(w.find('.topbar').classes()).toContain('compacta');
+      ancho = 3000;
+      window.dispatchEvent(new Event('resize'));
+      await flushPromises();
+      expect(w.find('.topbar').classes()).not.toContain('compacta');
+    });
+  });
+
   it('el perfil guardado actualiza el nombre en pantalla', async () => {
     const { w } = await montar({ ruta: '/perfil' });
     w.findComponent(Pantalla).vm.$emit('saved', { email: 'nueva@cepi.ec' });

@@ -20,7 +20,7 @@
 
       <p v-if="error" class="notif-error">{{ error }}</p>
       <p v-if="busy && !items.length" class="notif-muted">Cargando…</p>
-      <p v-else-if="!items.length" class="notif-muted">No tenés notificaciones.</p>
+      <p v-else-if="!items.length" class="notif-muted">No tienes notificaciones.</p>
 
       <ul v-else class="notif-list">
         <li
