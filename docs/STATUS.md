@@ -12,7 +12,9 @@ Estado del proyecto al cierre de la sesión actual.
   El orden inverso (email primero, Google después) ya caía en la misma cuenta.
 - Invitación en prod para domenica.palacios.dermatologia@gmail.com: `cepi` con rol
   `supermedico`, vence el 2026-11-18. Se aplica sola al entrar (Google o registro).
-- Pendiente: agregarla como tester de TestFlight (App Store Connect solo por navegador).
+- TestFlight: grupo externo "Médicos CEPI" con Domenica; build 11 en Beta App Review.
+- App Store: 1.0 (11) reenviada a revisión el 2026-10-19 sin respuesta de Apple sobre la
+  distribución no listada (`docs/app-review/README.md`).
 
 ## 2026-10-15 — Smoke test en vivo de Telegram y WhatsApp
 

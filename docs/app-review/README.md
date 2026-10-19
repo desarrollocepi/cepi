@@ -21,6 +21,13 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
       (`rechazo-3.2-business-2026-10-14.md`).
 - [x] 2026-10-14 09:34 — Respuesta en "Reply to App Review" pidiendo el estado de la
       solicitud no listada.
+- [x] 2026-10-16 — Apple responde: pedir el estado por Contact Us y reenviar cuando aprueben.
+      Se abrió el caso 102999076357 y se avisó en el hilo que no se reenviaría antes.
+- [x] 2026-10-19 10:56 — **Reenvío a revisión sin respuesta sobre la no listada** (lo pidió el
+      usuario: Apple no contestó el caso). Estado: Waiting for Review. Riesgo: otro 3.2.
+- [x] 2026-10-19 — **TestFlight externo**: grupo "Médicos CEPI" con
+      domenica.palacios.dermatologia@gmail.com; build 11 enviado a Beta App Review (contacto
+      y cuenta demo iguales a App Review). La invitación sale sola cuando lo aprueben.
 
 ## Pendiente
 
