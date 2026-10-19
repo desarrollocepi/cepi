@@ -40,6 +40,11 @@ mantienen activamente. La capa medical vive en `cepi-bot` + `cepi-frontend`.
   cuando el 69% de los episodios son de pacientes con una sola visita. **Única excepción:
   permisos** — lo que el usuario nunca podrá hacer sí se oculta, porque un botón muerto por
   falta de permiso es ruido.
+- **Código en inglés, dominio en español.** Variables, funciones, parámetros y opciones
+  nuevas se nombran en inglés en todos los repos (web, consola, bot, TodoERP, apps), aunque
+  el archivo que se toca tenga nombres en español. En español quedan los comentarios, los
+  textos de la UI, los mensajes de commit y los términos de dominio (slugs, nombres de
+  permisos, campos de las entidades, claves que manda el backend).
 - **PII**: campos con `pii: true` en `entity_definitions.config.fields` se redactan al cruzar dos fronteras: `cepi-bot → LLM` (PAPER §13.3.1) y `TodoERP → role sin pii:read:<slug>` (R4 de REFACTOR_PLAN). Ambas implementadas.
 - **Tests verde antes de commit**: `npx vitest run` en `TodoERP/backend`, `cepi-bot` y `cepi-frontend`. Total actual ~202 tests de backend y bot, más ~320 de la web (`cepi-frontend/tests/`: componentes con Vitest + Vue Test Utils sobre un DOM simulado, con `src/api.js` mockeado; no necesitan el stack). Un componente o un estado nuevo en la web lleva su test ahí. Si tocaste `cepi-ios/`, también `xcodebuild test`; si tocaste `cepi-android/`, `./gradlew testDebugUnitTest` (ver Atajos).
 - **Deploy**: prod se despliega solo con un push a `master` (GitHub Actions, `docs/DEPLOY.md`).

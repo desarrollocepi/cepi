@@ -11,7 +11,7 @@
         />
       </div>
       <div class="header-center">
-        <strong class="brand">{{ marca }}</strong>
+        <strong class="brand">{{ brand }}</strong>
       </div>
       <div ref="headerRightEl" class="header-right">
         <Notifications v-if="user && !isPending" :user="user" @open="onNotifOpen" />
@@ -32,16 +32,16 @@
           <button v-if="canInstall" class="install-btn" @click="installApp" title="Instalar la app en tu dispositivo">📲 Instalar app</button>
           <button v-if="showNotifOptin && !isPending" class="notif-optin" @click="enableNotifs(); showTopMenu = false" title="Activar notificaciones push">🔔 Activar</button>
           <button v-if="!isPending && !showProfile" @click="openProfile">👤 Perfil</button>
-          <button v-if="!isPending && !showCasos" @click="abrirCasos">🗂️ Casos</button>
-          <button v-if="!isPending && !showGaleria" @click="abrirGaleria">🖼️ Galería</button>
-          <button v-if="showCasos" @click="goChat">💬 Telemedicina</button>
+          <button v-if="!isPending && !showCases" @click="openCases">🗂️ Casos</button>
+          <button v-if="!isPending && !showGallery" @click="openGallery">🖼️ Galería</button>
+          <button v-if="showCases" @click="goChat">💬 Telemedicina</button>
           <!-- La administración vive en console.cepi.ec, no acá (PAPER §26). El botón
                se queda: es el camino conocido. Quien no administra nada lo ve
                deshabilitado con el motivo, no un hueco. -->
           <button
             :disabled="!isAdmin"
             :title="isAdmin ? 'Abrir la consola de administración en otra pestaña' : 'Solo el superadministrador o el admin de una organización'"
-            @click="abrirConsola"
+            @click="openConsole"
           >Admin ↗</button>
           <button v-if="showProfile" @click="goChat">Volver</button>
         </span>
@@ -58,9 +58,9 @@
       <!-- Con un token guardado NO se pinta el login mientras se valida (recarga, cambio
            de org): verlo invitaba a volver a entrar con Google en cada refresco y eso
            agotaba el rate-limit de /auth/login y /auth/google. -->
-      <div v-else-if="validando" class="sesion-estado">Abriendo tu sesión…</div>
-      <div v-else-if="sinValidar" class="sesion-estado">
-        <p>No se pudo validar tu sesión: {{ sinValidar }}</p>
+      <div v-else-if="validating" class="sesion-estado">Abriendo tu sesión…</div>
+      <div v-else-if="validationError" class="sesion-estado">
+        <p>No se pudo validar tu sesión: {{ validationError }}</p>
         <p>Tu sesión sigue abierta; no hace falta volver a ingresar.</p>
         <div class="sesion-acciones">
           <button type="button" @click="refresh">Reintentar</button>
@@ -105,15 +105,15 @@ const router = useRouter();
 // La vista la manda la RUTA: `showProfile`/`showCasos` eran banderas que había que
 // mantener en sincronía a mano, y ninguna dejaba enlazar nada.
 const showProfile = computed(() => route.name === 'perfil');
-const showCasos = computed(() => String(route.name || '').startsWith('caso') || route.name === 'paciente');
-const showGaleria = computed(() => route.name === 'galeria');
+const showCases = computed(() => String(route.name || '').startsWith('caso') || route.name === 'paciente');
+const showGallery = computed(() => route.name === 'galeria');
 
 // Portal de casos (PAPER §22): misma app, misma sesión, otra superficie. Se sirve en
 // casos.cepi.ec, así que el host decide con qué vista arranca; el menú deja saltar de
 // una a la otra sin volver a entrar.
-const marca = computed(() => route.meta?.marca || 'Telemedicina');
-function abrirCasos() { showTopMenu.value = false; router.push('/casos'); }
-function abrirGaleria() { showTopMenu.value = false; router.push('/galeria'); }
+const brand = computed(() => route.meta?.marca || 'Telemedicina');
+function openCases() { showTopMenu.value = false; router.push('/casos'); }
+function openGallery() { showTopMenu.value = false; router.push('/galeria'); }
 const showTopMenu = ref(false);          // burger de acciones del topbar (mobile)
 const chatHeadActive = ref(false);       // el chat muestra su propio burger (paciente abierto)
 // Si el chat toma el header, cierra el menú del topbar (su burger desaparece).
@@ -138,9 +138,9 @@ function availableWidth() {
   const cs = getComputedStyle(tb);
   const gap = parseFloat(cs.columnGap) || 0;
   const [left, center] = tb.children;
-  const brand = center?.firstElementChild?.offsetWidth || 0;
+  const brandWidth = center?.firstElementChild?.offsetWidth || 0;
   return tb.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)
-    - (left?.offsetWidth || 0) - brand - 2 * gap;
+    - (left?.offsetWidth || 0) - brandWidth - 2 * gap;
 }
 function measureTopbar() {
   const right = headerRightEl.value;
@@ -206,13 +206,13 @@ const isAdmin = computed(() =>
  *  El host se deriva del actual para que el mismo build sirva en prod, en
  *  develop y en local sin variable de entorno. En local (sin dominio) apunta a
  *  la consola en :5175. */
-function abrirConsola() {
+function openConsole() {
   showTopMenu.value = false;
   const h = location.hostname;
-  const destino = /^(casos|telemedicina)\./i.test(h)
+  const target = /^(casos|telemedicina)\./i.test(h)
     ? `${location.protocol}//console.${h.replace(/^[^.]+\./, '')}`
     : (h === 'localhost' || h === '127.0.0.1' ? 'http://localhost:5175' : 'https://console.cepi.ec');
-  window.open(destino, '_blank', 'noopener');
+  window.open(target, '_blank', 'noopener');
 }
 const isPending = computed(() => authed.value && user.value?.role === 'pendiente');
 
@@ -246,17 +246,17 @@ if (typeof window !== 'undefined') {
  * qué tipo es antes de decidir a dónde ir, en vez de asumir. Si no se puede
  * resolver, se abre la app y ya — mejor eso que navegar a una pantalla vacía.
  */
-const DEF_EPISODIO = '12000000-0000-0000-0000-000000000000';
-const DEF_PACIENTE = '11000000-0000-0000-0000-000000000000';
+const EPISODE_DEF_ID = '12000000-0000-0000-0000-000000000000';
+const PATIENT_DEF_ID = '11000000-0000-0000-0000-000000000000';
 
-async function abrirEntidadDePush(entityId) {
+async function openPushEntity(entityId) {
   if (!entityId) return;
   try {
-    const rec = await obtenerEntidad(entityId);
-    const defId = rec?.entity_id;
-    if (defId === DEF_EPISODIO) {
+    const record = await obtenerEntidad(entityId);
+    const defId = record?.entity_id;
+    if (defId === EPISODE_DEF_ID) {
       router.push({ name: 'caso', params: { episodeId: entityId } });
-    } else if (defId === DEF_PACIENTE) {
+    } else if (defId === PATIENT_DEF_ID) {
       // Misma ruta que usa la campana de notificaciones, para no tener dos formas
       // distintas de "abrir un paciente desde una notificación".
       onNotifOpen({ id: entityId });
@@ -265,7 +265,7 @@ async function abrirEntidadDePush(entityId) {
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('cepi:open-entity', (e) => abrirEntidadDePush(e.detail?.entityId));
+  window.addEventListener('cepi:open-entity', (e) => openPushEntity(e.detail?.entityId));
 }
 async function enableNotifs() {
   if (isIosDevice && !isStandalone) {
@@ -327,13 +327,13 @@ document.documentElement.dataset.theme = 'light';
 
 // `validando` arranca en true si hay token: el primer render ya es "Abriendo tu sesión…"
 // y no un destello del formulario de login.
-const validando = ref(!!localStorage.getItem('cepi.jwt'));
-const sinValidar = ref('');
+const validating = ref(!!localStorage.getItem('cepi.jwt'));
+const validationError = ref('');
 
 async function refresh() {
-  if (!localStorage.getItem('cepi.jwt')) { authed.value = false; validando.value = false; return; }
-  validando.value = true;
-  sinValidar.value = '';
+  if (!localStorage.getItem('cepi.jwt')) { authed.value = false; validating.value = false; return; }
+  validating.value = true;
+  validationError.value = '';
   try {
     const r = await whoami();
     // Conservar/renovar el token en cada carga (sesión deslizante): así el
@@ -350,15 +350,15 @@ async function refresh() {
     } else {
       // Sin red, 5xx o 429: el token puede seguir siendo válido. Mandar al login
       // acá era lo que hacía volver a entrar y saturaba los intentos.
-      sinValidar.value = e?.message || 'sin conexión con el servidor';
+      validationError.value = e?.message || 'sin conexión con el servidor';
     }
   } finally {
-    validando.value = false;
+    validating.value = false;
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { if (sinValidar.value) refresh(); });
+  window.addEventListener('online', () => { if (validationError.value) refresh(); });
 }
 
 function onLoggedIn() {
@@ -378,7 +378,7 @@ function onLogout() {
   logout();
   user.value = null;
   authed.value = false;
-  sinValidar.value = '';
+  validationError.value = '';
   router.push(inicioSegunHost());
 }
 
