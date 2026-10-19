@@ -4,6 +4,16 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## 2026-10-19 — Registro sobre una cuenta de Google
+
+- Registrarse con email y clave cuando ese email ya tiene cuenta (entró con Google, o se
+  registró y no verificó) ya no queda bloqueado. No se crea otra cuenta: la clave queda en
+  espera y se aplica a la misma cuenta al verificar el código del email (TodoERP `80ff04d`).
+  El orden inverso (email primero, Google después) ya caía en la misma cuenta.
+- Invitación en prod para domenica.palacios.dermatologia@gmail.com: `cepi` con rol
+  `supermedico`, vence el 2026-11-18. Se aplica sola al entrar (Google o registro).
+- Pendiente: agregarla como tester de TestFlight (App Store Connect solo por navegador).
+
 ## 2026-10-15 — Smoke test en vivo de Telegram y WhatsApp
 
 Telegram (@cepiecbot) y WhatsApp (+593 99 899 4582) contra prod: menú, alta de paciente,
