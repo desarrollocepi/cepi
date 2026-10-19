@@ -214,13 +214,13 @@ describe('App — menú', () => {
   });
 
   describe('acciones del topbar que no caben', () => {
-    // jsdom no mide: cada hijo del topbar ocupa 100 px y el topbar `ancho`.
-    let ancho;
+    // jsdom no mide: cada hijo del topbar ocupa 100 px y el topbar `width`.
+    let width;
     beforeEach(() => {
-      ancho = 3000;
+      width = 3000;
       vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(100);
       vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
-        return this.classList.contains('topbar') ? ancho : 0;
+        return this.classList.contains('topbar') ? width : 0;
       });
     });
     afterEach(() => { vi.restoreAllMocks(); window.innerWidth = 1024; });
@@ -228,21 +228,21 @@ describe('App — menú', () => {
     it('en el teléfono van siempre al burger', async () => {
       window.innerWidth = 400;
       const { w } = await montar();
-      expect(w.find('.topbar').classes()).toContain('compacta');
+      expect(w.find('.topbar').classes()).toContain('compact');
     });
 
     it('en tablet pasan al burger si no caben y vuelven a la fila cuando hay sitio', async () => {
       window.innerWidth = 1024;
       const { w } = await montar();
-      expect(w.find('.topbar').classes()).not.toContain('compacta');
-      ancho = 500;
+      expect(w.find('.topbar').classes()).not.toContain('compact');
+      width = 500;
       window.dispatchEvent(new Event('resize'));
       await flushPromises();
-      expect(w.find('.topbar').classes()).toContain('compacta');
-      ancho = 3000;
+      expect(w.find('.topbar').classes()).toContain('compact');
+      width = 3000;
       window.dispatchEvent(new Event('resize'));
       await flushPromises();
-      expect(w.find('.topbar').classes()).not.toContain('compacta');
+      expect(w.find('.topbar').classes()).not.toContain('compact');
     });
   });
 

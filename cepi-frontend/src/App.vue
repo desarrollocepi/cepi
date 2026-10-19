@@ -2,7 +2,7 @@
   <div class="app">
     <PendingApproval v-if="authed && isPending" @logout="onLogout" />
     <template v-else>
-    <header ref="topbarEl" class="topbar" :class="{ compacta: topCompacta }">
+    <header ref="topbarEl" class="topbar" :class="{ compact: topCompact }">
       <div class="header-left">
         <img
           class="logo"
@@ -125,53 +125,53 @@ watch(chatHeadActive, (v) => { if (v) showTopMenu.value = false; });
 const topbarEl = ref(null);
 const headerRightEl = ref(null);
 const userEl = ref(null);
-const topCompacta = ref(false);
-let anchoAcciones = 0;
-function anchoNatural(el) {
-  const hijos = [...el.children].filter((h) => h.offsetWidth > 0);
+const topCompact = ref(false);
+let actionsWidth = 0;
+function naturalWidth(el) {
+  const children = [...el.children].filter((child) => child.offsetWidth > 0);
   const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
-  return hijos.reduce((t, h) => t + h.offsetWidth, 0) + gap * Math.max(0, hijos.length - 1);
+  return children.reduce((t, child) => t + child.offsetWidth, 0) + gap * Math.max(0, children.length - 1);
 }
 // Lo que queda para las acciones: el topbar menos su padding, el logo y la marca.
-function anchoDisponible() {
+function availableWidth() {
   const tb = topbarEl.value;
   const cs = getComputedStyle(tb);
   const gap = parseFloat(cs.columnGap) || 0;
-  const [izq, centro] = tb.children;
-  const marca = centro?.firstElementChild?.offsetWidth || 0;
+  const [left, center] = tb.children;
+  const brand = center?.firstElementChild?.offsetWidth || 0;
   return tb.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)
-    - (izq?.offsetWidth || 0) - marca - 2 * gap;
+    - (left?.offsetWidth || 0) - brand - 2 * gap;
 }
-function medirTopbar() {
-  const der = headerRightEl.value;
-  if (!der || !topbarEl.value) return;
-  if (window.innerWidth <= 640) { topCompacta.value = true; return; }
-  if (topCompacta.value) {
+function measureTopbar() {
+  const right = headerRightEl.value;
+  if (!right || !topbarEl.value) return;
+  if (window.innerWidth <= 640) { topCompact.value = true; return; }
+  if (topCompact.value) {
     // Con el burger puesto la fila no se ve: se compara con lo que pidió la última vez.
-    if (anchoAcciones && anchoDisponible() >= anchoAcciones) { topCompacta.value = false; nextTick(medirTopbar); }
+    if (actionsWidth && availableWidth() >= actionsWidth) { topCompact.value = false; nextTick(measureTopbar); }
     return;
   }
   if (!userEl.value) return;
-  anchoAcciones = anchoNatural(der) - userEl.value.offsetWidth + anchoNatural(userEl.value);
-  if (anchoAcciones > anchoDisponible()) { topCompacta.value = true; showTopMenu.value = false; }
+  actionsWidth = naturalWidth(right) - userEl.value.offsetWidth + naturalWidth(userEl.value);
+  if (actionsWidth > availableWidth()) { topCompact.value = true; showTopMenu.value = false; }
 }
 // Cambian los botones (ruta, sesión, org) → volver a medir desde la fila completa.
-function remedirTopbar() {
-  if (window.innerWidth > 640) topCompacta.value = false;
-  nextTick(medirTopbar);
+function remeasureTopbar() {
+  if (window.innerWidth > 640) topCompact.value = false;
+  nextTick(measureTopbar);
 }
-let topbarObs = null;
+let topbarObserver = null;
 onMounted(() => {
   // En onMounted: `deferredInstall` y `notifPerm` se declaran más abajo.
-  watch(() => [route.fullPath, user.value, chatHeadActive.value, deferredInstall.value, notifPerm.value], remedirTopbar);
+  watch(() => [route.fullPath, user.value, chatHeadActive.value, deferredInstall.value, notifPerm.value], remeasureTopbar);
   if (typeof ResizeObserver !== 'undefined' && topbarEl.value) {
-    topbarObs = new ResizeObserver(() => medirTopbar());
-    topbarObs.observe(topbarEl.value);
+    topbarObserver = new ResizeObserver(() => measureTopbar());
+    topbarObserver.observe(topbarEl.value);
   }
-  window.addEventListener('resize', medirTopbar);
-  nextTick(medirTopbar);
+  window.addEventListener('resize', measureTopbar);
+  nextTick(measureTopbar);
 });
-onUnmounted(() => { topbarObs?.disconnect(); window.removeEventListener('resize', medirTopbar); });
+onUnmounted(() => { topbarObserver?.disconnect(); window.removeEventListener('resize', measureTopbar); });
 
 function openProfile() {
   showTopMenu.value = false;
@@ -502,25 +502,25 @@ main {
 }
 
 /* Las acciones del topbar pasan a un menú desplegable (burger) cuando no caben en la
-   fila: en el teléfono siempre, en la tablet según los botones que haya (medirTopbar). */
-.topbar.compacta .user-id { display: none; }
-.topbar.compacta .top-burger { display: inline-flex; align-items: center; justify-content: center; }
-.topbar.compacta .user {
+   fila: en el teléfono siempre, en la tablet según los botones que haya (measureTopbar). */
+.topbar.compact .user-id { display: none; }
+.topbar.compact .top-burger { display: inline-flex; align-items: center; justify-content: center; }
+.topbar.compact .user {
   display: none;
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 90;
   flex-direction: column; align-items: stretch; gap: 6px;
   background: #fff; border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 12px 30px rgba(0,0,0,.28); padding: 8px; min-width: 210px; max-width: 84vw;
 }
-.topbar.compacta .user.open { display: flex; }
+.topbar.compact .user.open { display: flex; }
 /* Controles del menú: texto oscuro sobre blanco (ya no la banda del header). */
-.topbar.compacta .user .org-switch,
-.topbar.compacta .user button {
+.topbar.compact .user .org-switch,
+.topbar.compact .user button {
   color: var(--text); background: #fff; border: 1px solid var(--border);
   border-radius: 8px; text-align: left; width: 100%; max-width: none; padding: 8px 10px; font-weight: 600;
 }
-.topbar.compacta .user .org-switch option { color: var(--text); }
-.topbar.compacta .user button:hover { background: var(--bg); border-color: var(--border); }
-.topbar.compacta .user .org-chip { color: var(--text-muted); }
-.topbar.compacta .user button:disabled { opacity: .55; cursor: not-allowed; }
+.topbar.compact .user .org-switch option { color: var(--text); }
+.topbar.compact .user button:hover { background: var(--bg); border-color: var(--border); }
+.topbar.compact .user .org-chip { color: var(--text-muted); }
+.topbar.compact .user button:disabled { opacity: .55; cursor: not-allowed; }
 </style>
