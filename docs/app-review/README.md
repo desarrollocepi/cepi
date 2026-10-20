@@ -28,21 +28,20 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 - [x] 2026-10-19 — **TestFlight externo**: grupo "Médicos CEPI" con
       domenica.palacios.dermatologia@gmail.com; build 11 enviado a Beta App Review (contacto
       y cuenta demo iguales a App Review). La invitación sale sola cuando lo aprueben.
+- [x] 2026-10-20 — **Apple aprueba la distribución no listada.** El reenvío del 19/10 sigue
+      en revisión: queda cubierto el motivo del rechazo 3.2.
 
 ## Pendiente
 
-1. [ ] **Decisión de Apple sobre la distribución no listada.** Llega por el hilo de App Review
-       o por correo a `developer@cepi.ec`. No reenviar antes.
-       - Si el 2026-10-17 no hay nada: escribir por
-         [Contact Us](https://developer.apple.com/contact/topic/#!/topic/select) → App Review,
-         con el ID del envío y la fecha de la solicitud.
-2. [ ] **Si la aprueban:** seguir las instrucciones del correo de aprobación. Revisar en
-       *Pricing and Availability* que la app quede como no listada.
-3. [ ] **Antes de reenviar**, confirmar en prod:
+1. [x] ~~Decisión de Apple sobre la distribución no listada~~ — aprobada el 2026-10-20.
+2. [ ] Seguir las instrucciones del correo de aprobación. Revisar en *Pricing and
+       Availability* que la app quede como no listada.
+3. [ ] Confirmar en prod, mientras revisan el reenvío del 19/10:
        - las dos cuentas demo (`CEPI_REVISOR_*` en `.env`) entran y solo ven `cepi-testing`;
        - la sandbox tiene pacientes ficticios visibles (los de las grabaciones se dieron de baja);
        - https://telemedicina.cepi.ec/privacidad.html responde.
-4. [ ] **Reenviar** 1.0 (11) con "Resubmit to App Review" (lo presiona el usuario).
+4. [x] Reenviada 1.0 (11) el 2026-10-19. Si vuelve un 3.2, responder en el hilo que la
+       distribución no listada ya está aprobada.
 5. [ ] **Aprobada:** presionar "Release" (publicación manual) y guardar el enlace no listado
        de la App Store aquí y en STATUS. Ponerlo en `cepi-frontend/src/components/AvisoAcceso.vue`:
        el botón "iPhone · App Store" está deshabilitado esperando ese enlace.

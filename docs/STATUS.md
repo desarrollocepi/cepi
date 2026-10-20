@@ -13,8 +13,8 @@ Estado del proyecto al cierre de la sesión actual.
 - Invitación en prod para domenica.palacios.dermatologia@gmail.com: `cepi` con rol
   `supermedico`, vence el 2026-11-18. Se aplica sola al entrar (Google o registro).
 - TestFlight: grupo externo "Médicos CEPI" con Domenica; build 11 en Beta App Review.
-- App Store: 1.0 (11) reenviada a revisión el 2026-10-19 sin respuesta de Apple sobre la
-  distribución no listada (`docs/app-review/README.md`).
+- App Store: 1.0 (11) reenviada a revisión el 2026-10-19. Apple aprobó la distribución no
+  listada el 2026-10-20 (`docs/app-review/README.md`).
 
 ## 2026-10-15 — Smoke test en vivo de Telegram y WhatsApp
 
