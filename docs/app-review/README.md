@@ -28,8 +28,17 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 - [x] 2026-10-19 — **TestFlight externo**: grupo "Médicos CEPI" con
       domenica.palacios.dermatologia@gmail.com; build 11 enviado a Beta App Review (contacto
       y cuenta demo iguales a App Review). La invitación sale sola cuando lo aprueben.
-- [x] 2026-10-20 — **Apple aprueba la distribución no listada.** El reenvío del 19/10 sigue
-      en revisión: queda cubierto el motivo del rechazo 3.2.
+- [x] 2026-10-20 12:20 — **Apple aprueba la distribución no listada** (Developer Support,
+      caso 102991437637, correo a `desarrollo@cepi.ec`; respondido a las 14:44). El enlace sale
+      en *Pricing and Availability* y vale cuando App Review apruebe la versión. El reenvío
+      del 19/10 sigue en revisión: queda cubierto el motivo del rechazo 3.2.
+- 2026-10-20 — El hilo de App Review no admite respuesta mientras el envío está en Waiting
+      for Review. Decisión del usuario: no escribir por Contact Us; esperar a que Apple escriba
+      y contestar en el hilo con:
+      > Hello, our unlisted app distribution request has been approved by Apple Developer
+      > Support (Case ID 102991437637, October 20, 2026). This addresses the Guideline 3.2
+      > rejection of October 14. Submission ID 8c58c07f-90d1-4115-8c67-e21fd0b09976,
+      > version 1.0 (11). Thank you.
 
 ## Pendiente
 
@@ -40,8 +49,8 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
        - las dos cuentas demo (`CEPI_REVISOR_*` en `.env`) entran y solo ven `cepi-testing`;
        - la sandbox tiene pacientes ficticios visibles (los de las grabaciones se dieron de baja);
        - https://telemedicina.cepi.ec/privacidad.html responde.
-4. [x] Reenviada 1.0 (11) el 2026-10-19. Si vuelve un 3.2, responder en el hilo que la
-       distribución no listada ya está aprobada.
+4. [x] Reenviada 1.0 (11) el 2026-10-19. Cuando Apple escriba en el hilo (o si vuelve un
+       3.2), responder con el texto de arriba.
 5. [ ] **Aprobada:** presionar "Release" (publicación manual) y guardar el enlace no listado
        de la App Store aquí y en STATUS. Ponerlo en `cepi-frontend/src/components/AvisoAcceso.vue`:
        el botón "iPhone · App Store" está deshabilitado esperando ese enlace.
