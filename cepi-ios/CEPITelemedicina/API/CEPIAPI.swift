@@ -137,6 +137,14 @@ struct CEPIAPI: Sendable {
         return lista.data.sorted { ($0["fecha"] ?? "") > ($1["fecha"] ?? "") }
     }
 
+    /// Ficha de evolución: fecha, médico, diagnóstico y tratamiento de cada ficha (PAPER §28).
+    func evolucion(paciente: String) async throws -> [FilaEvolucion] {
+        let lista: Lista<FilaEvolucion> = try await cliente.get("/api/patient-evolution", query: [
+            URLQueryItem(name: "patient_id", value: paciente),
+        ])
+        return lista.data
+    }
+
     /// Búsqueda de texto en una definición, paginada (campo `entity_search`).
     func buscar(definicion: String, texto: String, desde: Int, limite: Int) async throws -> [Registro] {
         let lista: Lista<Registro> = try await cliente.get("/api/entities", query: [

@@ -45,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import ec.cepi.telemedicina.R
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.FilaEvolucion
 import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.api.jsonCepi
 import kotlinx.coroutines.async
@@ -134,6 +135,10 @@ fun VisorFicha(
     var aviso by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var paginasListas by remember { mutableIntStateOf(0) }
+    var verEvolucion by remember { mutableStateOf(false) }
+    var evolucion by remember { mutableStateOf(emptyList<FilaEvolucion>()) }
+    var cargandoEvolucion by remember { mutableStateOf(false) }
+    var errorEvolucion by remember { mutableStateOf<String?>(null) }
     val controlador = remember { ControladorFicha(contexto, web) { paginasListas++ } }
     DisposableEffect(Unit) { onDispose { controlador.vista.destroy() } }
 
@@ -162,6 +167,21 @@ fun VisorFicha(
         paciente = registro.await()
         indice = episodios.indexOfFirst { it.id == episodioActivo }.coerceAtLeast(0)
         recargarPagina()
+    }
+
+    // Se pide cada vez que se abre: entre una vez y otra se pudo guardar un diagnóstico.
+    fun cargarEvolucion() {
+        alcance.launch {
+            cargandoEvolucion = true
+            errorEvolucion = null
+            try {
+                evolucion = api.evolucion(pacienteId)
+            } catch (e: ApiError) {
+                errorEvolucion = "No se pudo cargar la evolución: ${e.mensaje}"
+            } finally {
+                cargandoEvolucion = false
+            }
+        }
     }
 
     LaunchedEffect(mostrada, episodioActivo) {
@@ -249,6 +269,12 @@ fun VisorFicha(
                     Spacer(Modifier.size(6.dp))
                     Text("Imprimir")
                 }
+                TextButton(onClick = {
+                    verEvolucion = true
+                    cargarEvolucion()
+                }) {
+                    Text("Evolución")
+                }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
@@ -278,6 +304,25 @@ fun VisorFicha(
                 }
             }
         }
+    }
+
+    if (verEvolucion) {
+        EvolucionHoja(
+            filas = evolucion,
+            cargando = cargandoEvolucion,
+            error = errorEvolucion,
+            actual = episodios.getOrNull(indice)?.id,
+            alElegir = { fila ->
+                verEvolucion = false
+                val destino = episodios.indexOfFirst { it.id == fila.episodio }
+                if (destino >= 0 && destino != indice) {
+                    indice = destino
+                    recargarPagina()
+                }
+            },
+            alReintentar = { cargarEvolucion() },
+            alCerrar = { verEvolucion = false },
+        )
     }
 }
 

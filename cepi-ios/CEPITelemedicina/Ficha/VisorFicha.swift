@@ -71,6 +71,7 @@ struct VisorFicha: View {
     @State private var inicial: String?
     @State private var confirmarCierre = false
     @State private var error: String?
+    @State private var verEvolucion = false
 
     var body: some View {
         if embebido {
@@ -95,6 +96,9 @@ struct VisorFicha: View {
                             Button("Imprimir", systemImage: "printer", action: imprimir)
                                 .disabled(cargando)
                         }
+                        ToolbarItem(placement: .bottomBar) {
+                            Button("Evolución", systemImage: "list.bullet.rectangle") { verEvolucion = true }
+                        }
                     }
                     .confirmationDialog("Hay cambios sin guardar en la ficha.", isPresented: $confirmarCierre, titleVisibility: .visible) {
                         Button("Descartar cambios", role: .destructive) { cerrar() }
@@ -110,6 +114,7 @@ struct VisorFicha: View {
         HStack {
             Button("Imprimir", systemImage: "printer", action: imprimir)
                 .disabled(cargando)
+            Button("Evolución", systemImage: "list.bullet.rectangle") { verEvolucion = true }
             Spacer()
             Button("Guardar") { Task { await guardar() } }
                 .buttonStyle(.borderedProminent)
@@ -132,6 +137,18 @@ struct VisorFicha: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
                     .padding(8)
+            }
+        }
+        // Anterior, Siguiente y la evolución solo mueven el índice: la página se rehace acá.
+        .onChange(of: indice) { _, _ in recargarPagina() }
+        .sheet(isPresented: $verEvolucion) {
+            EvolucionView(
+                pacienteId: pacienteId,
+                actual: episodios.indices.contains(indice) ? episodios[indice].id : nil,
+            ) { fila in
+                if let destino = episodios.firstIndex(where: { $0.id == fila.episodio }) {
+                    indice = destino
+                }
             }
         }
     }

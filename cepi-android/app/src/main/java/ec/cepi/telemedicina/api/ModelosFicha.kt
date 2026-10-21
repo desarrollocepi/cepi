@@ -171,3 +171,21 @@ data class ResultadoCIE(val code: String? = null, val title: String = "")
 
 @Serializable
 data class BusquedaCIE(val results: List<ResultadoCIE> = emptyList())
+
+// Ficha de evolución (PAPER §28)
+
+/**
+ * Una fila de `GET /api/patient-evolution`: una ficha del paciente con lo que se lee para seguir
+ * el caso. El médico ya viene como nombre y cada campo ya cayó al que tenga dato según la fuente
+ * de la ficha (CEPI o espejo DrPro): la app solo lo pinta.
+ */
+@Serializable
+data class FilaEvolucion(
+    @SerialName("episode_id") val episodio: String,
+    /** `YYYY-MM-DD`, como texto: no se convierte a fecha para no correrla de día. */
+    val fecha: String? = null,
+    val estado: String? = null,
+    val medico: String? = null,
+    val diagnostico: String? = null,
+    val tratamiento: String? = null,
+)

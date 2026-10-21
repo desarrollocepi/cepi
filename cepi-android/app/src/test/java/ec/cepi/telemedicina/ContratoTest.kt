@@ -6,6 +6,7 @@ import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.CepiApi
 import ec.cepi.telemedicina.api.ColaRevision
 import ec.cepi.telemedicina.api.Confirmacion
+import ec.cepi.telemedicina.api.FilaEvolucion
 import ec.cepi.telemedicina.api.Lista
 import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.api.SesionRespuesta
@@ -112,6 +113,25 @@ class ContratoTest {
             """{"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}""",
         )
         assertEquals("Dra. Ramon", derivaciones.derivados.single().comoSeLlama)
+    }
+
+    @Test
+    fun fichaDeEvolucion() {
+        // GET /api/patient-evolution (PAPER §28); el mismo cuerpo que ContratoTests.swift.
+        val filas = decodificar<Lista<FilaEvolucion>>(
+            """{"ok":true,"data":[
+               {"episode_id":"e2","fecha":"2026-10-01","estado":"cerrado","medico":"Dra. Ana Pérez",
+                "diagnostico":"L40.0 — Psoriasis vulgar","tratamiento":"Clobetasol 0,05 %"},
+               {"episode_id":"e1","fecha":"2026-08-15","estado":"en_curso","medico":null,
+                "diagnostico":null,"tratamiento":null}]}""",
+        ).data
+        assertEquals(listOf("e2", "e1"), filas.map { it.episodio })
+        assertEquals("2026-10-01", filas[0].fecha)
+        assertEquals("Dra. Ana Pérez", filas[0].medico)
+        assertEquals("L40.0 — Psoriasis vulgar", filas[0].diagnostico)
+        assertEquals("Clobetasol 0,05 %", filas[0].tratamiento)
+        assertNull(filas[1].diagnostico)
+        assertNull(filas[1].medico)
     }
 
     @Test

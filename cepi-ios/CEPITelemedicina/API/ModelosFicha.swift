@@ -220,3 +220,25 @@ struct ResultadoCIE: Decodable, Sendable, Hashable {
 struct BusquedaCIE: Decodable, Sendable {
     let results: [ResultadoCIE]
 }
+
+// MARK: Ficha de evolución (PAPER §28)
+
+/// Una fila de `GET /api/patient-evolution`: una ficha del paciente con lo que se lee para
+/// seguir el caso. El médico ya viene como nombre y cada campo ya cayó al que tenga dato según
+/// la fuente de la ficha (CEPI o espejo DrPro): la app solo lo pinta.
+struct FilaEvolucion: Decodable, Sendable, Hashable, Identifiable {
+    let episodio: String
+    /// `YYYY-MM-DD`, como texto: no se convierte a fecha para no correrla de día.
+    let fecha: String?
+    let estado: String?
+    let medico: String?
+    let diagnostico: String?
+    let tratamiento: String?
+
+    var id: String { episodio }
+
+    enum CodingKeys: String, CodingKey {
+        case episodio = "episode_id"
+        case fecha, estado, medico, diagnostico, tratamiento
+    }
+}

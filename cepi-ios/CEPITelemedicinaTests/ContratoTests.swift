@@ -9,6 +9,24 @@ struct ContratoTests {
         try JSONDecoder().decode(tipo, from: Data(json.utf8))
     }
 
+    @Test func fichaDeEvolucion() throws {
+        // GET /api/patient-evolution (PAPER §28); el mismo cuerpo que ContratoTest.kt.
+        let filas = try decodificar(Lista<FilaEvolucion>.self, """
+        {"ok":true,"data":[
+           {"episode_id":"e2","fecha":"2026-10-01","estado":"cerrado","medico":"Dra. Ana Pérez",
+            "diagnostico":"L40.0 — Psoriasis vulgar","tratamiento":"Clobetasol 0,05 %"},
+           {"episode_id":"e1","fecha":"2026-08-15","estado":"en_curso","medico":null,
+            "diagnostico":null,"tratamiento":null}]}
+        """).data
+        #expect(filas.map(\.episodio) == ["e2", "e1"])
+        #expect(filas[0].fecha == "2026-10-01")
+        #expect(filas[0].medico == "Dra. Ana Pérez")
+        #expect(filas[0].diagnostico == "L40.0 — Psoriasis vulgar")
+        #expect(filas[0].tratamiento == "Clobetasol 0,05 %")
+        #expect(filas[1].diagnostico == nil)
+        #expect(filas[1].medico == nil)
+    }
+
     @Test func sesionDeMe() throws {
         let respuesta = try decodificar(SesionRespuesta.self, """
         {"ok":true,"token":"abc","user":{"id":"u1","name":"Dra. Pérez","email":"p@cepi.ec",

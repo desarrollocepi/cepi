@@ -129,6 +129,10 @@ class CepiApi(val cliente: ApiClient) {
             "filter[patient_id]" to paciente,
         ).data.sortedByDescending { it["fecha"].orEmpty() }
 
+    /** Ficha de evolución: fecha, médico, diagnóstico y tratamiento de cada ficha (PAPER §28). */
+    suspend fun evolucion(paciente: String): List<FilaEvolucion> =
+        cliente.get<Lista<FilaEvolucion>>("/api/patient-evolution", "patient_id" to paciente).data
+
     /** Búsqueda de texto en una definición, paginada (campo `entity_search`). */
     suspend fun buscar(definicion: String, texto: String, desde: Int, limite: Int): List<Registro> =
         cliente.get<Lista<Registro>>(
