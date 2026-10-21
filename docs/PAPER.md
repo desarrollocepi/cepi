@@ -1359,6 +1359,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-25** | Consola de administración | La administración (usuarios, roles, permisos, organizaciones) sale de la PWA médica a `console.cepi.ec`: app propia, dominio propio y **repositorio propio** (`desarrollocepi/cepi-console`), con su propio CI. Backend compartido (TodoERP), despliegue independiente. La consola **no muestra datos clínicos**, lo que alinea D-1 por construcción. En la PWA queda el botón Admin, que abre la consola en otra pestaña. Ver §26. |
 | **D-Aux-26** | Identidades de chat | Quien escribe por WhatsApp/Telegram es una **cuenta hijo**: fila de `users` que **no inicia sesión** y cuelga de una cuenta padre por `parent_user_id`. Vincular es apuntar, no fusionar — se descartó el merge destructivo al medir las **34 FKs** que apuntan a `users(id)` (reescribir `created_by` de la historia clínica, sin vuelta atrás). Un desconocido que escribe crea una identidad sin padre en rol `pendiente`, sin acceso clínico. El token de chat pasa a llevar `org_id` y el bot queda acotado a una organización, con cuenta de servicio propia y permiso granular `auth:external:resolve` en vez del comodín. Ver §27. |
 | **D-Aux-27** | Roles por organización | El rol clínico vive en la membresía (`user_organizations.role_id`, NULL = hereda el general): la misma persona puede tener roles distintos en cada org, y cada org acota cuáles ofrece (`organizations.data.roles`). Los roles de **sistema** (`roles.global_scope`: superadmin, gestión de orgs, cuentas de servicio) no pertenecen a ninguna org: viven en `users.role_id`, se suman en todas y no se asignan por org. Ver §13.8. |
+| **D-Aux-28** | Ficha de evolución | Cada paciente tiene una ficha de evolución: una fila por ficha (episodio) con **fecha, médico, diagnóstico y tratamiento**, la más nueva primero. Se consulta desde cualquier ficha, plegada encima de la barra de episodios, y tocar una fila abre esa ficha. No es una entidad nueva: se arma al leer los episodios. La sirve TodoERP (`GET /api/patient-evolution`) porque el nombre del médico no se puede resolver en el cliente. Ver §28. |
 
 ---
 
@@ -2084,6 +2085,7 @@ varios client IDs y el borrado de cuenta, abajo), ya existía:
 | pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
 | "revisar", a cargo y estado de la ficha | `GET /api/review-queue`, `GET /api/patient-assignments` → `{assignments: {<patient_id>: {assignee_name, source, estado}}}` | TodoERP |
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
+| ficha de evolución (§28) | `GET /api/patient-evolution?patient_id=` → `{ok, data:[{episode_id, fecha, estado, medico, diagnostico, tratamiento}]}` | TodoERP |
 | turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
 | sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |
 | galería e imágenes del paciente | `GET /api/bot/galeria?q=&patient_id=&limit=&offset=` → `{ok, data:[{id, attachment_id, patient_id, paciente, cedula, episode_id, fecha, diagnostico, codigo_cie10, body_region, privada}], total}` | cepi-bot |
@@ -2889,6 +2891,68 @@ WhatsApp está en ese mismo hilo, en los dos sentidos:
   respuesta del asistente).
 - Meta solo deja escribirle a un número dentro de las 24 h desde su último mensaje; con el
   rato de inactividad de arriba, ese límite ya no se alcanza.
+
+## 28. Ficha de evolución del paciente (D-Aux-28)
+
+**Pedido del cliente (2026-10-21).** En el paciente tiene que haber una ficha de evolución:
+la fecha, el diagnóstico y el tratamiento de todas sus fichas, más el médico que hizo cada
+una. Se consulta desde cualquier ficha.
+
+### 28.1 Qué es
+
+Una tabla de cuatro columnas, una fila por episodio, la más nueva primero:
+
+| columna | de dónde sale |
+|---|---|
+| Fecha | `episode.fecha` |
+| Médico | `examinador_nombre` → nombre de `medico_id` → nombre de `created_by` |
+| Diagnóstico | `diagnostico`, con `codigo_cie10` delante si no viene ya incluido |
+| Tratamiento | `tratamiento_resumen` → `plan` |
+
+Cada columna cae a la siguiente porque las dos fuentes de fichas llenan campos distintos
+(§21.2). Una ficha de CEPI guarda el diagnóstico como `"L40.0 — Psoriasis"` (el campo CIE-10
+del formulario) y el tratamiento en `tratamiento_resumen`. Una espejada de DrPro trae el
+código aparte (`codigo_cie10`) y el tratamiento en `plan`. En el espejo, `medico_id` es la
+cuenta del espejo para todas las fichas: el profesional real está en `examinador_nombre`.
+
+Las citas `agendado` del espejo no salen: son una cita futura sin ficha todavía.
+
+No es una entidad ni una tabla nueva. Copiar diagnóstico y tratamiento a otro registro
+abriría dos versiones del mismo dato. La evolución se arma al leer los episodios y
+siempre muestra lo que dice cada ficha hoy. El diagnóstico sigue siendo un solo valor por
+episodio, y su historia está en el chatter (§21.3).
+
+### 28.2 Por qué es un endpoint
+
+La web y las apps ya tienen los episodios del paciente (la barra Anterior / Siguiente).
+Les falta el nombre del médico. Los roles clínicos no leen `users` ni su proyección
+`e1000000-…` (migración 020), y abrirles esa proyección expondría el correo de todos los
+usuarios. `GET /api/patient-evolution?patient_id=` (TodoERP,
+`routes/patientEvolutionRouter.ts`) devuelve las filas ya resueltas con un solo JOIN a
+`users`, igual que `GET /api/patient-assignments` resuelve "a cargo".
+
+- Pide ver pacientes y episodios (`view_all` u `own`; con `own` solo salen las fichas
+  propias).
+- Paciente y episodios de la org activa (D-Aux-21). Sin org activa no sale nada.
+- La fecha va como texto `YYYY-MM-DD`: un `Date` de JS la corre un día según la zona
+  horaria.
+
+### 28.3 Dónde se ve
+
+Dentro de la ficha, plegada, encima de la barra de episodios. Así se consulta desde
+cualquier ficha sin dejar la que se está leyendo. Abrirla trae los datos en ese momento,
+porque entre una vez y otra se pudo guardar un diagnóstico. La ficha abierta sale
+resaltada, y tocar otra fila abre esa ficha.
+
+- **Web**: `EvolucionPaciente.vue`, dentro de `FichaCompleta.vue`. Así está en la pestaña
+  Ficha de telemedicina y en el portal de casos (§22). En el teléfono, cada fila es una
+  tarjeta.
+- **iOS y Android**: un botón "Evolución" en la barra nativa de episodios del visor
+  (`VisorFicha`) abre la misma tabla en una hoja. Tocar una fila lleva el visor a esa
+  ficha.
+
+El botón no se esconde nunca. Sin paciente resuelto sale deshabilitado con el motivo; sin
+fichas dice "todavía no tiene fichas registradas".
 
 ---
 

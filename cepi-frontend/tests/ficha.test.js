@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn() }));
+vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn(), getPatientEvolution: vi.fn() }));
 import * as api from '../src/api.js';
 import BotForm from '../src/components/BotForm.vue';
 import BodyMapField from '../src/components/BodyMapField.vue';
@@ -10,6 +10,7 @@ import IcdSearchField from '../src/components/IcdSearchField.vue';
 import EntitySearchField from '../src/components/EntitySearchField.vue';
 import ImageUploadField from '../src/components/ImageUploadField.vue';
 import FichaCompleta from '../src/components/FichaCompleta.vue';
+import EvolucionPaciente from '../src/components/EvolucionPaciente.vue';
 
 const json = (body) => ({ ok: true, status: 200, json: async () => body });
 
@@ -476,5 +477,75 @@ describe('FichaCompleta', () => {
     } })] });
     const w = await montar({ visitas: [] });
     expect(w.findAll('dd').map((d) => d.text())).toEqual(['No', 'Grave', 'uno, dos']);
+  });
+});
+
+describe('EvolucionPaciente — ficha de evolución (PAPER §28)', () => {
+  const FILAS = [
+    { episode_id: 'ep2', fecha: '2026-10-01', medico: 'Dra. Ana Pérez', diagnostico: 'L40.0 — Psoriasis', tratamiento: 'Clobetasol' },
+    { episode_id: 'ep1', fecha: '2026-08-15', medico: 'Dr. Juan Espejo', diagnostico: null, tratamiento: null },
+  ];
+  const montar = (props = {}) => mount(EvolucionPaciente, { props: { patientId: 'p1', episodeId: 'ep2', ...props } });
+  const boton = (w) => w.find('.evo-btn');
+  beforeEach(() => { api.getPatientEvolution.mockReset(); api.getPatientEvolution.mockResolvedValue({ ok: true, data: FILAS }); });
+
+  it('plegada no pide nada; al abrirla trae la tabla del paciente', async () => {
+    const w = montar();
+    expect(api.getPatientEvolution).not.toHaveBeenCalled();
+    expect(w.find('table').exists()).toBe(false);
+    await boton(w).trigger('click');
+    await flushPromises();
+    expect(api.getPatientEvolution).toHaveBeenCalledWith('p1');
+    expect(w.findAll('th').map((t) => t.text())).toEqual(['Fecha', 'Médico', 'Diagnóstico', 'Tratamiento']);
+    const celdas = w.findAll('tbody tr')[0].findAll('td').map((t) => t.text());
+    expect(celdas).toEqual(['2026-10-01', 'Dra. Ana Pérez', 'L40.0 — Psoriasis', 'Clobetasol']);
+    expect(w.findAll('tbody tr')[1].text()).toContain('Sin diagnóstico');
+    expect(w.find('.evo-cuenta').text()).toBe('2 fichas');
+    expect(boton(w).text()).toBe('Ocultar');
+  });
+
+  it('resalta la ficha abierta y navega a otra al tocar su fila', async () => {
+    const w = montar();
+    await boton(w).trigger('click');
+    await flushPromises();
+    const filas = w.findAll('tbody tr');
+    expect(filas[0].classes()).toContain('evo-actual');
+    await filas[0].trigger('click');
+    expect(w.emitted('navegar')).toBeUndefined();
+    await filas[1].trigger('click');
+    expect(w.emitted('navegar')[0]).toEqual(['ep1']);
+  });
+
+  it('sin paciente el botón sale deshabilitado con su motivo, no se esconde', () => {
+    const w = montar({ patientId: null });
+    expect(boton(w).element.disabled).toBe(true);
+    expect(boton(w).attributes('title')).toContain('paciente');
+  });
+
+  it('sin fichas lo dice, y si falla ofrece reintentar', async () => {
+    api.getPatientEvolution.mockResolvedValueOnce({ ok: true, data: [] });
+    const w = montar();
+    await boton(w).trigger('click');
+    await flushPromises();
+    expect(w.find('.evo-estado').text()).toContain('todavía no tiene fichas');
+
+    api.getPatientEvolution.mockRejectedValueOnce(new Error('sin red'));
+    const w2 = montar();
+    await w2.find('.evo-btn').trigger('click');
+    await flushPromises();
+    expect(w2.find('.evo-error').text()).toContain('sin red');
+    await w2.find('.evo-btn--sec').trigger('click');
+    await flushPromises();
+    expect(w2.find('table').exists()).toBe(true);
+  });
+
+  it('va dentro de la ficha completa y su navegación sale por la ficha', async () => {
+    api.fichaCompleta.mockResolvedValue({ completos: 0, total: 1, grupos: [{ id: 'x', label: 'X', done: false, form: { fields: [], values: {} } }] });
+    const w = mount(FichaCompleta, { props: { episodeId: 'ep2', patientId: 'p1', visitas: [] } });
+    await flushPromises();
+    const evo = w.findComponent(EvolucionPaciente);
+    expect(evo.exists()).toBe(true);
+    evo.vm.$emit('navegar', 'ep1');
+    expect(w.emitted('navegar')[0]).toEqual(['ep1']);
   });
 });

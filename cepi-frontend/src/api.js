@@ -492,6 +492,15 @@ export async function listarCasosDePaciente(patientId) {
 }
 
 /**
+ * Ficha de evolución (PAPER §28): fecha, médico, diagnóstico y tratamiento de cada ficha
+ * del paciente, la más nueva primero. La arma TodoERP porque el nombre del médico no se
+ * puede resolver desde acá.
+ */
+export async function getPatientEvolution(patientId) {
+  return call(`/api/patient-evolution?patient_id=${encodeURIComponent(patientId)}`, { method: 'GET' });
+}
+
+/**
  * Un registro por id. Se usa al abrir un caso por URL: la ruta trae el episodio pero
  * no de quién es, y sin el paciente no hay visitas hermanas que listar ni comparar.
  */

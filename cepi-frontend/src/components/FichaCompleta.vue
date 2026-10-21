@@ -12,6 +12,11 @@
     <template v-else-if="grupos.length">
       <!-- Cabecera: cuánto de la ficha tiene dato. Es la primera pregunta del
            portal ("¿qué falta?"), así que va arriba y no escondida. -->
+      <EvolucionPaciente
+        ref="evolucion" :patient-id="patientId" :episode-id="episodeId"
+        @navegar="emit('navegar', $event)"
+      />
+
       <!-- Que existan fichas anteriores tiene que verse ANTES de leer la actual:
            un dato aislado dice poco si no se sabe que hay con qué compararlo.
            La barra sale SIEMPRE, aunque haya una sola visita. Escondiéndola con
@@ -105,6 +110,7 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { fichaCompleta, guardarGrupoFicha } from '../api.js';
 import BotForm from './BotForm.vue';
+import EvolucionPaciente from './EvolucionPaciente.vue';
 
 const props = defineProps({
   episodeId: { type: String, default: null },
@@ -126,6 +132,7 @@ const editando = ref(null);
 const guardando = ref(false);
 const avisoGuardado = ref('');
 const avisoError = ref(false);
+const evolucion = ref(null);
 
 // Los grupos de imagen (§4.7, §8) no escriben campos: crean registros clinical_image /
 // consent al subir la foto. Editarlos desde acá no tendría dónde guardar.
@@ -156,6 +163,7 @@ async function guardar(payload, g) {
     // Se recarga la ficha entera y no solo el grupo: guardar puede mover campos
     // derivados de otros grupos (gravedad_total, BLINK) y el % de llenado.
     await cargar();
+    evolucion.value?.recargar();
     avisoGuardado.value = r.completitud != null ? `Guardado · ${r.completitud}% de la ficha` : 'Guardado';
   } catch (e) {
     avisoError.value = true;
