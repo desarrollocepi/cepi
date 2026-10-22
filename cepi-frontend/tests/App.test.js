@@ -307,3 +307,31 @@ describe('App — avisos y notificaciones', () => {
     expect(w.find('.notif-toast').text()).toBe('Notificaciones activadas ✔');
   });
 });
+
+describe('App — instalar la app', () => {
+  const uaOriginal = navigator.userAgent;
+  const conUA = (ua) => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+  afterEach(() => { conUA(uaOriginal); vi.restoreAllMocks(); });
+
+  it('en Android abre la ficha de Play', async () => {
+    conUA('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36');
+    const abrir = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { w } = await montar();
+    await boton(w, 'Instalar app').trigger('click');
+    expect(abrir).toHaveBeenCalledWith('https://play.google.com/store/apps/details?id=ec.cepi.telemedicina', '_blank', 'noopener');
+  });
+
+  it('en iPhone abre el App Store', async () => {
+    conUA('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1');
+    const abrir = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { w } = await montar();
+    await boton(w, 'Instalar app').trigger('click');
+    expect(abrir).toHaveBeenCalledWith('https://apps.apple.com/app/cepi-telemedicina/id6812936715', '_blank', 'noopener');
+  });
+
+  it('en el escritorio sin PWA instalable no hay botón', async () => {
+    conUA('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36');
+    const { w } = await montar();
+    expect(boton(w, 'Instalar app')).toBeUndefined();
+  });
+});

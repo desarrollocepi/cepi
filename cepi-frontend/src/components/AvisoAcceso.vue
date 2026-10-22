@@ -23,8 +23,7 @@
 </template>
 
 <script setup>
-const PLAY_URL = 'https://play.google.com/store/apps/details?id=ec.cepi.telemedicina';
-const APP_STORE_URL = 'https://apps.apple.com/app/cepi-telemedicina/id6812936715';
+import { PLAY_URL, APP_STORE_URL } from '../tiendas.js';
 </script>
 
 <style scoped>

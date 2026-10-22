@@ -29,7 +29,7 @@
             <option v-for="o in user.orgs" :key="o.id" :value="o.id">🏥 {{ o.name }}</option>
           </select>
           <span v-else-if="user.orgs && user.orgs.length === 1" class="org-chip" title="Organización">🏥 {{ user.orgs[0].name }}</span>
-          <button v-if="canInstall" class="install-btn" @click="installApp" title="Instalar la app en tu dispositivo">📲 Instalar app</button>
+          <button v-if="canInstall" class="install-btn" @click="installApp" :title="storeUrl ? 'Descargar la app de la tienda' : 'Instalar la app en tu dispositivo'">📲 Instalar app</button>
           <button v-if="showNotifOptin && !isPending" class="notif-optin" @click="enableNotifs(); showTopMenu = false" title="Activar notificaciones push">🔔 Activar</button>
           <button v-if="!isPending && !showProfile" @click="openProfile">👤 Perfil</button>
           <button v-if="!isPending && !showCases" @click="openCases">🗂️ Casos</button>
@@ -97,6 +97,8 @@ import Notifications from './components/Notifications.vue';
 import { whoami, logout, switchOrg, obtenerEntidad } from './api.js';
 import { enableWebPush } from './pwa.js';
 import { bindBackState } from './useBackStack.js';
+import { Capacitor } from '@capacitor/core';
+import { PLAY_URL, APP_STORE_URL } from './tiendas.js';
 
 const user = ref(null);
 const authed = ref(false);
@@ -277,12 +279,15 @@ async function enableNotifs() {
   flashNotif(msg);
 }
 
-// ── PWA: instalar la app (Add to Home Screen) ───────────────────────────────
-// El navegador emite 'beforeinstallprompt' cuando la PWA es instalable; lo
-// guardamos para dispararlo desde el botón. En iOS no existe ese evento → se
-// muestra igual y se dan las instrucciones manuales.
+// ── Instalar la app ─────────────────────────────────────────────────────────
+// En el teléfono, la app es la de la tienda: Play en Android, App Store en
+// iPhone/iPad. La PWA (Add to Home Screen) queda solo para el escritorio: el
+// navegador emite 'beforeinstallprompt' cuando es instalable y lo guardamos
+// para dispararlo desde el botón. Dentro de la app nativa no se ofrece nada.
+const isAndroidDevice = /android/i.test((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+const storeUrl = isIosDevice ? APP_STORE_URL : isAndroidDevice ? PLAY_URL : null;
 const deferredInstall = ref(null);
-const canInstall = computed(() => !isStandalone && (!!deferredInstall.value || isIosDevice));
+const canInstall = computed(() => !isStandalone && !Capacitor.isNativePlatform() && (!!storeUrl || !!deferredInstall.value));
 // Registrar temprano (en setup, no en onMounted) para no perder el evento, que
 // el navegador puede emitir apenas carga la página.
 if (typeof window !== 'undefined') {
@@ -291,14 +296,14 @@ if (typeof window !== 'undefined') {
 }
 async function installApp() {
   showTopMenu.value = false;
+  if (storeUrl) {
+    window.open(storeUrl, '_blank', 'noopener');
+    return;
+  }
   if (deferredInstall.value) {
     deferredInstall.value.prompt();
     try { await deferredInstall.value.userChoice; } catch { /* usuario canceló */ }
     deferredInstall.value = null;
-    return;
-  }
-  if (isIosDevice) {
-    flashNotif('En iPhone/iPad: toca Compartir → "Añadir a pantalla de inicio" para instalar la app.');
   }
 }
 // Ruteo liviano (sin vue-router). La verificación es por CÓDIGO (no por link):
