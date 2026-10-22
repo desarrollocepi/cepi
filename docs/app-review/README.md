@@ -57,6 +57,8 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 7. [x] **1.1 (12) enviada a revisión el 2026-10-22** (07:38): ficha de evolución y
        autocompletar de la clave. Release automático al aprobarse. Notas de revisión con
        "WHAT IS NEW IN 1.1" y la distribución no listada ya aprobada.
+8. [x] **1.1 (12) aprobada y publicada el 2026-10-22** a las 16:00 (hora de Ecuador), sola
+       por el release automático. `itunes.apple.com/lookup?id=6812936715` ya da la 1.1.
 6. [ ] Repartir el enlace a los médicos. Cada cuenta nueva sigue entrando como `pendiente`
        hasta que un admin la aprueba.
 

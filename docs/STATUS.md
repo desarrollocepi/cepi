@@ -19,6 +19,9 @@ Estado del proyecto al cierre de la sesión actual.
   evolución, autocompletar (Associated Domains `webcredentials:` de telemedicina y casos,
   `83541bb`) y el arreglo de Anterior/Siguiente en el visor. Publicación automática al
   aprobarse. Antes hubo que aceptar el nuevo Program License Agreement (lo aceptó el usuario).
+- **1.1 aprobada y publicada el 2026-10-22 a las 16:00** (hora de Ecuador, release automático).
+  Confirmado con `itunes.apple.com/lookup?id=6812936715`: versión 1.1 con las notas de la ficha
+  de evolución y el autocompletar.
 - Para firmar en la Mac hace falta la sesión gráfica del usuario `Cepi`: con solo la de
   `dotrino` abierta, `launchctl bootstrap gui/503` falla con 125 y el llavero está bloqueado.
 
