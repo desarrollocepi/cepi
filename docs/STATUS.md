@@ -4,6 +4,20 @@ Estado del proyecto al cierre de la sesión actual.
 
 ---
 
+## 2026-10-22 — App iOS publicada (no listada)
+
+- CEPI Telemedicina 1.0 (11) publicada en el App Store como **app no listada**: no sale en
+  las búsquedas, se instala solo con el enlace
+  `https://apps.apple.com/app/cepi-telemedicina/id6812936715`. Apple tarda hasta 24 h en
+  activar el enlace después del Release; a las 07:10 todavía daba 404.
+- El botón "iPhone · App Store" del aviso de acceso (`AvisoAcceso.vue`) ya lleva ese enlace.
+- La 1.0 (11) es del commit `05d312e`: no tiene la ficha de evolución (§28) ni el
+  autocompletar de la clave. Los dos van en el build 12, que pasa por otra revisión.
+- Autocompletar: `/.well-known/apple-app-site-association` en la web (`2b7ff8e`). La regla
+  de nginx que lo sirve como JSON está en `deploy/nginx/cepi.conf` y falta aplicarla en prod.
+
+---
+
 ## 2026-10-19 — Registro sobre una cuenta de Google
 
 - Registrarse con email y clave cuando ese email ya tiene cuenta (entró con Google, o se

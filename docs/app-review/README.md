@@ -43,17 +43,17 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
 ## Pendiente
 
 1. [x] ~~Decisión de Apple sobre la distribución no listada~~ — aprobada el 2026-10-20.
-2. [ ] Seguir las instrucciones del correo de aprobación. Revisar en *Pricing and
-       Availability* que la app quede como no listada.
+2. [x] Revisado en *Pricing and Availability*: la app quedó como no listada (2026-10-22).
 3. [ ] Confirmar en prod, mientras revisan el reenvío del 19/10:
        - las dos cuentas demo (`CEPI_REVISOR_*` en `.env`) entran y solo ven `cepi-testing`;
        - la sandbox tiene pacientes ficticios visibles (los de las grabaciones se dieron de baja);
        - https://telemedicina.cepi.ec/privacidad.html responde.
 4. [x] Reenviada 1.0 (11) el 2026-10-19. Cuando Apple escriba en el hilo (o si vuelve un
        3.2), responder con el texto de arriba.
-5. [ ] **Aprobada:** presionar "Release" (publicación manual) y guardar el enlace no listado
-       de la App Store aquí y en STATUS. Ponerlo en `cepi-frontend/src/components/AvisoAcceso.vue`:
-       el botón "iPhone · App Store" está deshabilitado esperando ese enlace.
+5. [x] **Publicada el 2026-10-22** (Release manual de la 1.0 (11)). Distribución no listada
+       confirmada en *Pricing and Availability*. Enlace:
+       `https://apps.apple.com/app/cepi-telemedicina/id6812936715` (Apple tarda hasta 24 h en
+       activarlo). Ya está en `AvisoAcceso.vue` y en STATUS.
 6. [ ] Repartir el enlace a los médicos. Cada cuenta nueva sigue entrando como `pendiente`
        hasta que un admin la aprueba.
 

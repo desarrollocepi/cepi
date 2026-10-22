@@ -78,11 +78,12 @@ describe('Aviso de acceso', () => {
       expect(aviso.exists()).toBe(true);
       expect(aviso.text()).toContain('No es un servicio para pacientes ni para el público');
       expect(aviso.text()).toContain('administrador de CEPI');
-      expect(aviso.find('a.tienda').attributes('href')).toBe('https://play.google.com/apps/testing/ec.cepi.telemedicina');
-      // App Store: visible y deshabilitado, con el motivo, mientras Apple revisa.
-      const ios = aviso.find('button.tienda');
-      expect(ios.attributes('disabled')).toBeDefined();
-      expect(ios.attributes('title')).toContain('revisión de Apple');
+      const tiendas = aviso.findAll('a.tienda').map((a) => a.attributes('href'));
+      // App Store: enlace de la distribución no listada (aprobada y publicada el 2026-10-22).
+      expect(tiendas).toEqual([
+        'https://play.google.com/apps/testing/ec.cepi.telemedicina',
+        'https://apps.apple.com/app/cepi-telemedicina/id6812936715',
+      ]);
     }
   });
 });
