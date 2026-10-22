@@ -13,8 +13,14 @@ Estado del proyecto al cierre de la sesión actual.
 - El botón "iPhone · App Store" del aviso de acceso (`AvisoAcceso.vue`) ya lleva ese enlace.
 - La 1.0 (11) es del commit `05d312e`: no tiene la ficha de evolución (§28) ni el
   autocompletar de la clave. Los dos van en el build 12, que pasa por otra revisión.
-- Autocompletar: `/.well-known/apple-app-site-association` en la web (`2b7ff8e`). La regla
-  de nginx que lo sirve como JSON está en `deploy/nginx/cepi.conf` y falta aplicarla en prod.
+- Autocompletar: `/.well-known/apple-app-site-association` en la web (`2b7ff8e`), servido
+  como JSON por la regla de `deploy/nginx/cepi.conf`, ya aplicada en prod.
+- **1.1 (12) enviada a revisión el 2026-10-22 a las 07:38** ("Waiting for Review"): ficha de
+  evolución, autocompletar (Associated Domains `webcredentials:` de telemedicina y casos,
+  `83541bb`) y el arreglo de Anterior/Siguiente en el visor. Publicación automática al
+  aprobarse. Antes hubo que aceptar el nuevo Program License Agreement (lo aceptó el usuario).
+- Para firmar en la Mac hace falta la sesión gráfica del usuario `Cepi`: con solo la de
+  `dotrino` abierta, `launchctl bootstrap gui/503` falla con 125 y el llavero está bloqueado.
 
 ---
 

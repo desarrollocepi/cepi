@@ -54,6 +54,9 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
        confirmada en *Pricing and Availability*. Enlace:
        `https://apps.apple.com/app/cepi-telemedicina/id6812936715` (Apple tarda hasta 24 h en
        activarlo). Ya está en `AvisoAcceso.vue` y en STATUS.
+7. [x] **1.1 (12) enviada a revisión el 2026-10-22** (07:38): ficha de evolución y
+       autocompletar de la clave. Release automático al aprobarse. Notas de revisión con
+       "WHAT IS NEW IN 1.1" y la distribución no listada ya aprobada.
 6. [ ] Repartir el enlace a los médicos. Cada cuenta nueva sigue entrando como `pendiente`
        hasta que un admin la aprueba.
 
