@@ -9,23 +9,21 @@
       la aprueba.
     </p>
     <div class="tiendas">
-      <!-- Android está en la pista cerrada de Play: la ficha pública da 404 y este enlace
-           solo deja instalar a las cuentas de Google de la lista de testers. -->
+      <!-- Android está en producción en Play (solo Ecuador) desde el 2026-10-22. -->
       <a class="tienda" :href="PLAY_URL" target="_blank" rel="noopener">Android · Google Play</a>
       <!-- Distribución no listada: la app no aparece en las búsquedas del App Store, solo se
            llega con este enlace. Sin país en la ruta para que abra la tienda de quien lo toca. -->
       <a class="tienda" :href="APP_STORE_URL" target="_blank" rel="noopener">iPhone · App Store</a>
     </div>
     <p class="nota">
-      En Google Play, tu cuenta de Google tiene que estar en la lista de médicos de CEPI; pide el
-      acceso a <a href="mailto:info@cepi.ec">info@cepi.ec</a>. La app de iPhone y iPad no aparece
-      en las búsquedas del App Store: se instala desde este enlace.
+      La app de iPhone y iPad no aparece en las búsquedas del App Store: se instala desde este
+      enlace. Para que te aprueben la cuenta, escribe a <a href="mailto:info@cepi.ec">info@cepi.ec</a>.
     </p>
   </div>
 </template>
 
 <script setup>
-const PLAY_URL = 'https://play.google.com/apps/testing/ec.cepi.telemedicina';
+const PLAY_URL = 'https://play.google.com/store/apps/details?id=ec.cepi.telemedicina';
 const APP_STORE_URL = 'https://apps.apple.com/app/cepi-telemedicina/id6812936715';
 </script>
 

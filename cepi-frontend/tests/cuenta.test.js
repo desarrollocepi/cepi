@@ -81,7 +81,7 @@ describe('Aviso de acceso', () => {
       const tiendas = aviso.findAll('a.tienda').map((a) => a.attributes('href'));
       // App Store: enlace de la distribución no listada (aprobada y publicada el 2026-10-22).
       expect(tiendas).toEqual([
-        'https://play.google.com/apps/testing/ec.cepi.telemedicina',
+        'https://play.google.com/store/apps/details?id=ec.cepi.telemedicina',
         'https://apps.apple.com/app/cepi-telemedicina/id6812936715',
       ]);
     }

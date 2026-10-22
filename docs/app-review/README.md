@@ -97,9 +97,10 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
       normal; que aparezca en las búsquedas de Play no importa, el acceso lo controla la
       aprobación de la cuenta. Google indica hasta 7 días. La publicación gestionada está
       desactivada: al aprobarse se publica sola.
-- [ ] Al publicarse: cambiar el botón de Play en `cepi-frontend/src/components/AvisoAcceso.vue`
-      a `https://play.google.com/store/apps/details?id=ec.cepi.telemedicina` y quitar la nota
-      de la lista de testers.
+- [x] 2026-10-22 — **Producción aprobada y publicada**: la ficha pública
+      `https://play.google.com/store/apps/details?id=ec.cepi.telemedicina` responde 200.
+- [x] 2026-10-22 — El botón de Play en `cepi-frontend/src/components/AvisoAcceso.vue` apunta a
+      la ficha pública; la nota de la lista de testers se quitó.
 
 ## Paridad de versiones
 

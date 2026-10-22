@@ -22,6 +22,8 @@ Estado del proyecto al cierre de la sesión actual.
 - **1.1 aprobada y publicada el 2026-10-22 a las 16:00** (hora de Ecuador, release automático).
   Confirmado con `itunes.apple.com/lookup?id=6812936715`: versión 1.1 con las notas de la ficha
   de evolución y el autocompletar.
+- **Android en producción de Play** (versión 7, 2.3.0, solo Ecuador), confirmado el 2026-10-22:
+  la ficha pública ya responde. El aviso de acceso enlaza a ella.
 - Para firmar en la Mac hace falta la sesión gráfica del usuario `Cepi`: con solo la de
   `dotrino` abierta, `launchctl bootstrap gui/503` falla con 125 y el llavero está bloqueado.
 
