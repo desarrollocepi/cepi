@@ -75,4 +75,23 @@ class IdiomasDictadoTest {
         assertEquals(listOf("es-EC", "es-US", "es-ES"), ec.cepi.telemedicina.chat.Dictado.variantes(java.util.Locale.forLanguageTag("en-US")))
         assertEquals(listOf("es-US", "es-EC", "es-ES"), ec.cepi.telemedicina.chat.Dictado.variantes(java.util.Locale.forLanguageTag("es-US")))
     }
+
+    /** El de `LogicaFichaTests.datosDeLaEvolucionComoLaWeb`. */
+    @Test
+    fun datosDeLaEvolucionComoLaWeb() {
+        val paciente = mapOf<String, JsonElement>(
+            "nombre" to JsonPrimitive("Ana"),
+            "apellidos" to JsonPrimitive("Ruiz"),
+            "cedula" to JsonPrimitive("0102"),
+            "fecha_nac" to JsonPrimitive("2000-06-15"),
+        )
+        val filas = listOf(ec.cepi.telemedicina.api.FilaEvolucion(
+            episodio = "e2", fecha = "2026-10-01", medico = "Dra. Pérez", diagnostico = "L40.0", tratamiento = null,
+        ))
+        val datos = ec.cepi.telemedicina.ficha.DatosEvolucion.objeto(paciente, filas, "e2", LocalDate.parse("2026-09-16"))
+        assertEquals(
+            """{"actual":"e2","filas":[{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","diagnostico":"L40.0","tratamiento":null}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
+            DatosFicha.javascript(datos),
+        )
+    }
 }

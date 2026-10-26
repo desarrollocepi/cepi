@@ -45,6 +45,7 @@ import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
 import ec.cepi.telemedicina.chat.VisorImagen
 import ec.cepi.telemedicina.ficha.DerivarPantalla
+import ec.cepi.telemedicina.ficha.EvolucionDocumento
 import ec.cepi.telemedicina.ficha.FormularioHoja
 import ec.cepi.telemedicina.ficha.SeccionesHoja
 import ec.cepi.telemedicina.ficha.VisorFicha
@@ -89,6 +90,9 @@ fun PacienteAbierto(
     var menu by remember { mutableStateOf(false) }
     var mostrarSecciones by remember { mutableStateOf(false) }
     var derivar by remember { mutableStateOf(false) }
+    var mostrarEvolucion by remember { mutableStateOf(false) }
+    // La ficha que se eligió en la evolución: la sección Ficha va a esa.
+    var fichaPedida by remember { mutableStateOf<String?>(null) }
     // Abierto sin pasar por la lista (CEPI_DEV_PACIENTE, una notificación): el nombre se pide.
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
 
@@ -139,6 +143,7 @@ fun PacienteAbierto(
                             },
                             alAutoFormulario = { alcance.launch { modelo.alternarAutoFormulario() } },
                             alDerivar = { derivar = true },
+                            alEvolucion = { mostrarEvolucion = true },
                         )
                     }
                 },
@@ -196,6 +201,7 @@ fun PacienteAbierto(
                         mostrada = fichaMostrada,
                         visible = paginas.settledPage == 1 && !paginas.isScrollInProgress,
                         alGuardar = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
+                        episodioPedido = fichaPedida,
                     )
                     else -> ImagenesPaciente(imagenes)
                 }
@@ -220,6 +226,20 @@ fun PacienteAbierto(
             marcadores = modelo.marcadores,
             alElegir = { marcador -> alcance.launch { modelo.abrirSeccion(marcador) } },
             alCerrar = { mostrarSecciones = false },
+        )
+    }
+    if (mostrarEvolucion) {
+        EvolucionDocumento(
+            pacienteId = pacienteId,
+            actual = modelo.episodioActivo,
+            api = api,
+            web = entorno.config.webBase,
+            alElegir = { episodio ->
+                fichaPedida = episodio
+                fichaMostrada = true
+                alcance.launch { paginas.animateScrollToPage(1) }
+            },
+            alCerrar = { mostrarEvolucion = false },
         )
     }
     if (derivar) {
@@ -255,6 +275,7 @@ private fun Acciones(
     alSecciones: () -> Unit,
     alAutoFormulario: () -> Unit,
     alDerivar: () -> Unit,
+    alEvolucion: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -311,6 +332,13 @@ private fun Acciones(
             },
         )
         HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Evolución del paciente") },
+            onClick = {
+                alCerrar()
+                alEvolucion()
+            },
+        )
         DropdownMenuItem(
             text = { Text("Derivar") },
             enabled = libre,

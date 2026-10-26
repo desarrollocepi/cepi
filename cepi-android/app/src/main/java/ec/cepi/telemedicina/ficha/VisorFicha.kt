@@ -45,7 +45,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import ec.cepi.telemedicina.R
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
-import ec.cepi.telemedicina.api.FilaEvolucion
 import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.api.jsonCepi
 import kotlinx.coroutines.async
@@ -124,6 +123,8 @@ fun VisorFicha(
     mostrada: Boolean,
     visible: Boolean,
     alGuardar: suspend (JsonObject, String?) -> Boolean,
+    /** Otra ficha que pidió abrir quien contiene el visor (la evolución del menú del paciente). */
+    episodioPedido: String? = null,
 ) {
     val contexto = LocalContext.current
     val alcance = rememberCoroutineScope()
@@ -136,9 +137,6 @@ fun VisorFicha(
     var error by remember { mutableStateOf<String?>(null) }
     var paginasListas by remember { mutableIntStateOf(0) }
     var verEvolucion by remember { mutableStateOf(false) }
-    var evolucion by remember { mutableStateOf(emptyList<FilaEvolucion>()) }
-    var cargandoEvolucion by remember { mutableStateOf(false) }
-    var errorEvolucion by remember { mutableStateOf<String?>(null) }
     val controlador = remember { ControladorFicha(contexto, web) { paginasListas++ } }
     DisposableEffect(Unit) { onDispose { controlador.vista.destroy() } }
 
@@ -169,20 +167,14 @@ fun VisorFicha(
         recargarPagina()
     }
 
-    // Se pide cada vez que se abre: entre una vez y otra se pudo guardar un diagnóstico.
-    fun cargarEvolucion() {
-        alcance.launch {
-            cargandoEvolucion = true
-            errorEvolucion = null
-            try {
-                evolucion = api.evolucion(pacienteId)
-            } catch (e: ApiError) {
-                errorEvolucion = "No se pudo cargar la evolución: ${e.mensaje}"
-            } finally {
-                cargandoEvolucion = false
-            }
+    fun irA(episodio: String?) {
+        val destino = episodios.indexOfFirst { it.id == episodio }
+        if (destino >= 0 && destino != indice) {
+            indice = destino
+            recargarPagina()
         }
     }
+    LaunchedEffect(episodioPedido, episodios) { irA(episodioPedido) }
 
     LaunchedEffect(mostrada, episodioActivo) {
         if (mostrada) cargar()
@@ -269,10 +261,7 @@ fun VisorFicha(
                     Spacer(Modifier.size(6.dp))
                     Text("Imprimir")
                 }
-                TextButton(onClick = {
-                    verEvolucion = true
-                    cargarEvolucion()
-                }) {
+                TextButton(onClick = { verEvolucion = true }) {
                     Text("Evolución")
                 }
                 Spacer(Modifier.weight(1f))
@@ -307,20 +296,12 @@ fun VisorFicha(
     }
 
     if (verEvolucion) {
-        EvolucionHoja(
-            filas = evolucion,
-            cargando = cargandoEvolucion,
-            error = errorEvolucion,
+        EvolucionDocumento(
+            pacienteId = pacienteId,
             actual = episodios.getOrNull(indice)?.id,
-            alElegir = { fila ->
-                verEvolucion = false
-                val destino = episodios.indexOfFirst { it.id == fila.episodio }
-                if (destino >= 0 && destino != indice) {
-                    indice = destino
-                    recargarPagina()
-                }
-            },
-            alReintentar = { cargarEvolucion() },
+            api = api,
+            web = web,
+            alElegir = { irA(it) },
             alCerrar = { verEvolucion = false },
         )
     }
