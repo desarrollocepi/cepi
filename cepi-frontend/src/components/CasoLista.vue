@@ -30,7 +30,7 @@
         <select v-model="origen" class="cl-input">
           <option value="">Todo origen</option>
           <option value="drpro">Importados de DrPro</option>
-          <option value="cepi">Capturados en CEPI</option>
+          <option value="cepi">{{ orgName ? `Capturados en ${orgName}` : 'Capturados aquí' }}</option>
         </select>
         <button class="cl-btn" :disabled="cargando" @click="buscar()">Buscar</button>
       </div>
@@ -82,7 +82,11 @@
 import { ref, onMounted } from 'vue';
 import { listarCasos, listarPacientes } from '../api.js';
 
-defineProps({ activeId: { type: String, default: null } });
+defineProps({
+  activeId: { type: String, default: null },
+  /** La org activa: los episodios que no vienen de DrPro se capturaron en ella. */
+  orgName: { type: String, default: '' },
+});
 defineEmits(['select']);
 
 const ESTADOS = ['agendado', 'en_curso', 'cerrado', 'enviada', 'en_triage', 'respondida', 'derivada'];

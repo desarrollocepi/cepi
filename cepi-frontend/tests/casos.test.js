@@ -40,6 +40,12 @@ describe('CasoLista', () => {
     expect(w.find('.cl-cuenta').text()).toBe('4 episodios');
   });
 
+  it('el origen propio lleva el nombre de la org activa', async () => {
+    const opciones = (w) => w.findAll('option').map((o) => o.text()).filter((t) => /Capturados|DrPro/.test(t));
+    expect(opciones(await montar({ orgName: 'CEPI Telemedicina' }))).toEqual(['Importados de DrPro', 'Capturados en CEPI Telemedicina']);
+    expect(opciones(await montar())).toEqual(['Importados de DrPro', 'Capturados aquí']);
+  });
+
   it('cada fila resume el caso: diagnóstico, si no el motivo, si no el tipo de cita', async () => {
     const w = await montar();
     expect(w.findAll('.cl-dx').map((d) => d.text().replace(/\s+/g, ' '))).toEqual(['L40 Psoriasis', 'mancha', 'control', 'Sin diagnóstico registrado']);

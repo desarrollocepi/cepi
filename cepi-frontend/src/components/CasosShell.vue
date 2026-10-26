@@ -12,7 +12,7 @@
       </nav>
 
       <CasoLista v-show="tab === 'casos'" class="cshell-lista"
-                 :active-id="sel.episodeId" @select="(c) => irACaso(c.episodeId)" />
+                 :active-id="sel.episodeId" :org-name="activeOrgName" @select="(c) => irACaso(c.episodeId)" />
       <PacienteLista v-show="tab === 'pacientes'" class="cshell-lista"
                      :active-id="sel.patientId" @select="(p) => irAPaciente(p.patientId)" />
     </div>
@@ -118,7 +118,7 @@ import VisorFormato from './VisorFormato.vue';
 import VisorEvolucion from './VisorEvolucion.vue';
 import { listarCasosDePaciente, obtenerEntidad, switchOrgToEpisodio, switchOrgToPaciente } from '../api.js';
 
-defineProps({
+const props = defineProps({
   user: Object,
   // Los pasa el router desde /casos/caso/:episodeId y /casos/paciente/:patientId.
   episodeId: { type: String, default: null },
@@ -188,6 +188,10 @@ const FORMATOS = [
  * por un estado sin episodio, y ese parpadeo bastaba para perder el formato. No
  * hace falta: los formatos que exigen episodio ya se deshabilitan solos.
  */
+// Nombre de la org activa: el filtro de origen dice dónde se capturó cada episodio.
+const activeOrgName = computed(() =>
+  (props.user?.orgs || []).find(o => o.id === props.user?.org_id)?.name || '');
+
 const CLAVE_FORMATO = 'cepi.casos.formato';
 const formato = ref('grupos');
 try {
