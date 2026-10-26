@@ -1031,6 +1031,12 @@ persona, y siempre queda `pendiente` ahí:
   «pendiente»: la sesión arranca en la primera org donde tiene rol (`elegirOrgActiva`) y la
   solicitud espera en la del dominio.
 
+**Dominio sin org propia** (`casos.cepi.ec`): la sesión arranca en la **última org activa**
+de la persona (`users.data.last_org_id`), si sigue aprobada ahí. Se guarda al iniciar
+sesión y al cambiar de org (`/api/orgs/switch`, `/switch-to-record`). Así casos abre en la
+misma org que la app (pedido del cliente, 2026-10-26) y nadie queda pendiente en una org por
+entrar a casos. El dominio de una org manda sobre lo guardado.
+
 Ser médico en el consultorio, entonces, no aprueba en telemedicina: cada org aprueba lo suyo.
 
 **Invitar por email con rol preasignado** (migración 025, `invitations`). El admin de una
