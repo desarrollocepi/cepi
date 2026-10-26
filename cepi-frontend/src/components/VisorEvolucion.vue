@@ -1,16 +1,17 @@
 <template>
   <!-- Ficha de evolución (PAPER §28): fecha, médico, diagnóstico y tratamiento de todas
        las fichas del paciente. Es un documento aparte de la ficha (public/evolucion.html,
-       hermano de ficha.html) y se abre en un modal desde el chat o desde la ficha. -->
-  <div class="evo-modal" @click.self="emit('close')">
+       hermano de ficha.html). En telemedicina se abre en un modal desde el chat; en el
+       portal de casos va incrustado como un formato más (`incrustado`). -->
+  <div :class="incrustado ? 'evo-incrustado' : 'evo-modal'" @click.self="incrustado || emit('close')">
     <div class="evo-panel">
       <div class="evo-head">
-        <strong>Ficha de evolución — {{ patientName || 'Paciente' }}</strong>
+        <strong>Ficha de evolución — {{ nombre || patientName || 'Paciente' }}</strong>
         <div class="evo-head-actions">
           <button type="button" :disabled="cargando || !!error" @click="imprimir"
             :title="cargando ? 'Todavía se está cargando' : (error ? 'No se pudo cargar la evolución' : 'Imprimir la ficha de evolución')"
           >Imprimir</button>
-          <button type="button" @click="emit('close')">Cerrar</button>
+          <button v-if="!incrustado" type="button" @click="emit('close')">Cerrar</button>
         </div>
       </div>
       <iframe ref="frame" class="evo-frame" src="/evolucion.html" @load="onLoad"></iframe>
@@ -28,12 +29,16 @@ const props = defineProps({
   /** La ficha que se está viendo: sale resaltada. */
   episodeId: { type: String, default: null },
   patientName: { type: String, default: '' },
+  /** Dentro de la página (portal de casos) en vez de en un modal. */
+  incrustado: { type: Boolean, default: false },
 });
 const emit = defineEmits(['close', 'abrir']);
 
 const frame = ref(null);
 const cargando = ref(true);
 const error = ref('');
+// El nombre sale del registro del paciente: en el portal de casos nadie lo pasa.
+const nombre = ref('');
 let datos = null;
 let documentoListo = false;
 
@@ -67,6 +72,7 @@ async function cargar() {
       filas: evo?.data || [],
       actual: props.episodeId,
     };
+    nombre.value = datos.paciente.nombre;
   } catch (e) {
     error.value = e?.message || 'No se pudo cargar la evolución';
   } finally {
@@ -88,6 +94,9 @@ onMounted(cargar);
 .evo-head button { border: 1.5px solid var(--border, #e2e8f0); background: #f8fafc; color: var(--text, #0f172a); border-radius: 6px; padding: 4px 12px; cursor: pointer; font-weight: 600; font-size: 0.82rem; }
 .evo-head button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .evo-head button:disabled { opacity: .45; cursor: not-allowed; }
+.evo-incrustado { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.evo-incrustado .evo-panel { width: 100%; height: 100%; border-radius: 0; box-shadow: none; }
+.evo-incrustado .evo-head { background: #f8fafc; }
 .evo-frame { flex: 1; width: 100%; border: 0; background: #e8e8e8; }
 @media (max-width: 560px) {
   .evo-modal { padding: 0; }

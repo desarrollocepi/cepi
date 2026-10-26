@@ -2954,6 +2954,9 @@ resaltada, y tocar otra fila abre esa ficha.
   tocar una fila abre esa ficha en el visor de `ficha.html`. Ficha y evolución son dos
   documentos distintos del paciente (pedido del cliente, 2026-10-26); la tabla plegada de
   la pestaña Ficha se queda.
+- **Portal de casos**: "Evolución" es un formato más del selector (junto a Grupos, Ficha HCU,
+  MSP 002 y MSP 053). Es del paciente, no del episodio, así que no pasa por `fillFicha`:
+  `VisorEvolucion` incrustado. Tocar una fila abre ese caso.
 - **iOS y Android**: un botón "Evolución" en la barra nativa de episodios del visor
   (`VisorFicha`) abre la misma tabla en una hoja. Tocar una fila lleva el visor a esa
   ficha.

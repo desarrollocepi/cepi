@@ -167,6 +167,7 @@ describe('CasosShell', () => {
   const PacienteListaD = doble('PacienteLista', ['activeId'], ['select']);
   const FichaD = doble('FichaCompleta', ['episodeId', 'patientId', 'visitas', 'cargandoVisitas'], ['navegar']);
   const VisorD = doble('VisorFormato', ['src', 'titulo', 'episodeId', 'patientId', 'visitas'], ['guardado']);
+  const EvoD = doble('VisorEvolucion', ['patientId', 'episodeId', 'incrustado'], ['abrir']);
   const VISITAS = [
     { id: 'e2', patient_id: 'p1', fecha: '2026-10-01T00:00:00Z', estado: 'en_curso', codigo_cie10: 'L40', diagnostico: 'Psoriasis' },
     { id: 'e1', patient_id: 'p1', fecha: '2026-09-01T00:00:00Z', estado: 'cerrado', motivo_consulta: 'mancha' },
@@ -180,7 +181,7 @@ describe('CasosShell', () => {
       { path: '/casos/paciente/:patientId', name: 'paciente', component: vacio },
     ] });
     await router.push(ruta);
-    const w = mount(CasosShell, { props: { user: {} }, global: { plugins: [router], stubs: { CasoLista: CasoListaD, PacienteLista: PacienteListaD, FichaCompleta: FichaD, VisorFormato: VisorD } } });
+    const w = mount(CasosShell, { props: { user: {} }, global: { plugins: [router], stubs: { CasoLista: CasoListaD, PacienteLista: PacienteListaD, FichaCompleta: FichaD, VisorFormato: VisorD, VisorEvolucion: EvoD } } });
     await flushPromises();
     return { w, router };
   }
@@ -280,7 +281,7 @@ describe('CasosShell', () => {
 
   it('el formato elegido se conserva al cambiar de caso y entre sesiones', async () => {
     const { w, router } = await montar('/casos/caso/e2');
-    expect(w.findAll('.cshell-formatos button').map((b) => b.text())).toEqual(['Grupos', 'Ficha HCU', 'MSP 002', 'MSP 053']);
+    expect(w.findAll('.cshell-formatos button').map((b) => b.text())).toEqual(['Grupos', 'Ficha HCU', 'MSP 002', 'MSP 053', 'Evolución']);
     await formato(w, 'MSP 002').trigger('click');
     expect(w.findComponent(VisorD).props()).toMatchObject({ src: '/msp-002.html', episodeId: 'e2', patientId: 'p1' });
     expect(w.findComponent(FichaD).exists()).toBe(false);
@@ -288,6 +289,16 @@ describe('CasosShell', () => {
     expect(w.findComponent(VisorD).props('episodeId')).toBe('e1');
     expect(localStorage.getItem('cepi.casos.formato')).toBe('msp002');
     expect((await montar('/casos/caso/e2')).w.findComponent(VisorD).props('src')).toBe('/msp-002.html');
+  });
+
+  it('Evolución es un formato del paciente: incrusta la ficha de evolución y su fila abre el caso', async () => {
+    const { w, router } = await montar('/casos/caso/e2');
+    await formato(w, 'Evolución').trigger('click');
+    const evo = w.findComponent(EvoD);
+    expect(evo.props()).toMatchObject({ patientId: 'p1', episodeId: 'e2', incrustado: true });
+    expect(w.findComponent(FichaD).exists()).toBe(false);
+    evo.vm.$emit('abrir', 'e1'); await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/casos/caso/e1');
   });
 
   it('tras guardar desde un formato se recarga la lista de episodios', async () => {

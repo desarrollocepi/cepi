@@ -67,8 +67,9 @@
           v-for="f in FORMATOS" :key="f.id" role="tab"
           :aria-selected="formato === f.id"
           :class="{ on: formato === f.id }"
-          :disabled="f.exigeEpisodio && !sel.episodeId"
-          :title="f.exigeEpisodio && !sel.episodeId ? 'Necesita un episodio abierto, no solo el paciente' : f.ayuda"
+          :disabled="(f.exigeEpisodio && !sel.episodeId) || (f.exigePaciente && !sel.patientId)"
+          :title="f.exigeEpisodio && !sel.episodeId ? 'Necesita un episodio abierto, no solo el paciente'
+            : (f.exigePaciente && !sel.patientId ? 'Todavía no se sabe de qué paciente es este episodio' : f.ayuda)"
           @click="formato = f.id"
         >{{ f.label }}</button>
       </div>
@@ -79,6 +80,13 @@
         :cargando-visitas="cargandoVisitas"
         class="cshell-ficha"
         @navegar="irACaso"
+      />
+      <VisorEvolucion
+        v-else-if="sel.patientId && formato === 'evolucion'"
+        :key="sel.patientId" :incrustado="true"
+        :patient-id="sel.patientId" :episode-id="sel.episodeId"
+        class="cshell-ficha"
+        @abrir="irACaso"
       />
       <VisorFormato
         v-else-if="(sel.episodeId || sel.patientId) && formatoActual"
@@ -107,6 +115,7 @@ import CasoLista from './CasoLista.vue';
 import PacienteLista from './PacienteLista.vue';
 import FichaCompleta from './FichaCompleta.vue';
 import VisorFormato from './VisorFormato.vue';
+import VisorEvolucion from './VisorEvolucion.vue';
 import { listarCasosDePaciente, obtenerEntidad, switchOrgToEpisodio, switchOrgToPaciente } from '../api.js';
 
 defineProps({
@@ -165,6 +174,9 @@ const FORMATOS = [
     exigeEpisodio: true, ayuda: 'Anamnesis y examen físico. Maquetación reconstruida: contrastar con el oficial' },
   { id: 'msp053', label: 'MSP 053', src: '/msp-053.html', titulo: 'form.053 — Referencia y contrarreferencia',
     exigeEpisodio: true, ayuda: 'Referencia y contrarreferencia. Maquetación reconstruida: contrastar con el oficial' },
+  // Del paciente, no del episodio: va aparte de fillFicha (VisorEvolucion, PAPER §28).
+  { id: 'evolucion', label: 'Evolución', exigePaciente: true,
+    ayuda: 'Ficha de evolución: fecha, médico, diagnóstico y tratamiento de todas las fichas del paciente' },
 ];
 /**
  * El formato elegido se mantiene al cambiar de episodio o de paciente: es una
