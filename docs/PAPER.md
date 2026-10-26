@@ -2947,6 +2947,13 @@ resaltada, y tocar otra fila abre esa ficha.
 - **Web**: `EvolucionPaciente.vue`, dentro de `FichaCompleta.vue`. Así está en la pestaña
   Ficha de telemedicina y en el portal de casos (§22). En el teléfono, cada fila es una
   tarjeta.
+- **Web, desde el chat**: el botón "📈 Evolución" de la cabecera del paciente abre la ficha
+  de evolución como documento, en un modal (`VisorEvolucion.vue`). El documento es
+  `public/evolucion.html`, hermano de `ficha.html`: mismo papel, cabecera y barras de
+  sección, para que se lea e imprima como la ficha. Se llena con `fillEvolucion(data)` y
+  tocar una fila abre esa ficha en el visor de `ficha.html`. Ficha y evolución son dos
+  documentos distintos del paciente (pedido del cliente, 2026-10-26); la tabla plegada de
+  la pestaña Ficha se queda.
 - **iOS y Android**: un botón "Evolución" en la barra nativa de episodios del visor
   (`VisorFicha`) abre la misma tabla en una hoja. Tocar una fila lleva el visor a esa
   ficha.

@@ -21,7 +21,11 @@
             </template>
           </div>
         </div>
-        <button type="button" :disabled="busy || !currentPatientId" @click="openFicha" title="Ver la ficha clínica completa">👁️ Ficha</button>
+        <button type="button" :disabled="busy || !currentPatientId" @click="openFicha()" title="Ver la ficha clínica completa">👁️ Ficha</button>
+        <button
+          type="button" :disabled="busy || !currentPatientId" @click="showEvolucion = true"
+          :title="currentPatientId ? 'Fecha, médico, diagnóstico y tratamiento de todas las fichas del paciente' : 'Elige un paciente para ver su evolución'"
+        >📈 Evolución</button>
         <button type="button" :disabled="busy" @click="openDerivar" title="Derivar el episodio a un círculo o a una persona">↪️ Derivar</button>
         <button type="button" :disabled="busy" @click="nuevaConsulta" title="Abrir una consulta nueva (el episodio anterior queda en el historial)">＋ Nueva consulta</button>
         <button type="button" @click="showDoctoPro = true" title="Consultar pacientes en DoctoPro">🔎 DoctoPro</button>
@@ -204,6 +208,12 @@
       </div>
     </div>
 
+    <VisorEvolucion
+      v-if="showEvolucion && currentPatientId"
+      :patient-id="currentPatientId" :episode-id="activeEpisodeId" :patient-name="patientName"
+      @close="showEvolucion = false" @abrir="abrirFichaDesdeEvolucion"
+    />
+
     <DoctoProSearch v-if="showDoctoPro" @close="showDoctoPro = false" />
   </div>
 </template>
@@ -214,6 +224,7 @@ import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, li
 import MessageContent from './MessageContent.vue';
 import BotForm from './BotForm.vue';
 import DoctoProSearch from './DoctoProSearch.vue';
+import VisorEvolucion from './VisorEvolucion.vue';
 import { createDictation, dictationSupported } from '../native/speech.js';
 import { edadDesde } from '../edad.js';
 
@@ -666,15 +677,21 @@ async function fetchEpisodes(patientId) {
     return rows;
   } catch { return []; }
 }
-async function openFicha() {
+async function openFicha(episodeId = null) {
   if (!currentPatientId.value) return;
   showMenu.value = false;
   fichaEpisodes.value = []; fichaIndex.value = 0;
   const eps = await fetchEpisodes(currentPatientId.value);
   fichaEpisodes.value = eps;
-  const i = eps.findIndex(e => e.id === activeEpisodeId.value);
+  const i = eps.findIndex(e => e.id === (episodeId || activeEpisodeId.value));
   fichaIndex.value = i >= 0 ? i : 0;
   showFicha.value = true;
+}
+// Ficha de evolución (PAPER §28): tocar una fila abre esa ficha en el visor.
+const showEvolucion = ref(false);
+function abrirFichaDesdeEvolucion(episodeId) {
+  showEvolucion.value = false;
+  openFicha(episodeId);
 }
 function fichaStep(dir) {
   const n = fichaIndex.value + dir;
