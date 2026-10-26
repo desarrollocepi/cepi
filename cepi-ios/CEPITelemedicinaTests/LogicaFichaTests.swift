@@ -104,4 +104,19 @@ struct LogicaFichaTests {
         let barra = String(UnicodeScalar(92))
         #expect(DatosFicha.javascript(["a": .texto("x\u{2028}y")]) == "{\"a\":\"x" + barra + "u2028y\"}")
     }
+
+    @Test func datosDeLaEvolucionComoLaWeb() throws {
+        let paciente: [String: JSONValor] = ["nombre": .texto("Ana"), "apellidos": .texto("Ruiz"),
+                                             "cedula": .texto("0102"), "fecha_nac": .texto("2000-06-15")]
+        let filas = try JSONDecoder().decode([FilaEvolucion].self, from: Data("""
+        [{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","diagnostico":"L40.0","tratamiento":null}]
+        """.utf8))
+        let datos = DatosEvolucion.objeto(paciente: paciente, filas: filas, actual: "e2", hoy: Fechas.dia("2026-09-16")!)
+        #expect(datos["paciente"] == .objeto(["nombre": .texto("Ana Ruiz"), "cedula": .texto("0102"), "edad": .numero(26)]))
+        #expect(datos["actual"] == .texto("e2"))
+        #expect(datos["filas"] == .lista([.objeto([
+            "episode_id": .texto("e2"), "fecha": .texto("2026-10-01"), "medico": .texto("Dra. Pérez"),
+            "diagnostico": .texto("L40.0"), "tratamiento": .nulo,
+        ])]))
+    }
 }

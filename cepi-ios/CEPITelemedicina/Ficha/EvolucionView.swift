@@ -1,105 +1,171 @@
 import SwiftUI
+import WebKit
 
 /// La ficha de evolución del paciente (PAPER §28): fecha, médico, diagnóstico y tratamiento de
-/// cada ficha, la más nueva primero. La ficha que se está viendo va resaltada; tocar otra lleva
-/// el visor a esa. Se pide cada vez que se abre: entre una vez y otra se pudo guardar un
-/// diagnóstico.
+/// cada ficha, la más nueva primero. Es el mismo documento de la web (`evolucion.html`,
+/// hermano de `ficha.html`), así se lee e imprime igual en las tres. La ficha que se está viendo
+/// va resaltada; tocar otra la abre. Se pide cada vez que se abre: entre una vez y otra se pudo
+/// guardar un diagnóstico.
 struct EvolucionView: View {
     let pacienteId: String
     /// La ficha abierta en el visor.
     let actual: String?
-    let alElegir: (FilaEvolucion) -> Void
+    let alElegir: (String) -> Void
 
     @Environment(Sesion.self) private var sesion
     @Environment(\.dismiss) private var cerrar
-    @State private var filas: [FilaEvolucion] = []
+    @State private var controlador = ControladorEvolucion()
+    @State private var datos: String?
     @State private var cargando = true
     @State private var error: String?
 
     var body: some View {
         NavigationStack {
-            Group {
-                if cargando && filas.isEmpty {
-                    ProgressView()
-                } else if let error {
-                    ContentUnavailableView {
-                        Label("Sin evolución", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("Reintentar") { Task { await cargar() } }
-                    }
-                } else if filas.isEmpty {
-                    ContentUnavailableView(
-                        "Sin fichas",
-                        systemImage: "doc.text",
-                        description: Text("Este paciente todavía no tiene fichas registradas."),
-                    )
-                } else {
-                    List(filas) { fila in
-                        Button {
-                            alElegir(fila)
-                            cerrar()
-                        } label: {
-                            FilaEvolucionVista(fila: fila, esActual: fila.episodio == actual)
-                        }
-                        .disabled(fila.episodio == actual)
-                        .listRowBackground(fila.episodio == actual ? Color.accentColor.opacity(0.12) : nil)
-                    }
-                    .listStyle(.plain)
+            WebEvolucion(controlador: controlador)
+                .overlay {
+                    if cargando { ProgressView() }
                 }
-            }
-            .navigationTitle("Evolución del paciente")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { cerrar() }
+                .navigationTitle("Ficha de evolución")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cerrar") { cerrar() }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Imprimir", systemImage: "printer", action: imprimir)
+                            .disabled(cargando || error != nil)
+                    }
                 }
-            }
         }
         .task { await cargar() }
     }
 
     private func cargar() async {
-        cargando = true
-        error = nil
-        defer { cargando = false }
+        controlador.alElegir = { episodio in
+            guard episodio != actual else { return }
+            alElegir(episodio)
+            cerrar()
+        }
+        controlador.alCargar = { Task { await llenar() } }
+        controlador.cargar(Config.webBase.appending(path: "evolucion.html"))
+        async let filas = sesion.api.evolucion(paciente: pacienteId)
+        async let registro = sesion.api.entidad(pacienteId)
         do {
-            filas = try await sesion.api.evolucion(paciente: pacienteId)
+            datos = DatosEvolucion.javascript(
+                paciente: (try? await registro)?.data ?? [:],
+                filas: try await filas,
+                actual: actual,
+            )
         } catch {
             self.error = "No se pudo cargar la evolución: \(error.localizedDescription)"
+        }
+        await llenar()
+    }
+
+    /// Los datos y el documento llegan en cualquier orden: se llena cuando están los dos.
+    private func llenar() async {
+        guard controlador.listo else { return }
+        if let error {
+            await controlador.ejecutar("window.errorEvolucion && window.errorEvolucion(\(DatosEvolucion.cadena(error)))")
+        } else if let datos {
+            await controlador.ejecutar("window.fillEvolucion && window.fillEvolucion(\(datos))")
+        } else {
+            return
+        }
+        cargando = false
+    }
+
+    private func imprimir() {
+        let impresion = UIPrintInteractionController.shared
+        impresion.printFormatter = controlador.webView.viewPrintFormatter()
+        impresion.present(animated: true)
+    }
+}
+
+/// El WKWebView de `evolucion.html`. Tocar una fila llega por el mensaje `abrirFicha`.
+@MainActor
+final class ControladorEvolucion: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    let webView: WKWebView
+    var alCargar: (@MainActor () -> Void)?
+    var alElegir: (@MainActor (String) -> Void)?
+    private(set) var listo = false
+
+    override init() {
+        let configuracion = WKWebViewConfiguration()
+        let usuario = WKUserContentController()
+        // El documento llama a window.onAbrirFicha(id) si existe.
+        usuario.addUserScript(WKUserScript(
+            source: "window.onAbrirFicha = function (id) { window.webkit.messageHandlers.abrirFicha.postMessage(String(id)); };",
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true,
+        ))
+        configuracion.userContentController = usuario
+        webView = WKWebView(frame: .zero, configuration: configuracion)
+        super.init()
+        usuario.add(self, name: "abrirFicha")
+        webView.navigationDelegate = self
+    }
+
+    func cargar(_ url: URL) {
+        listo = false
+        webView.load(URLRequest(url: url))
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        listo = true
+        alCargar?()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let episodio = message.body as? String { alElegir?(episodio) }
+    }
+
+    func ejecutar(_ codigo: String) async {
+        await withCheckedContinuation { continuacion in
+            webView.evaluateJavaScript(codigo + "; ''") { _, _ in continuacion.resume() }
         }
     }
 }
 
-private struct FilaEvolucionVista: View {
-    let fila: FilaEvolucion
-    let esActual: Bool
+private struct WebEvolucion: UIViewRepresentable {
+    let controlador: ControladorEvolucion
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text((fila.fecha ?? "s/f") + (esActual ? " · la que estás viendo" : ""))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-            dato("Médico", fila.medico, vacio: "—")
-            dato("Diagnóstico", fila.diagnostico, vacio: "Sin diagnóstico")
-            dato("Tratamiento", fila.tratamiento, vacio: "Sin tratamiento")
+    func makeUIView(context: Context) -> WKWebView { controlador.webView }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Lo que se le pasa a `fillEvolucion`, como en `VisorEvolucion.vue` de la web. Sin UI, para
+/// poder probarlo.
+enum DatosEvolucion {
+    static func objeto(paciente: [String: JSONValor], filas: [FilaEvolucion], actual: String?, hoy: Date = .now) -> [String: JSONValor] {
+        let combinado = DatosFicha.combinar(paciente: paciente, episodio: [:], hoy: hoy)
+        let datosPaciente: [String: JSONValor] = [
+            "nombre": combinado["nombre"] ?? .texto(""),
+            "cedula": paciente["cedula"] ?? .texto(""),
+            "edad": combinado["edad"] ?? .nulo,
+        ]
+        let lista: [JSONValor] = filas.map { fila in
+            .objeto([
+                "episode_id": .texto(fila.episodio),
+                "fecha": fila.fecha.map(JSONValor.texto) ?? .nulo,
+                "medico": fila.medico.map(JSONValor.texto) ?? .nulo,
+                "diagnostico": fila.diagnostico.map(JSONValor.texto) ?? .nulo,
+                "tratamiento": fila.tratamiento.map(JSONValor.texto) ?? .nulo,
+            ])
         }
-        .padding(.vertical, 4)
+        return [
+            "paciente": .objeto(datosPaciente),
+            "filas": .lista(lista),
+            "actual": actual.map(JSONValor.texto) ?? .nulo,
+        ]
     }
 
-    /// Sin valor, en gris e itálica: no es un error, es que no se registró.
-    private func dato(_ etiqueta: String, _ valor: String?, vacio: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(etiqueta)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 88, alignment: .leading)
-            Text(valor ?? vacio)
-                .font(.callout)
-                .italic(valor == nil)
-                .foregroundStyle(valor == nil ? .secondary : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+    static func javascript(paciente: [String: JSONValor], filas: [FilaEvolucion], actual: String?) -> String {
+        DatosFicha.javascript(objeto(paciente: paciente, filas: filas, actual: actual))
+    }
+
+    /// Una cadena de JavaScript con el texto escapado.
+    static func cadena(_ texto: String) -> String {
+        DatosFicha.javascript(["m": .texto(texto)]) + ".m"
     }
 }

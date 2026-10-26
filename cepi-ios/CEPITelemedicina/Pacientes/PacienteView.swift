@@ -17,6 +17,9 @@ struct PacienteView: View {
     @Binding var seccion: Seccion
     @State private var mostrarSecciones = false
     @State private var mostrarDerivar = false
+    @State private var mostrarEvolucion = false
+    /// La ficha que se eligió en la evolución: la sección Ficha va a esa.
+    @State private var fichaPedida: String?
 
     enum Seccion: String, CaseIterable, Identifiable {
         case chat, ficha, imagenes
@@ -77,7 +80,8 @@ struct PacienteView: View {
                     pacienteId: fila.id,
                     nombre: fila.nombre,
                     episodioActivo: modelo.episodioActivo,
-                    embebido: true
+                    embebido: true,
+                    episodioPedido: fichaPedida
                 ) { datos, episodio in
                     await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
                 }
@@ -119,6 +123,13 @@ struct PacienteView: View {
                 .presentationDetents([.medium, .large])
                 .environment(sesion)
             }
+        }
+        .sheet(isPresented: $mostrarEvolucion) {
+            EvolucionView(pacienteId: fila.id, actual: modelo.episodioActivo) { episodio in
+                fichaPedida = episodio
+                seccion = .ficha
+            }
+            .environment(sesion)
         }
         .sheet(isPresented: $mostrarSecciones) {
             SeccionesView(marcadores: modelo.marcadores) { marcador in
@@ -178,6 +189,7 @@ struct PacienteView: View {
                     Text(modelo.autoFormulario ? "Pide la siguiente sección faltante" : "Solo muestra la sección que abras")
                 }
                 .disabled(modelo.ocupado || !enLaActual)
+                Button("Evolución del paciente", systemImage: "chart.line.uptrend.xyaxis") { mostrarEvolucion = true }
             }
             Button("Derivar", systemImage: "arrowshape.turn.up.right") { mostrarDerivar = true }
                 .disabled(modelo.ocupado)

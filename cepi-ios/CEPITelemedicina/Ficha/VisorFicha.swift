@@ -57,6 +57,8 @@ struct VisorFicha: View {
     /// Como sección del paciente (PAPER §24.2.1) va sin barra propia ni botón Cerrar: eso lo
     /// pone quien la contiene. Fuera de ahí sigue abriéndose como pantalla completa.
     var embebido = false
+    /// Otra ficha que pidió abrir quien contiene el visor (la evolución del menú del paciente).
+    var episodioPedido: String? = nil
     /// Guarda lo editado (`ficha_save`); devuelve si el bot lo procesó.
     let alGuardar: ([String: JSONValor], String?) async -> Bool
 
@@ -79,6 +81,7 @@ struct VisorFicha: View {
                 .safeAreaInset(edge: .bottom) { barraEmbebida }
                 .task { await cargar() }
                 .onChange(of: episodioActivo) { _, _ in Task { await cargar() } }
+                .onChange(of: episodioPedido) { _, pedido in ir(a: pedido) }
         } else {
             NavigationStack {
                 contenido
@@ -145,12 +148,12 @@ struct VisorFicha: View {
             EvolucionView(
                 pacienteId: pacienteId,
                 actual: episodios.indices.contains(indice) ? episodios[indice].id : nil,
-            ) { fila in
-                if let destino = episodios.firstIndex(where: { $0.id == fila.episodio }) {
-                    indice = destino
-                }
-            }
+            ) { episodio in ir(a: episodio) }
         }
+    }
+
+    private func ir(a episodio: String?) {
+        if let destino = episodios.firstIndex(where: { $0.id == episodio }) { indice = destino }
     }
 
     private var barraDeConsultas: some View {
