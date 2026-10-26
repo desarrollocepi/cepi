@@ -426,6 +426,9 @@ const DEF_PATIENT = '11000000-0000-0000-0000-000000000000';
 export async function listarCasos({ q = '', codigo_cie10 = '', estado = '', desde = '', hasta = '', origen = '', deuda = '', orden = '-fecha', limit = 40, offset = 0 } = {}) {
   // El sort de la API usa el prefijo '-' para descendente, no 'campo:desc'.
   const p = new URLSearchParams({ type: 'business', entity_id: DEF_EPISODE, limit, offset, sort: orden || '-fecha' });
+  // Solo episodios de pacientes activos, como la lista de telemedicina: archivar un
+  // paciente no desactiva sus episodios, y salían en casos sin nombre.
+  p.set('filter[patient_id][active]', '1');
   if (q) p.set('q', q);
   if (codigo_cie10) p.set('filter[codigo_cie10][like]', codigo_cie10);
   if (estado) p.set('filter[estado]', estado);
