@@ -84,9 +84,15 @@ describe('api — URLs', () => {
     expect(ultima()[0]).toBe('/api/bot/galeria?limit=60&offset=60&q=L40&patient_id=p1');
   });
 
-  it('casos: solo episodios de pacientes activos, como la lista de telemedicina', async () => {
+  it('casos: todos los pacientes por defecto; el filtro acota a activos o archivados', async () => {
     await api.listarCasos();
+    expect(decodeURIComponent(ultima()[0])).not.toContain('filter[patient_id]');
+    await api.listarCasos({ pacientes: 'activos' });
     expect(decodeURIComponent(ultima()[0])).toContain('filter[patient_id][active]=1');
+    await api.listarCasos({ pacientes: 'archivados' });
+    expect(decodeURIComponent(ultima()[0])).toContain('filter[patient_id][active]=0');
+    await api.listarPacientes({ ids: ['a', 'b'] });
+    expect(ultima()[0]).toContain('active=all');
   });
 
   it('hilo del paciente y derivaciones escapan el id', async () => {

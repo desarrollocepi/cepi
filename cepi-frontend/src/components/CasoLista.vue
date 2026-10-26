@@ -37,6 +37,11 @@
         <select v-else class="cl-input" disabled title="Esta organización no importa episodios de otro sistema">
           <option>{{ capturados }}</option>
         </select>
+        <select v-model="pacientes" class="cl-input" title="Pacientes">
+          <option value="">Todos los pacientes</option>
+          <option value="activos">Pacientes activos</option>
+          <option value="archivados">Pacientes archivados</option>
+        </select>
         <button class="cl-btn" :disabled="cargando" @click="buscar()">Buscar</button>
       </div>
     </header>
@@ -58,6 +63,7 @@
         <div class="cl-item-top">
           <span class="cl-fecha">{{ fecha(c.fecha) }}</span>
           <span v-if="c.drpro_cita_id" class="cl-tag cl-tag--drpro">DrPro</span>
+          <span v-if="archivados[c.patient_id]" class="cl-tag cl-tag--archivado" title="El paciente está archivado: el episodio queda como histórico">archivado</span>
           <span class="cl-tag">{{ c.estado }}</span>
           <span
             v-if="c.ficha_completitud !== null && c.ficha_completitud !== undefined"
@@ -102,8 +108,8 @@ const PAGINA = 40;
 const capturados = computed(() => (props.orgName ? `Capturados en ${props.orgName}` : 'Capturados aquí'));
 const q = ref(''); const cie10 = ref(''); const estado = ref('');
 const desde = ref(''); const hasta = ref(''); const origen = ref('');
-const deuda = ref(''); const orden = ref('-fecha');
-const casos = ref([]); const nombres = ref({});
+const deuda = ref(''); const pacientes = ref(''); const orden = ref('-fecha');
+const casos = ref([]); const nombres = ref({}); const archivados = ref({});
 const cargando = ref(false); const error = ref(''); const hayMas = ref(false);
 
 const fecha = (f) => (f ? String(f).slice(0, 10) : '—');
@@ -134,7 +140,7 @@ async function buscar(masResultados = false) {
     const r = await listarCasos({
       q: q.value, codigo_cie10: cie10.value, estado: estado.value,
       desde: desde.value, hasta: hasta.value, origen: origen.value,
-      deuda: deuda.value, orden: orden.value,
+      deuda: deuda.value, pacientes: pacientes.value, orden: orden.value,
       limit: PAGINA, offset,
     });
     const filas = r.data || [];
@@ -160,6 +166,7 @@ async function cargarNombres(filas) {
     const r = await listarPacientes({ ids: faltan });
     for (const p of r.data || []) {
       nombres.value[p.id] = [p.nombre, p.apellidos].filter(Boolean).join(' ').trim() || p.cedula || '—';
+      if (p.active === false) archivados.value[p.id] = true;
     }
   } catch { /* la lista sirve igual sin los nombres */ }
 }
@@ -188,6 +195,7 @@ defineExpose({ buscar });
 .cl-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 .cl-fecha { font-size: 12px; color: #64748b; }
 .cl-tag { padding: 1px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: #475569; background: #f1f5f9; border-radius: 999px; }
+.cl-tag--archivado { color: #475569; background: #e2e8f0; }
 .cl-tag--drpro { color: #7c2d12; background: #ffedd5; }
 .cl-paciente { font-size: 14px; font-weight: 600; color: #0f172a; }
 .cl-dx { font-size: 13px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

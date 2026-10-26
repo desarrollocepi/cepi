@@ -423,12 +423,13 @@ const DEF_PATIENT = '11000000-0000-0000-0000-000000000000';
  * `origen` distingue lo espejado de DrPro de lo capturado en CEPI: el espejo deja
  * `drpro_cita_id`, así que su presencia (o ausencia) es el filtro (PAPER §22.3).
  */
-export async function listarCasos({ q = '', codigo_cie10 = '', estado = '', desde = '', hasta = '', origen = '', deuda = '', orden = '-fecha', limit = 40, offset = 0 } = {}) {
+export async function listarCasos({ q = '', codigo_cie10 = '', estado = '', desde = '', hasta = '', origen = '', deuda = '', pacientes = '', orden = '-fecha', limit = 40, offset = 0 } = {}) {
   // El sort de la API usa el prefijo '-' para descendente, no 'campo:desc'.
   const p = new URLSearchParams({ type: 'business', entity_id: DEF_EPISODE, limit, offset, sort: orden || '-fecha' });
-  // Solo episodios de pacientes activos, como la lista de telemedicina: archivar un
-  // paciente no desactiva sus episodios, y salían en casos sin nombre.
-  p.set('filter[patient_id][active]', '1');
+  // Archivar un paciente no desactiva sus episodios: son histórico y salen por defecto.
+  // `pacientes` acota a los de pacientes activos o a los de archivados.
+  if (pacientes === 'activos') p.set('filter[patient_id][active]', '1');
+  if (pacientes === 'archivados') p.set('filter[patient_id][active]', '0');
   if (q) p.set('q', q);
   if (codigo_cie10) p.set('filter[codigo_cie10][like]', codigo_cie10);
   if (estado) p.set('filter[estado]', estado);
@@ -445,7 +446,8 @@ export async function listarCasos({ q = '', codigo_cie10 = '', estado = '', desd
 /** Pacientes por id, en lote — para resolver los nombres de una lista de casos. */
 export async function listarPacientes({ ids = [] } = {}) {
   if (!ids.length) return { data: [] };
-  const p = new URLSearchParams({ type: 'business', entity_id: DEF_PATIENT, ids: ids.join(','), limit: String(ids.length) });
+  // `active=all`: los episodios de un paciente archivado también se listan y llevan su nombre.
+  const p = new URLSearchParams({ type: 'business', entity_id: DEF_PATIENT, ids: ids.join(','), active: 'all', limit: String(ids.length) });
   return call(`/api/entities?${p.toString()}`);
 }
 

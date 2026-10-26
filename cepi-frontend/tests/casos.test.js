@@ -33,11 +33,25 @@ describe('CasoLista', () => {
 
   it('busca al abrir, con los filtros por defecto, y resuelve los nombres en un solo lote', async () => {
     const w = await montar();
-    expect(api.listarCasos).toHaveBeenCalledWith({ q: '', codigo_cie10: '', estado: '', desde: '', hasta: '', origen: '', deuda: '', orden: '-fecha', limit: 40, offset: 0 });
+    expect(api.listarCasos).toHaveBeenCalledWith({ q: '', codigo_cie10: '', estado: '', desde: '', hasta: '', origen: '', deuda: '', pacientes: '', orden: '-fecha', limit: 40, offset: 0 });
     expect(api.listarPacientes).toHaveBeenCalledTimes(1);
     expect(api.listarPacientes).toHaveBeenCalledWith({ ids: ['p1', 'p2', 'p3', 'p4'] });
     expect(w.findAll('.cl-paciente').map((p) => p.text())).toEqual(['Ana Pérez', '0202', '—', '—']);
     expect(w.find('.cl-cuenta').text()).toBe('4 episodios');
+  });
+
+  it('los episodios de pacientes archivados salen por defecto, marcados, y el filtro los acota', async () => {
+    api.listarPacientes.mockResolvedValue({ data: [{ id: 'p1', nombre: 'Ana', apellidos: 'Pérez', active: true }, { id: 'p2', nombre: 'Beto', active: false }] });
+    const w = await montar();
+    expect(w.findAll('.cl-paciente').map((p) => p.text()).slice(0, 2)).toEqual(['Ana Pérez', 'Beto']);
+    const tags = w.findAll('.cl-item').map((i) => i.find('.cl-tag--archivado').exists());
+    expect(tags.slice(0, 2)).toEqual([false, true]);
+    const sel = w.findAll('select').find((s) => s.text().includes('Pacientes archivados'));
+    expect(sel.element.value).toBe('');
+    await sel.setValue('archivados');
+    await w.find('.cl-btn').trigger('click');
+    await flushPromises();
+    expect(api.listarCasos).toHaveBeenLastCalledWith(expect.objectContaining({ pacientes: 'archivados', offset: 0 }));
   });
 
   it('el origen solo ofrece lo que tiene la org activa', async () => {
