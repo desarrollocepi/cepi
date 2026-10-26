@@ -27,15 +27,17 @@
           v-for="n in items"
           :key="n.id"
           class="notif-item"
-          :class="['st-' + n.status, { done: n.status === 'done', clickable: !!n.entity_id }]"
-          :role="n.entity_id ? 'button' : null"
-          :title="n.entity_id ? 'Abrir el chat del paciente' : ''"
+          :class="['st-' + n.status, { done: n.status === 'done', clickable: canOpen(n) }]"
+          :role="canOpen(n) ? 'button' : null"
+          :title="canOpen(n) ? 'Abrir el chat del paciente' : (n.patient_reason ? goneText(n.patient_reason) : '')"
           @click="openReminder(n)"
         >
           <div class="ni-top">
             <span class="ni-title">{{ n.patient_name || n.title }}</span>
             <span class="ni-status" :title="'estado: ' + n.status">{{ statusLabel(n.status) }}</span>
           </div>
+          <!-- El paciente ya no se puede abrir: se dice en la propia notificación, no al tocarla. -->
+          <p v-if="n.patient_reason" class="ni-gone">🗑️ {{ goneText(n.patient_reason) }}</p>
           <p v-if="n.created_by_name" class="ni-sub">↪️ Derivó: {{ n.created_by_name }}</p>
           <p v-if="n.message" class="ni-msg">{{ n.message }}</p>
           <div class="ni-foot">
@@ -99,12 +101,13 @@ async function load() {
     const uniq = [...new Set(items.value.map(n => n.entity_id).filter(Boolean))];
     const map = {};
     await Promise.all(uniq.map(async eid => {
-      try { const rr = await resolveReminderPatient(eid); if (rr?.patient_id) map[eid] = rr; } catch { /* ignore */ }
+      try { const rr = await resolveReminderPatient(eid); if (rr?.patient_id || rr?.reason) map[eid] = rr; } catch { /* ignore */ }
     }));
     items.value = items.value.map(n => ({
       ...n,
       patient_id: n.entity_id ? (map[n.entity_id]?.patient_id || null) : null,
       patient_name: n.entity_id ? (map[n.entity_id]?.patient_name || null) : null,
+      patient_reason: n.entity_id && !map[n.entity_id]?.patient_id ? (map[n.entity_id]?.reason || null) : null,
     }));
   } catch (e) {
     error.value = e.message || String(e);
@@ -120,8 +123,16 @@ function toggle() {
 
 // Click en una notificación → abre el chat del paciente que la origina.
 // Resuelve la entidad del recordatorio (episodio → paciente) en el backend.
+// Sin paciente que abrir (borrado o fuera de alcance) la notificación no es un enlace.
+const canOpen = (n) => !!n.entity_id && !n.patient_reason;
+function goneText(reason) {
+  return reason === 'deleted'
+    ? 'El paciente de esta notificación fue borrado'
+    : 'El paciente de esta notificación ya no está disponible';
+}
+
 async function openReminder(n) {
-  if (!n.entity_id || n._opening) return;
+  if (!canOpen(n) || n._opening) return;
   // Usa el paciente ya resuelto en load(); si no, lo resuelve al vuelo.
   if (n.patient_id) {
     open.value = false;
@@ -134,6 +145,8 @@ async function openReminder(n) {
     if (r?.patient_id) {
       open.value = false;
       emit('open', { id: r.patient_id, name: r.patient_name || n.title || 'Paciente' });
+    } else if (r?.reason) {
+      n.patient_reason = r.reason;
     } else {
       error.value = 'No se encontró el paciente de esta notificación.';
     }
@@ -227,6 +240,7 @@ defineExpose({ refresh: load });
 .st-pending .ni-status { background: #fef9c3; color: #854d0e; border-color: #fde047; }
 .st-sent .ni-status { background: #dcfce7; color: #166534; border-color: #86efac; }
 .st-failed .ni-status { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.ni-gone { margin: 3px 0 0; font-size: 0.78rem; color: #b91c1c; font-weight: 600; }
 .ni-sub { margin: 3px 0 0; font-size: 0.78rem; color: var(--accent); font-weight: 600; }
 .ni-msg { margin: 4px 0 0; font-size: 0.82rem; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
 .ni-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }

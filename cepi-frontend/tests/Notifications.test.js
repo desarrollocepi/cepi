@@ -76,6 +76,33 @@ describe('Notifications', () => {
     expect(w.emitted('open')).toHaveLength(1);
   });
 
+  it('si el paciente se borró lo dice en la propia notificación, que deja de ser un enlace', async () => {
+    api.resolveReminderPatient.mockImplementation(async (eid) => (eid === 'ep-2'
+      ? { patient_id: null, patient_name: null, reason: 'deleted' }
+      : { patient_id: 'pac-' + eid, patient_name: 'Paciente ' + eid }));
+    const w = await montar();
+    await abrir(w);
+    const borrada = w.findAll('.notif-item')[1];
+    expect(borrada.find('.ni-gone').text()).toContain('fue borrado');
+    expect(borrada.classes()).not.toContain('clickable');
+    await borrada.trigger('click');
+    await flushPromises();
+    expect(w.emitted('open')).toBeUndefined();
+    expect(w.find('.notif-error').exists()).toBe(false);
+    expect(borrada.find('.ni-done').exists()).toBe(true);   // se puede marcar como visto igual
+  });
+
+  it('al tocarla, si el backend dice por qué no hay paciente, queda escrito en la notificación', async () => {
+    api.resolveReminderPatient.mockResolvedValue({});
+    const w = await montar();
+    await abrir(w);
+    api.resolveReminderPatient.mockResolvedValueOnce({ patient_id: null, reason: 'unavailable' });
+    await w.findAll('.notif-item')[1].trigger('click');
+    await flushPromises();
+    expect(w.findAll('.notif-item')[1].find('.ni-gone').text()).toContain('ya no está disponible');
+    expect(w.find('.notif-error').exists()).toBe(false);
+  });
+
   it('"Visto" lo marca sin abrir el paciente y baja el contador', async () => {
     api.completeReminder.mockResolvedValue({});
     const w = await montar();
