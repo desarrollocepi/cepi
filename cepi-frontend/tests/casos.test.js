@@ -40,10 +40,16 @@ describe('CasoLista', () => {
     expect(w.find('.cl-cuenta').text()).toBe('4 episodios');
   });
 
-  it('el origen propio lleva el nombre de la org activa', async () => {
-    const opciones = (w) => w.findAll('option').map((o) => o.text()).filter((t) => /Capturados|DrPro/.test(t));
-    expect(opciones(await montar({ orgName: 'CEPI Telemedicina' }))).toEqual(['Importados de DrPro', 'Capturados en CEPI Telemedicina']);
-    expect(opciones(await montar())).toEqual(['Importados de DrPro', 'Capturados aquí']);
+  it('el origen solo ofrece lo que tiene la org activa', async () => {
+    const opciones = (w) => w.findAll('option').map((o) => o.text()).filter((t) => /Capturados|DrPro|origen/.test(t));
+    const consultorio = await montar({ orgName: 'Consultorio', hasDrpro: true });
+    expect(opciones(consultorio)).toEqual(['Todo origen', 'Importados de DrPro', 'Capturados en Consultorio']);
+    // Sin el espejo de DrPro hay un solo origen: a la vista, deshabilitado.
+    const tele = await montar({ orgName: 'CEPI Telemedicina' });
+    expect(opciones(tele)).toEqual(['Capturados en CEPI Telemedicina']);
+    const sel = tele.findAll('select').find((s) => s.text().includes('Capturados'));
+    expect(sel.element.disabled).toBe(true);
+    expect(sel.attributes('title')).toContain('no importa');
   });
 
   it('cada fila resume el caso: diagnóstico, si no el motivo, si no el tipo de cita', async () => {
@@ -143,7 +149,7 @@ describe('PacienteLista', () => {
   });
 
   it('elegir emite el paciente; buscar con Enter o con el botón reinicia', async () => {
-    const w = await montar({ activeId: 'p2' });
+    const w = await montar({ activeId: 'p2', hasDrpro: true });
     vi.useRealTimers();
     expect(w.findAll('.pl-item')[1].classes()).toContain('pl-item--sel');
     await w.findAll('.pl-item')[0].trigger('click');
@@ -158,6 +164,13 @@ describe('PacienteLista', () => {
     expect(api.listarPacientesBusqueda).toHaveBeenLastCalledWith({ q: 'ana', origen: 'drpro', limit: 40, offset: 0 });
   });
 
+  it('sin el espejo de DrPro el origen es uno solo, deshabilitado', async () => {
+    const w = await montar({ orgName: 'CEPI Telemedicina' });
+    const sel = w.find('select');
+    expect(sel.element.disabled).toBe(true);
+    expect(sel.findAll('option').map((o) => o.text())).toEqual(['Capturados en CEPI Telemedicina']);
+  });
+
   it('vacío y error', async () => {
     api.listarPacientesBusqueda.mockResolvedValue({ data: [] });
     expect((await montar()).find('.pl-estado').text()).toBe('Ningún paciente con esos criterios.');
@@ -169,8 +182,8 @@ describe('PacienteLista', () => {
 
 describe('CasosShell', () => {
   const doble = (name, props, emits = []) => defineComponent({ name, props, emits, render: () => h('div', { class: name }) });
-  const CasoListaD = doble('CasoLista', ['activeId'], ['select']);
-  const PacienteListaD = doble('PacienteLista', ['activeId'], ['select']);
+  const CasoListaD = doble('CasoLista', ['activeId', 'orgName', 'hasDrpro'], ['select']);
+  const PacienteListaD = doble('PacienteLista', ['activeId', 'orgName', 'hasDrpro'], ['select']);
   const FichaD = doble('FichaCompleta', ['episodeId', 'patientId', 'visitas', 'cargandoVisitas'], ['navegar']);
   const VisorD = doble('VisorFormato', ['src', 'titulo', 'episodeId', 'patientId', 'visitas'], ['guardado']);
   const EvoD = doble('VisorEvolucion', ['patientId', 'episodeId', 'incrustado'], ['abrir']);
@@ -179,7 +192,7 @@ describe('CasosShell', () => {
     { id: 'e1', patient_id: 'p1', fecha: '2026-09-01T00:00:00Z', estado: 'cerrado', motivo_consulta: 'mancha' },
   ];
   let recargas;
-  async function montar(ruta = '/casos') {
+  async function montar(ruta = '/casos', user = {}) {
     const vacio = { render: () => null };
     const router = createRouter({ history: createMemoryHistory(), routes: [
       { path: '/casos', name: 'casos', component: vacio },
@@ -187,7 +200,7 @@ describe('CasosShell', () => {
       { path: '/casos/paciente/:patientId', name: 'paciente', component: vacio },
     ] });
     await router.push(ruta);
-    const w = mount(CasosShell, { props: { user: {} }, global: { plugins: [router], stubs: { CasoLista: CasoListaD, PacienteLista: PacienteListaD, FichaCompleta: FichaD, VisorFormato: VisorD, VisorEvolucion: EvoD } } });
+    const w = mount(CasosShell, { props: { user }, global: { plugins: [router], stubs: { CasoLista: CasoListaD, PacienteLista: PacienteListaD, FichaCompleta: FichaD, VisorFormato: VisorD, VisorEvolucion: EvoD } } });
     await flushPromises();
     return { w, router };
   }
@@ -295,6 +308,14 @@ describe('CasosShell', () => {
     expect(w.findComponent(VisorD).props('episodeId')).toBe('e1');
     expect(localStorage.getItem('cepi.casos.formato')).toBe('msp002');
     expect((await montar('/casos/caso/e2')).w.findComponent(VisorD).props('src')).toBe('/msp-002.html');
+  });
+
+  it('las listas reciben la org activa y si tiene el espejo de DrPro', async () => {
+    const orgs = [{ id: 'o1', name: 'CEPI Telemedicina', features: [] }, { id: 'o2', name: 'Consultorio', features: ['drpro'] }];
+    const { w } = await montar('/casos', { org_id: 'o1', orgs });
+    expect(w.findComponent(CasoListaD).props()).toMatchObject({ orgName: 'CEPI Telemedicina', hasDrpro: false });
+    const { w: w2 } = await montar('/casos', { org_id: 'o2', orgs });
+    expect(w2.findComponent(PacienteListaD).props()).toMatchObject({ orgName: 'Consultorio', hasDrpro: true });
   });
 
   it('Evolución es un formato del paciente: incrusta la ficha de evolución y su fila abre el caso', async () => {

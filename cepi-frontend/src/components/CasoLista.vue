@@ -27,10 +27,15 @@
         </select>
       </div>
       <div class="cl-fila">
-        <select v-model="origen" class="cl-input">
+        <!-- Solo los orígenes que tiene la org activa. Sin espejo de DrPro hay uno solo:
+             el selector queda a la vista, deshabilitado, diciendo cuál es. -->
+        <select v-if="hasDrpro" v-model="origen" class="cl-input">
           <option value="">Todo origen</option>
           <option value="drpro">Importados de DrPro</option>
-          <option value="cepi">{{ orgName ? `Capturados en ${orgName}` : 'Capturados aquí' }}</option>
+          <option value="cepi">{{ capturados }}</option>
+        </select>
+        <select v-else class="cl-input" disabled title="Esta organización no importa episodios de otro sistema">
+          <option>{{ capturados }}</option>
         </select>
         <button class="cl-btn" :disabled="cargando" @click="buscar()">Buscar</button>
       </div>
@@ -79,19 +84,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { listarCasos, listarPacientes } from '../api.js';
 
-defineProps({
+const props = defineProps({
   activeId: { type: String, default: null },
   /** La org activa: los episodios que no vienen de DrPro se capturaron en ella. */
   orgName: { type: String, default: '' },
+  /** La org activa tiene el espejo de DrPro (feature `drpro`). */
+  hasDrpro: { type: Boolean, default: false },
 });
 defineEmits(['select']);
 
 const ESTADOS = ['agendado', 'en_curso', 'cerrado', 'enviada', 'en_triage', 'respondida', 'derivada'];
 const PAGINA = 40;
 
+const capturados = computed(() => (props.orgName ? `Capturados en ${props.orgName}` : 'Capturados aquí'));
 const q = ref(''); const cie10 = ref(''); const estado = ref('');
 const desde = ref(''); const hasta = ref(''); const origen = ref('');
 const deuda = ref(''); const orden = ref('-fecha');

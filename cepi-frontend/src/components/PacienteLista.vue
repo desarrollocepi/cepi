@@ -4,10 +4,14 @@
       <input v-model.trim="q" class="pl-input" type="search"
              placeholder="Nombre, cédula, ciudad…" @keyup.enter="buscar()" />
       <div class="pl-fila">
-        <select v-model="origen" class="pl-input">
+        <!-- Solo los orígenes que tiene la org activa (como en CasoLista). -->
+        <select v-if="hasDrpro" v-model="origen" class="pl-input">
           <option value="">Todo origen</option>
           <option value="drpro">Importados de DrPro</option>
-          <option value="cepi">Capturados en CEPI</option>
+          <option value="cepi">{{ capturados }}</option>
+        </select>
+        <select v-else class="pl-input" disabled title="Esta organización no importa pacientes de otro sistema">
+          <option>{{ capturados }}</option>
         </select>
         <button class="pl-btn" :disabled="cargando" @click="buscar()">Buscar</button>
       </div>
@@ -44,14 +48,21 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { listarPacientesBusqueda } from '../api.js';
 import { edadDesde } from '../edad.js';
 
-defineProps({ activeId: { type: String, default: null } });
+const props = defineProps({
+  activeId: { type: String, default: null },
+  /** La org activa: los pacientes que no vienen de DrPro se registraron en ella. */
+  orgName: { type: String, default: '' },
+  /** La org activa tiene el espejo de DrPro (feature `drpro`). */
+  hasDrpro: { type: Boolean, default: false },
+});
 defineEmits(['select']);
 
 const PAGINA = 40;
+const capturados = computed(() => (props.orgName ? `Capturados en ${props.orgName}` : 'Capturados aquí'));
 const q = ref(''); const origen = ref('');
 const pacientes = ref([]); const cargando = ref(false); const error = ref(''); const hayMas = ref(false);
 

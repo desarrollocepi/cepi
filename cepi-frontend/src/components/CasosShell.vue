@@ -12,9 +12,11 @@
       </nav>
 
       <CasoLista v-show="tab === 'casos'" class="cshell-lista"
-                 :active-id="sel.episodeId" :org-name="activeOrgName" @select="(c) => irACaso(c.episodeId)" />
+                 :active-id="sel.episodeId" :org-name="activeOrg?.name || ''"
+                 :has-drpro="(activeOrg?.features || []).includes('drpro')" @select="(c) => irACaso(c.episodeId)" />
       <PacienteLista v-show="tab === 'pacientes'" class="cshell-lista"
-                     :active-id="sel.patientId" @select="(p) => irAPaciente(p.patientId)" />
+:active-id="sel.patientId" :org-name="activeOrg?.name || ''"
+                     :has-drpro="(activeOrg?.features || []).includes('drpro')" @select="(p) => irAPaciente(p.patientId)" />
     </div>
 
     <div class="cshell-detalle">
@@ -188,9 +190,10 @@ const FORMATOS = [
  * por un estado sin episodio, y ese parpadeo bastaba para perder el formato. No
  * hace falta: los formatos que exigen episodio ya se deshabilitan solos.
  */
-// Nombre de la org activa: el filtro de origen dice dónde se capturó cada episodio.
-const activeOrgName = computed(() =>
-  (props.user?.orgs || []).find(o => o.id === props.user?.org_id)?.name || '');
+// La org activa: el filtro de origen dice dónde se capturó cada episodio, y DrPro
+// solo es un origen en las orgs con el espejo (feature `drpro`).
+const activeOrg = computed(() =>
+  (props.user?.orgs || []).find(o => o.id === props.user?.org_id) || null);
 
 const CLAVE_FORMATO = 'cepi.casos.formato';
 const formato = ref('grupos');
