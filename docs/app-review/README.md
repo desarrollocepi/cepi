@@ -59,6 +59,10 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
        "WHAT IS NEW IN 1.1" y la distribución no listada ya aprobada.
 8. [x] **1.1 (12) aprobada y publicada el 2026-10-22** a las 16:00 (hora de Ecuador), sola
        por el release automático. `itunes.apple.com/lookup?id=6812936715` ya da la 1.1.
+9. [x] **1.2 (13) enviada a revisión el 2026-10-26** (21:24): la ficha de evolución abre el
+       documento `evolucion.html`, igual que la web, desde la ficha y desde el menú del paciente.
+       Release automático al aprobarse. Antes pasó la prueba de humo `HumoProduccionUITests`
+       contra producción con la cuenta demo.
 6. [ ] Repartir el enlace a los médicos. Cada cuenta nueva sigue entrando como `pendiente`
        hasta que un admin la aprueba.
 
@@ -101,6 +105,10 @@ detalle de cada rechazo está en su propio archivo de esta carpeta.
       `https://play.google.com/store/apps/details?id=ec.cepi.telemedicina` responde 200.
 - [x] 2026-10-22 — El botón de Play en `cepi-frontend/src/components/AvisoAcceso.vue` apunta a
       la ficha pública; la nota de la lista de testers se quitó.
+
+- [x] 2026-10-26 — **Versión 8 (2.4.0)** en la prueba interna (18:43) y, tras la prueba de humo
+      con la cuenta demo en el emulador, **enviada a revisión de producción** (20:52). Misma
+      función que iOS 1.2: la evolución como documento. Se publica sola al aprobarse.
 
 ## Paridad de versiones
 
