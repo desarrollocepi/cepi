@@ -29,6 +29,7 @@ async function montar({ ruta = '/chat', token = 'tok' } = {}) {
     { path: '/casos/caso/:episodeId', name: 'caso', component: Pantalla, meta: { marca: 'Casos' } },
     { path: '/galeria', name: 'galeria', component: Pantalla, meta: { marca: 'Galería' } },
     { path: '/perfil', name: 'perfil', component: Pantalla, meta: { marca: 'Mi perfil' } },
+    { path: '/calificar', name: 'calificar', component: Pantalla, meta: { public: true } },
   ] });
   await router.push(ruta);
   const w = mount(App, { global: { plugins: [router], stubs: { Login, Register, VerifyEmail, PendingApproval, Notifications } } });
@@ -48,6 +49,14 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('App — sesión', () => {
+  it('una página pública (calificar por QR) se ve sin sesión, sin ingreso ni barra', async () => {
+    const { w } = await montar({ ruta: '/calificar', token: null });
+    expect(w.findComponent(Pantalla).exists()).toBe(true);
+    expect(w.findComponent(Login).exists()).toBe(false);
+    expect(w.find('.topbar').exists()).toBe(false);
+  });
+
+
   it('sin token muestra el ingreso y no consulta al servidor', async () => {
     const { w } = await montar({ token: null });
     expect(w.findComponent(Login).exists()).toBe(true);

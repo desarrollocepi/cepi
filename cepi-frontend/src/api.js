@@ -513,3 +513,13 @@ export async function obtenerEntidad(id) {
   const r = await call(`/api/entities/${id}`);
   return r?.data || r;
 }
+
+// Calificación de la atención por QR (PAPER §29). Pública: el paciente no tiene sesión.
+// La respuesta es solo un estado (can_rate, rated, expired, no_episode, already_rated), nada
+// del paciente.
+export async function lookupCareRating(cedula) {
+  return call('/api/care-rating/lookup', { method: 'POST', body: JSON.stringify({ cedula }) });
+}
+export async function rateCare(cedula, score) {
+  return call('/api/care-rating', { method: 'POST', body: JSON.stringify({ cedula, score }) });
+}

@@ -1,6 +1,9 @@
 <template>
   <div class="app">
-    <PendingApproval v-if="authed && isPending" @logout="onLogout" />
+    <!-- Páginas públicas (la calificación por QR, PAPER §29): sin login ni barra, con
+         sesión o sin ella. -->
+    <RouterView v-if="route.meta?.public" />
+    <PendingApproval v-else-if="authed && isPending" @logout="onLogout" />
     <template v-else>
     <header ref="topbarEl" class="topbar" :class="{ compact: topCompact }">
       <div class="header-left">

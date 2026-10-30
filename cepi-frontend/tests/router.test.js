@@ -4,6 +4,13 @@ import { router, inicioSegunHost } from '../src/router.js';
 const resolver = (ruta) => router.resolve(ruta);
 
 describe('router', () => {
+  it('calificar es pública: la abre el QR sin sesión', () => {
+    const r = resolver('/calificar');
+    expect(r.name).toBe('calificar');
+    expect(r.meta.public).toBe(true);
+  });
+
+
   it('el paciente abierto va en la URL, con la sección salvo Chat', () => {
     expect(resolver('/chat').name).toBe('chat');
     const r = resolver('/chat/abc-123');

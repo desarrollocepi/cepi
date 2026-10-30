@@ -1366,6 +1366,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-26** | Identidades de chat | Quien escribe por WhatsApp/Telegram es una **cuenta hijo**: fila de `users` que **no inicia sesión** y cuelga de una cuenta padre por `parent_user_id`. Vincular es apuntar, no fusionar — se descartó el merge destructivo al medir las **34 FKs** que apuntan a `users(id)` (reescribir `created_by` de la historia clínica, sin vuelta atrás). Un desconocido que escribe crea una identidad sin padre en rol `pendiente`, sin acceso clínico. El token de chat pasa a llevar `org_id` y el bot queda acotado a una organización, con cuenta de servicio propia y permiso granular `auth:external:resolve` en vez del comodín. Ver §27. |
 | **D-Aux-27** | Roles por organización | El rol clínico vive en la membresía (`user_organizations.role_id`, NULL = hereda el general): la misma persona puede tener roles distintos en cada org, y cada org acota cuáles ofrece (`organizations.data.roles`). Los roles de **sistema** (`roles.global_scope`: superadmin, gestión de orgs, cuentas de servicio) no pertenecen a ninguna org: viven en `users.role_id`, se suman en todas y no se asignan por org. Ver §13.8. |
 | **D-Aux-28** | Ficha de evolución | Cada paciente tiene una ficha de evolución: una fila por ficha (episodio) con **fecha, médico, diagnóstico y tratamiento**, la más nueva primero. Se consulta desde cualquier ficha, plegada encima de la barra de episodios, y tocar una fila abre esa ficha. No es una entidad nueva: se arma al leer los episodios. La sirve TodoERP (`GET /api/patient-evolution`) porque el nombre del médico no se puede resolver en el cliente. Ver §28. |
+| **D-Aux-29** | Calificación de la atención por QR | Un QR impreso en la clínica, el mismo para todos, abre `#/calificar` en el teléfono del paciente. Sin sesión: escribe su cédula y califica de 1 a 5. Vale si tiene un episodio creado en las últimas 24 horas y no calificó ninguno de ellos; una atención más vieja dice «caducado». La nota vive en `record_ratings` (genérica, una por registro). Ver §29. |
 
 ---
 
@@ -2981,3 +2982,54 @@ fichas dice "todavía no tiene fichas registradas".
 2. Levantar TodoERP local con Postgres + `pgcrypto` + `pgvector`.
 3. Crear rama `feat/medical-assistant`.
 4. Empezar Fase 1 (capacidades genéricas: alertas + vector + break-glass + revisión).
+
+---
+## 29. Calificación de la atención por QR (D-Aux-29)
+
+**Pedido del cliente (2026-10-29).** El paciente califica la atención que recibió. En la
+clínica hay un QR impreso, el mismo para todos, que abre la web en su teléfono; por eso pide
+la cédula: el QR no sabe quién lo escanea.
+
+### 29.1 Reglas
+
+1. El paciente tiene un episodio creado en las últimas 24 horas. Cuenta `created_at` de la
+   ficha: ni su `fecha` ni la última modificación. Una cita `agendado` del espejo no es una
+   atención.
+2. No calificó ninguno de esos episodios. Si hay dos en la ventana, se califica una vez.
+3. La nota va de 1 a 5.
+
+| estado | qué ve el paciente |
+|---|---|
+| `can_rate` | cinco estrellas |
+| `rated` | «¡Gracias por tu calificación!» |
+| `already_rated` | «Ya calificaste tu atención» |
+| `expired` | «Caducado»: tiene atenciones, ninguna en la ventana. No se explica el plazo. |
+| `no_episode` | «No encontramos tu atención» |
+
+### 29.2 Contrato
+
+`POST /api/care-rating/lookup {cedula}` y `POST /api/care-rating {cedula, score}`, en
+TodoERP (`careRatingRouter.ts`), públicos. Responden `{ok, status}` y nada más: ni nombre,
+ni médico, ni id del episodio. Calificar vuelve a buscar el episodio y a validar las reglas.
+
+- Sin sesión no hay org activa: se busca en todas las orgs menos las sandbox (D-Aux-21).
+  La nota lleva la org del episodio.
+- La cédula se compara solo por dígitos, como la `natural_key` del paciente.
+- Límite de 60 pedidos cada 15 minutos por IP. Lo que la página revela es si una cédula
+  tuvo una atención; el límite acota cuánto se puede tantear. Es el costo de que el QR sea
+  uno solo y no haya sesión.
+
+### 29.3 Dónde vive la nota
+
+`record_ratings` (migración 028), genérica: `entity_def_id`, `record_id` UNIQUE, `score`
+1-5, `org_id`, `created_by` (NULL por QR). El UNIQUE impide dos notas por episodio; un lock
+por cédula en la transacción impide dos por paciente cuando llegan a la vez. No se guarda en
+el episodio: la ficha se edita y se espeja, y una nota no tiene por qué viajar con ella.
+
+### 29.4 Pendiente
+
+- Reporte de las notas (promedio por médico, por org, por mes). Hoy se consultan por SQL.
+- Fichas del espejo DrPro que nacen como cita `agendado` (§21.4): su `created_at` es el de
+  la cita, que puede ser días antes de la consulta, y al pasar a `Terminada` salen como
+  «caducado». Falta decidir desde cuándo corre el plazo para ellas.
+
