@@ -23,6 +23,7 @@ const IntakeChat = defineComponent({
 });
 const ChatList = defineComponent({ name: 'ChatList', props: ['activeId', 'user', 'generalActive'], emits: ['select', 'general'], render: () => h('div', { class: 'lista-doble' }) });
 const FichaCompleta = defineComponent({ name: 'FichaCompleta', props: ['patientId', 'episodeId', 'visitas', 'cargandoVisitas'], emits: ['navegar'], render: () => h('div', { class: 'ficha-doble' }) });
+const EvolucionPaciente = defineComponent({ name: 'EvolucionPaciente', props: ['patientId', 'episodeId', 'plegable'], emits: ['navegar'], render: () => h('div', { class: 'evolucion-doble' }) });
 const RejillaImagenes = defineComponent({ name: 'RejillaImagenes', props: ['patientId', 'mostrarPaciente', 'vacio'], render: () => h('div', { class: 'rejilla-doble' }) });
 
 let movil = false;
@@ -31,14 +32,14 @@ async function montar(ruta = '/chat') {
     history: createMemoryHistory(),
     routes: [
       { path: '/chat', name: 'chat', component: { render: () => null } },
-      { path: '/chat/:patientId/:seccion(ficha|imagenes)?', name: 'chat-paciente', component: { render: () => null } },
+      { path: '/chat/:patientId/:seccion(ficha|evolucion|imagenes)?', name: 'chat-paciente', component: { render: () => null } },
       { path: '/perfil', name: 'perfil', component: { render: () => null } },
     ],
   });
   await router.push(ruta);
   const w = mount(ChatShell, {
     props: { user: { id: 'yo' } },
-    global: { plugins: [router], stubs: { ChatList, IntakeChat, FichaCompleta, RejillaImagenes } },
+    global: { plugins: [router], stubs: { ChatList, IntakeChat, FichaCompleta, EvolucionPaciente, RejillaImagenes } },
   });
   await flushPromises();
   return { w, router };
@@ -164,6 +165,25 @@ describe('ChatShell — secciones del paciente', () => {
     expect(router.currentRoute.value.fullPath).toBe('/chat/p1');
     router.back(); await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe('/chat');
+  });
+
+  it('Evolución es la tercera pestaña y va abierta, no plegada', async () => {
+    const { w, router } = await montar('/chat/p1');
+    const textos = w.findAll('.shell-secciones button').map((b) => b.text());
+    expect(textos.map((t) => t.replace(/^\S+\s/, ''))).toEqual(['Chat', 'Ficha', 'Evolución', 'Imágenes']);
+    await pestana(w, 'Evolución').trigger('click'); await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/chat/p1/evolucion');
+    const evo = w.findComponent(EvolucionPaciente);
+    expect(evo.props('patientId')).toBe('p1');
+    expect(evo.props('plegable')).toBe(false);
+  });
+
+  it('tocar una fila de la evolución abre esa ficha en la pestaña Ficha', async () => {
+    const { w, router } = await montar('/chat/p9/evolucion');
+    w.findComponent(EvolucionPaciente).vm.$emit('navegar', 'ep1');
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/chat/p9/ficha');
+    expect(w.findComponent(FichaCompleta).props('episodeId')).toBe('ep1');
   });
 
   it('el chat queda montado al cambiar de sección: no se pierde lo escrito', async () => {

@@ -7,7 +7,8 @@
 
   fillEvolucion(data):
     data.paciente = { nombre, cedula, edad }
-    data.filas    = [{ episode_id, fecha, medico, diagnostico, tratamiento }]  (la más nueva primero)
+    data.filas    = [{ episode_id, fecha, medico, especialista, diagnostico,
+                       diagnostico_histopatologico, tratamiento, observaciones }]  (la más nueva primero)
     data.actual   = episode_id de la ficha que se está viendo (se resalta), opcional
 
   Tocar una fila llama a window.onAbrirFicha(episode_id) si quien embebe el documento
@@ -53,7 +54,10 @@
   th { text-align: left; font-size: 9pt; padding: 4px 6px; border-bottom: 2px solid #5b9097; }
   td { vertical-align: top; padding: 5px 6px; border-bottom: 1px solid #999; color: #0a3a6b; white-space: pre-wrap; word-wrap: break-word; }
   tr { break-inside: avoid; }
-  col.c-fecha { width: 22mm; } col.c-medico { width: 38mm; } col.c-dx { width: 30%; }
+  /* Seis columnas en 194 mm: fecha y quién atendió fijas, el resto se reparte. */
+  table { font-size: 8.5pt; }
+  col.c-fecha { width: 19mm; } col.c-medico { width: 30mm; }
+  .especialista { display: block; margin-top: 2px; font-size: 8pt; color: #3b6e75; }
   tbody tr { cursor: pointer; }
   tbody tr:hover td { background: #f2f7f7; }
   tr.actual td { background: #fffbe8; }
@@ -66,6 +70,19 @@
     .hoja { width: auto; min-height: 0; box-shadow: none; }
     .header { grid-template-columns: 56px 1fr; }
     .header-fields { grid-column: 1 / -1; }
+  }
+  /* Teléfono (la pestaña Evolución de las apps carga este documento): cada ficha es una
+     tarjeta con la etiqueta de cada dato. Solo en pantalla; impreso sigue la tabla. */
+  @media screen and (max-width: 600px) {
+    .hoja { padding: 4mm 3mm; font-size: 10pt; }
+    table, tbody { display: block; }
+    colgroup, thead { display: none; }
+    tbody tr { display: block; padding: 6px 0; border-bottom: 1px solid #999; }
+    td { display: grid; grid-template-columns: 34% 1fr; gap: 6px; padding: 3px 4px; border: 0; }
+    td::before { content: attr(data-col); font-weight: 700; color: #222; font-style: normal; }
+    td.estado { display: block; }
+    td.estado::before { content: none; }
+    .especialista { grid-column: 2; }
   }
   @media print {
     body { background: #fff; padding: 0; }
@@ -93,17 +110,21 @@
     <div class="section-line"></div>
     <div class="section-body">
       <table>
-        <colgroup><col class="c-fecha"><col class="c-medico"><col class="c-dx"><col></colgroup>
-        <thead><tr><th>Fecha</th><th>M&eacute;dico</th><th>Diagn&oacute;stico</th><th>Tratamiento</th></tr></thead>
-        <tbody id="f-filas"><tr><td colspan="4" class="estado">Cargando la evoluci&oacute;n…</td></tr></tbody>
+        <colgroup><col class="c-fecha"><col class="c-medico"><col><col><col><col></colgroup>
+        <thead><tr>
+          <th>Fecha</th><th>Atendi&oacute;</th><th>Diagn&oacute;stico cl&iacute;nico</th>
+          <th>Diagn&oacute;stico histopatol&oacute;gico</th><th>Tratamiento</th><th>Observaciones</th>
+        </tr></thead>
+        <tbody id="f-filas"><tr><td colspan="6" class="estado">Cargando la evoluci&oacute;n…</td></tr></tbody>
       </table>
     </div>
   </section>
 </div>
 
 <script>
-function celda(texto, vacio) {
+function celda(texto, vacio, columna) {
   const td = document.createElement('td');
+  if (columna) td.dataset.col = columna;
   if (texto) td.textContent = texto;
   else { td.textContent = vacio; td.className = 'vacio'; }
   return td;
@@ -122,7 +143,7 @@ function fillEvolucion(data) {
   if (!filas.length) {
     const tr = document.createElement('tr');
     const td = celda('Este paciente todavía no tiene fichas registradas.');
-    td.colSpan = 4; td.className = 'estado';
+    td.colSpan = 6; td.className = 'estado';
     tr.appendChild(td); tbody.appendChild(tr);
     return;
   }
@@ -131,10 +152,19 @@ function fillEvolucion(data) {
     const actual = data.actual && f.episode_id === data.actual;
     if (actual) tr.className = 'actual';
     tr.title = actual ? 'Es la ficha que estás viendo' : 'Abrir esta ficha';
-    tr.appendChild(celda(f.fecha, '—'));
-    tr.appendChild(celda(f.medico, '—'));
-    tr.appendChild(celda(f.diagnostico, 'Sin diagnóstico'));
-    tr.appendChild(celda(f.tratamiento, 'Sin tratamiento'));
+    tr.appendChild(celda(f.fecha, '—', 'Fecha'));
+    const atendio = celda(f.medico, '—', 'Atendió');
+    if (f.especialista) {
+      const esp = document.createElement('span');
+      esp.className = 'especialista';
+      esp.textContent = 'Especialista: ' + f.especialista;
+      atendio.appendChild(esp);
+    }
+    tr.appendChild(atendio);
+    tr.appendChild(celda(f.diagnostico, 'Sin diagnóstico', 'Dx clínico'));
+    tr.appendChild(celda(f.diagnostico_histopatologico, 'Sin biopsia', 'Dx histopatológico'));
+    tr.appendChild(celda(f.tratamiento, 'Sin tratamiento', 'Tratamiento'));
+    tr.appendChild(celda(f.observaciones, 'Sin observaciones', 'Observaciones'));
     tr.addEventListener('click', () => {
       if (typeof window.onAbrirFicha === 'function') window.onAbrirFicha(f.episode_id);
     });
@@ -148,7 +178,7 @@ function errorEvolucion(mensaje) {
   tbody.textContent = '';
   const tr = document.createElement('tr');
   const td = celda(mensaje || 'No se pudo cargar la evolución');
-  td.colSpan = 4; td.className = 'estado';
+  td.colSpan = 6; td.className = 'estado';
   tr.appendChild(td); tbody.appendChild(tr);
 }
 

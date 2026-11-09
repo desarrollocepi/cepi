@@ -123,8 +123,12 @@ fun VisorFicha(
     mostrada: Boolean,
     visible: Boolean,
     alGuardar: suspend (JsonObject, String?) -> Boolean,
-    /** Otra ficha que pidió abrir quien contiene el visor (la evolución del menú del paciente). */
-    episodioPedido: String? = null,
+    /** Otra ficha que pidió abrir quien contiene el visor (una fila de la sección Evolución). */
+    episodioPedido: EpisodeRequest? = null,
+    /** El botón "Evolución": lleva a la sección Evolución del paciente. */
+    onShowEvolution: () -> Unit = {},
+    /** La ficha que queda a la vista, para que Evolución la resalte. */
+    onEpisodeShown: (String?) -> Unit = {},
 ) {
     val contexto = LocalContext.current
     val alcance = rememberCoroutineScope()
@@ -136,7 +140,6 @@ fun VisorFicha(
     var aviso by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var paginasListas by remember { mutableIntStateOf(0) }
-    var verEvolucion by remember { mutableStateOf(false) }
     val controlador = remember { ControladorFicha(contexto, web) { paginasListas++ } }
     DisposableEffect(Unit) { onDispose { controlador.vista.destroy() } }
 
@@ -174,7 +177,8 @@ fun VisorFicha(
             recargarPagina()
         }
     }
-    LaunchedEffect(episodioPedido, episodios) { irA(episodioPedido) }
+    LaunchedEffect(episodioPedido, episodios) { irA(episodioPedido?.episodeId) }
+    LaunchedEffect(indice, episodios) { onEpisodeShown(episodios.getOrNull(indice)?.id) }
 
     LaunchedEffect(mostrada, episodioActivo) {
         if (mostrada) cargar()
@@ -261,7 +265,7 @@ fun VisorFicha(
                     Spacer(Modifier.size(6.dp))
                     Text("Imprimir")
                 }
-                TextButton(onClick = { verEvolucion = true }) {
+                TextButton(onClick = onShowEvolution) {
                     Text("Evolución")
                 }
                 Spacer(Modifier.weight(1f))
@@ -293,17 +297,6 @@ fun VisorFicha(
                 }
             }
         }
-    }
-
-    if (verEvolucion) {
-        EvolucionDocumento(
-            pacienteId = pacienteId,
-            actual = episodios.getOrNull(indice)?.id,
-            api = api,
-            web = web,
-            alElegir = { irA(it) },
-            alCerrar = { verEvolucion = false },
-        )
     }
 }
 

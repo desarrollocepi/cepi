@@ -121,17 +121,32 @@ class ContratoTest {
         val filas = decodificar<Lista<FilaEvolucion>>(
             """{"ok":true,"data":[
                {"episode_id":"e2","fecha":"2026-10-01","estado":"cerrado","medico":"Dra. Ana Pérez",
-                "diagnostico":"L40.0 — Psoriasis vulgar","tratamiento":"Clobetasol 0,05 %"},
+                "especialista":"Dr. Luis Mora","diagnostico":"L40.0 — Psoriasis vulgar",
+                "diagnostico_histopatologico":"Psoriasis psoriasiforme","tratamiento":"Clobetasol 0,05 %",
+                "observaciones":"Control en 3 meses"},
                {"episode_id":"e1","fecha":"2026-08-15","estado":"en_curso","medico":null,
-                "diagnostico":null,"tratamiento":null}]}""",
+                "especialista":null,"diagnostico":null,"diagnostico_histopatologico":null,
+                "tratamiento":null,"observaciones":null},
+               {"episode_id":"e0","fecha":"2026-07-01"}]}""",
         ).data
-        assertEquals(listOf("e2", "e1"), filas.map { it.episodio })
+        assertEquals(listOf("e2", "e1", "e0"), filas.map { it.episodio })
         assertEquals("2026-10-01", filas[0].fecha)
         assertEquals("Dra. Ana Pérez", filas[0].medico)
         assertEquals("L40.0 — Psoriasis vulgar", filas[0].diagnostico)
         assertEquals("Clobetasol 0,05 %", filas[0].tratamiento)
+        assertEquals("Dr. Luis Mora", filas[0].especialista)
+        assertEquals("Psoriasis psoriasiforme", filas[0].diagnosticoHistopatologico)
+        assertEquals("Control en 3 meses", filas[0].observaciones)
         assertNull(filas[1].diagnostico)
         assertNull(filas[1].medico)
+        assertNull(filas[1].especialista)
+        assertNull(filas[1].diagnosticoHistopatologico)
+        assertNull(filas[1].observaciones)
+        // Un backend anterior no manda los campos nuevos: no rompe.
+        assertNull(filas[2].especialista)
+        assertNull(filas[2].diagnosticoHistopatologico)
+        assertNull(filas[2].observaciones)
+        assertNull(filas[2].estado)
     }
 
     @Test

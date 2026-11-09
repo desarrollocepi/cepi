@@ -61,7 +61,7 @@ private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria
 
 /**
  * Lo que se ve con la sesión abierta: Pacientes y Galería (PAPER §24.2.1, D-Aux-22). Dentro de
- * un paciente hay otras tres secciones (`PacienteAbierto`).
+ * un paciente hay otras cuatro secciones (`PacienteAbierto`).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

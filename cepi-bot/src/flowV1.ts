@@ -250,6 +250,8 @@ const FICHA_FIELD_DEFS: FichaFieldDef[] = [
   { key: 'plan', label: 'Plan', type: 'textarea' },
   { key: 'proximo_control_fecha', label: 'Próximo control', type: 'date' },
   { key: 'proximo_control_motivo', label: 'Motivo del próximo control', type: 'text' },
+  // Resumen de lo más importante del caso: sale como columna en la evolución (PAPER §28).
+  { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
   ] as BotFormField[]).map(field => ({ category: 'Tratamiento', target: 'episode' as const, field })),
   // §8 Imágenes de consentimiento (paciente)
   { category: 'Consentimiento', target: 'patient', field: { key: 'imagen_consentimiento', label: 'Imagen del consentimiento', type: 'image_upload' } },
@@ -287,7 +289,7 @@ const FICHA_GROUP_SPEC: { id: string; label: string; keys: string[] }[] = [
   { id: 'g_4_7', label: '4.7 Imágenes Lesión',        keys: ['imagenes_lesion'] },
   { id: 'g_5',   label: '5 Diagnóstico',              keys: ['diagnostico','diagnostico_letra'] },
   { id: 'g_6',   label: '6 Estudios complementarios', keys: ['estudios_complementarios_presente','estudios_complementarios_resumen'] },
-  { id: 'g_7',   label: '7 Tratamiento y plan',       keys: ['tratamiento_resumen','plan','proximo_control_fecha','proximo_control_motivo'] },
+  { id: 'g_7',   label: '7 Tratamiento y plan',       keys: ['tratamiento_resumen','plan','proximo_control_fecha','proximo_control_motivo','observaciones'] },
   { id: 'g_8',   label: '8 Imágenes Consentimiento',  keys: ['imagen_consentimiento'] },
 ];
 

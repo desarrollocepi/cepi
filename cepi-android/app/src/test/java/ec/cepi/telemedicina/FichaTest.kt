@@ -86,11 +86,12 @@ class IdiomasDictadoTest {
             "fecha_nac" to JsonPrimitive("2000-06-15"),
         )
         val filas = listOf(ec.cepi.telemedicina.api.FilaEvolucion(
-            episodio = "e2", fecha = "2026-10-01", medico = "Dra. Pérez", diagnostico = "L40.0", tratamiento = null,
+            episodio = "e2", fecha = "2026-10-01", medico = "Dra. Pérez", especialista = "Dr. Mora", diagnostico = "L40.0",
+            diagnosticoHistopatologico = "Psoriasis", tratamiento = null, observaciones = "Control",
         ))
         val datos = ec.cepi.telemedicina.ficha.DatosEvolucion.objeto(paciente, filas, "e2", LocalDate.parse("2026-09-16"))
         assertEquals(
-            """{"actual":"e2","filas":[{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","diagnostico":"L40.0","tratamiento":null}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
+            """{"actual":"e2","filas":[{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","especialista":"Dr. Mora","diagnostico":"L40.0","diagnostico_histopatologico":"Psoriasis","tratamiento":null,"observaciones":"Control"}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
             DatosFicha.javascript(datos),
         )
     }

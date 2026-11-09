@@ -1935,13 +1935,16 @@ Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
 | nivel | secciones |
 |---|---|
 | fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) |
-| dentro del paciente | **Chat** · **Ficha** · **Imágenes** (las del paciente) |
+| dentro del paciente | **Chat** · **Ficha** · **Evolución** · **Imágenes** (las del paciente) |
 
 - **Chat** es el hilo de siempre, con su composer y sus acciones.
 - **Ficha** es el visor documental (`ficha.html` en `WKWebView`), que hasta ahora se abría
   desde "Acciones → Ver ficha": se lee completa, marca en rojo lo que cambió respecto de la
   consulta anterior y se imprime. Editar sigue siendo por el chat y por "Secciones", para que
   no haya dos formas distintas de escribir lo mismo.
+- **Evolución** es la ficha de evolución del paciente (§28), abierta y a toda la altura.
+  Entró como cuarta sección el 2026-11-09 por pedido de las dermatólogas: antes se abría desde
+  un botón y no la encontraban.
 - **Imágenes** son las fotos clínicas del paciente, de todas sus consultas.
 - **Galería** busca por texto: nombre del paciente, cédula, diagnóstico, CIE-10 y fecha. No
   busca por imagen parecida; los embeddings del servicio ISIC quedan para después.
@@ -2907,14 +2910,22 @@ una. Se consulta desde cualquier ficha.
 
 ### 28.1 Qué es
 
-Una tabla de cuatro columnas, una fila por episodio, la más nueva primero:
+Una tabla de seis columnas, una fila por episodio, la más nueva primero:
 
 | columna | de dónde sale |
 |---|---|
 | Fecha | `episode.fecha` |
-| Médico | `examinador_nombre` → nombre de `medico_id` → nombre de `created_by` |
-| Diagnóstico | `diagnostico`, con `codigo_cie10` delante si no viene ya incluido |
+| Atendió | `examinador_nombre` → nombre de `medico_id` → nombre de `created_by`; debajo, «Especialista:» con el nombre de `recomendacion_por` → `turno_claimed_by` si es otra persona |
+| Diagnóstico clínico | `diagnostico`, con `codigo_cie10` delante si no viene ya incluido |
+| Diagnóstico histopatológico | `diagnostico` (definitivo) de los informes de patología de ese episodio (§ informe de patología, seed 014), solo si el rol puede verlos |
 | Tratamiento | `tratamiento_resumen` → `plan` |
+| Observaciones | `observaciones`: resumen libre de lo más importante, en la sección 7 de la ficha |
+
+**Columnas de las dermatólogas (2026-11-09).** Especialista, diagnóstico histopatológico y
+observaciones se pidieron para cruzar el diagnóstico clínico con el de patología
+(correlación clínico-patológica) y ver de un vistazo quién respondió cada derivación.
+`observaciones` ya existía en el episodio (lo llena el espejo DrPro, seed 008); ahora
+también se escribe desde la sección 7 de la ficha de CEPI.
 
 Cada columna cae a la siguiente porque las dos fuentes de fichas llenan campos distintos
 (§21.2). Una ficha de CEPI guarda el diagnóstico como `"L40.0 — Psoriasis"` (el campo CIE-10
@@ -2946,7 +2957,14 @@ usuarios. `GET /api/patient-evolution?patient_id=` (TodoERP,
 
 ### 28.3 Dónde se ve
 
-Dentro de la ficha, plegada, encima de la barra de episodios. Así se consulta desde
+**Como sección propia del paciente** (§24.2.1): Chat · Ficha · **Evolución** · Imágenes. En la
+web es `EvolucionPaciente.vue` con `plegable=false` (la adaptable: tabla en escritorio,
+tarjetas en el teléfono) con «Actualizar» e «Imprimir»; «Imprimir» abre el documento A4
+(`evolucion.html`) en `VisorEvolucion`. En iOS y Android es la página que se desliza después
+de Ficha y carga `evolucion.html`, que en pantallas angostas muestra cada ficha como tarjeta
+(solo en pantalla: impreso sigue la tabla). Tocar una fila abre esa ficha en la sección Ficha.
+
+Además, dentro de la ficha, plegada, encima de la barra de episodios. Así se consulta desde
 cualquier ficha sin dejar la que se está leyendo. Abrirla trae los datos en ese momento,
 porque entre una vez y otra se pudo guardar un diagnóstico. La ficha abierta sale
 resaltada, y tocar otra fila abre esa ficha.
@@ -2964,9 +2982,9 @@ resaltada, y tocar otra fila abre esa ficha.
 - **Portal de casos**: "Evolución" es un formato más del selector (junto a Grupos, Ficha HCU,
   MSP 002 y MSP 053). Es del paciente, no del episodio, así que no pasa por `fillFicha`:
   `VisorEvolucion` incrustado. Tocar una fila abre ese caso.
-- **iOS y Android**: un botón "Evolución" en la barra nativa de episodios del visor
-  (`VisorFicha`) abre la misma tabla en una hoja. Tocar una fila lleva el visor a esa
-  ficha.
+- **iOS y Android**: la sección Evolución del paciente (arriba). El botón "Evolución" de la
+  barra nativa de episodios del visor (`VisorFicha`) y el menú del paciente llevan a esa
+  sección; ya no abren una hoja. Tocar una fila lleva el visor a esa ficha.
 
 El botón no se esconde nunca. Sin paciente resuelto sale deshabilitado con el motivo; sin
 fichas dice "todavía no tiene fichas registradas".

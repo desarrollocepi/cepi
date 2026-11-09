@@ -186,6 +186,10 @@ data class FilaEvolucion(
     val fecha: String? = null,
     val estado: String? = null,
     val medico: String? = null,
+    /** El especialista al que se derivó, si lo hubo. */
+    val especialista: String? = null,
     val diagnostico: String? = null,
+    @SerialName("diagnostico_histopatologico") val diagnosticoHistopatologico: String? = null,
     val tratamiento: String? = null,
+    val observaciones: String? = null,
 )

@@ -1,15 +1,27 @@
 <template>
-  <!-- Ficha de evolución (PAPER §28): fecha, médico, diagnóstico y tratamiento de todas
-       las fichas del paciente. Va dentro de la ficha, plegada, para que se consulte
-       desde cualquiera de ellas sin dejar la que se está leyendo. -->
-  <section class="evo" :class="{ 'evo--abierta': abierta }">
+  <!-- Ficha de evolución (PAPER §28): una fila por ficha del paciente. Dos lugares:
+       plegada dentro de la ficha, para consultarla sin dejar la que se lee, y como
+       pestaña propia del paciente (`plegable=false`), abierta y a toda la altura.
+       «Imprimir» abre el documento A4 (evolucion.html) en VisorEvolucion. -->
+  <section class="evo" :class="{ 'evo--abierta': abierta, 'evo--pestana': !plegable }">
     <header class="evo-barra">
       <strong>Evolución del paciente</strong>
       <span class="evo-cuenta">{{ resumen }}</span>
       <button
+        v-if="plegable"
         class="evo-btn" type="button" :disabled="!patientId" @click="alternar"
         :title="patientId ? null : 'Todavía no se sabe de qué paciente es esta ficha'"
       >{{ abierta ? 'Ocultar' : 'Ver evolución' }}</button>
+      <template v-else>
+        <button
+          class="evo-btn" type="button" :disabled="!patientId || cargando" @click="cargar"
+          :title="cargando ? 'Ya se está cargando' : 'Volver a leer las fichas'"
+        >Actualizar</button>
+        <button
+          class="evo-btn evo-btn--junto" type="button" :disabled="!patientId || !filas.length" @click="imprimiendo = true"
+          :title="!filas.length ? 'Sin fichas no hay nada que imprimir' : 'Abrir la ficha de evolución para imprimir'"
+        >Imprimir</button>
+      </template>
     </header>
 
     <template v-if="abierta">
@@ -22,7 +34,10 @@
       <div v-else class="evo-scroll">
         <table class="evo-tabla">
           <thead>
-            <tr><th>Fecha</th><th>Médico</th><th>Diagnóstico</th><th>Tratamiento</th></tr>
+            <tr>
+              <th>Fecha</th><th>Atendió</th><th>Diagnóstico clínico</th><th>Diagnóstico histopatológico</th>
+              <th>Tratamiento</th><th>Observaciones</th>
+            </tr>
           </thead>
           <tbody>
             <tr
@@ -32,36 +47,50 @@
               @click="abrir(f)"
             >
               <td class="evo-fecha" data-col="Fecha">{{ f.fecha || '—' }}</td>
-              <td data-col="Médico" :class="{ 'evo-vacio': !f.medico }">{{ f.medico || '—' }}</td>
-              <td data-col="Diagnóstico" :class="{ 'evo-vacio': !f.diagnostico }">{{ f.diagnostico || 'Sin diagnóstico' }}</td>
+              <td data-col="Atendió" :class="{ 'evo-vacio': !f.medico && !f.especialista }">
+                {{ f.medico || '—' }}<span v-if="f.especialista" class="evo-especialista">Especialista: {{ f.especialista }}</span>
+              </td>
+              <td data-col="Dx clínico" :class="{ 'evo-vacio': !f.diagnostico }">{{ f.diagnostico || 'Sin diagnóstico' }}</td>
+              <td data-col="Dx histopatológico" :class="{ 'evo-vacio': !f.diagnostico_histopatologico }">{{ f.diagnostico_histopatologico || 'Sin biopsia' }}</td>
               <td data-col="Tratamiento" :class="{ 'evo-vacio': !f.tratamiento }">{{ f.tratamiento || 'Sin tratamiento' }}</td>
+              <td data-col="Observaciones" :class="{ 'evo-vacio': !f.observaciones }">{{ f.observaciones || 'Sin observaciones' }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </template>
+
+    <VisorEvolucion
+      v-if="imprimiendo && patientId"
+      :patient-id="patientId" :episode-id="episodeId"
+      @close="imprimiendo = false" @abrir="(id) => { imprimiendo = false; emit('navegar', id); }"
+    />
   </section>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { getPatientEvolution } from '../api.js';
+import VisorEvolucion from './VisorEvolucion.vue';
 
 const props = defineProps({
   patientId: { type: String, default: null },
   /** La ficha abierta: se resalta en la tabla. */
   episodeId: { type: String, default: null },
+  /** Plegada dentro de la ficha (por defecto) o abierta como pestaña del paciente. */
+  plegable: { type: Boolean, default: true },
 });
 const emit = defineEmits(['navegar']);
 
-const abierta = ref(false);
+const abierta = ref(!props.plegable);
+const imprimiendo = ref(false);
 const filas = ref([]);
 const cargando = ref(false);
 const error = ref('');
 const cargada = ref(false);
 
 const resumen = computed(() => {
-  if (!cargada.value) return 'fecha, médico, diagnóstico y tratamiento de cada ficha';
+  if (!cargada.value) return 'fecha, quién atendió, diagnósticos, tratamiento y observaciones de cada ficha';
   const n = filas.value.length;
   return n === 1 ? '1 ficha' : `${n} fichas`;
 });
@@ -96,6 +125,9 @@ watch(() => props.patientId, () => {
   if (abierta.value) cargar();
 });
 
+// Como pestaña se abre ya cargada.
+if (!props.plegable) cargar();
+
 // Tras guardar un grupo de la ficha: solo si está a la vista.
 defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 </script>
@@ -108,6 +140,7 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-btn { flex-shrink: 0; margin-left: auto; padding: 6px 12px; font-size: 13px; font-weight: 600; color: #0369a1; background: #fff; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
 .evo-btn:hover:not(:disabled) { background: #e0f2fe; }
 .evo-btn:disabled { color: #94a3b8; border-color: #e2e8f0; cursor: default; }
+.evo-btn--junto { margin-left: 0; }
 .evo-btn--sec { margin-left: 8px; padding: 3px 9px; font-size: 12px; }
 .evo-estado { margin: 0; padding: 4px 12px 12px; font-size: 13px; color: #64748b; }
 .evo-error { color: #b91c1c; }
@@ -121,15 +154,19 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-tabla tr.evo-actual { background: #e0f2fe; cursor: default; }
 .evo-tabla tr.evo-actual td:first-child { box-shadow: inset 3px 0 0 #0ea5e9; }
 .evo-fecha { white-space: nowrap; }
+.evo-especialista { display: block; margin-top: 2px; font-size: 12px; color: #0369a1; }
+/* Como pestaña ocupa todo el alto: la tabla se desplaza dentro, con la cabecera fija. */
+.evo--pestana { display: flex; flex-direction: column; min-height: 0; height: 100%; margin: 0; border: 0; border-radius: 0; }
+.evo--pestana .evo-scroll { flex: 1; max-height: none; }
 /* Sin dato no es un error: en gris, como los grupos vacíos de la ficha. */
 .evo-tabla td.evo-vacio { color: #94a3b8; font-style: italic; }
 
-/* En el teléfono cada ficha es una tarjeta: cuatro columnas no entran. */
+/* En el teléfono cada ficha es una tarjeta: seis columnas no entran. */
 @media (max-width: 560px) {
   .evo-cuenta { display: none; }
   .evo-tabla thead { display: none; }
   .evo-tabla tr { display: block; padding: 6px 0; border-bottom: 1px solid #e2e8f0; }
-  .evo-tabla td { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 3px 12px; border: 0; }
+  .evo-tabla td { display: grid; grid-template-columns: 116px 1fr; gap: 8px; padding: 3px 12px; border: 0; }
   .evo-tabla td::before { content: attr(data-col); font-size: 12px; font-style: normal; color: #64748b; }
 }
 </style>

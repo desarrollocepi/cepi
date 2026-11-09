@@ -30,7 +30,7 @@
     patron_inflam_epidermica/inflam_dermica/necrosis/tumor/color,
     notas_examen, diagnostico, diagnostico_letra ("A"|"B"|"C"),
     estudios_complementarios_presente, estudios_complementarios_resumen,
-    tratamiento_resumen, medico, ficha_num, fecha, examinador_nombre.
+    tratamiento_resumen, observaciones, medico, ficha_num, fecha, examinador_nombre.
 -->
 <html lang="es">
 <head>
@@ -659,6 +659,10 @@
       <span class="lbl">7. Tratamiento:</span>
       <input type="text" name="tratamiento_resumen" style="flex:1">
     </div>
+    <div class="row">
+      <span class="lbl">Observaciones:</span>
+      <input type="text" name="observaciones" style="flex:1">
+    </div>
   </section>
 
   <!-- ============================== FIRMA ============================== -->
@@ -745,7 +749,7 @@ function readFicha() {
     'patologia_asociada', 'tratamientos_previos', 'lesion_otra', 'caract_eritema',
     'caract_descamacion', 'caract_exudacion', 'caract_liquenificacion', 'caract_otra',
     'topo_otra', 'notas_examen', 'diagnostico', 'estudios_complementarios_resumen',
-    'tratamiento_resumen', 'medico',
+    'tratamiento_resumen', 'observaciones', 'medico',
   ];
   PLAIN.forEach(k => { if (raw[k] != null && raw[k] !== '') out[k] = raw[k]; });
 

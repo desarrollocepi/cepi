@@ -71,7 +71,7 @@ fun FilaPacienteVista(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = { alAbrir(0) },
+                    onClick = { alAbrir(PAGE_CHAT) },
                     onLongClick = { menu = true },
                     onLongClickLabel = "Acciones",
                 )
@@ -152,9 +152,10 @@ fun FilaPacienteVista(
                         menu = false
                         accion()
                     }
-                    DropdownMenuItem(text = { Text("Abrir el chat") }, onClick = { elegir { alAbrir(0) } })
-                    DropdownMenuItem(text = { Text("Ver la ficha") }, onClick = { elegir { alAbrir(1) } })
-                    DropdownMenuItem(text = { Text("Ver las imágenes") }, onClick = { elegir { alAbrir(2) } })
+                    DropdownMenuItem(text = { Text("Abrir el chat") }, onClick = { elegir { alAbrir(PAGE_CHAT) } })
+                    DropdownMenuItem(text = { Text("Ver la ficha") }, onClick = { elegir { alAbrir(PAGE_FICHA) } })
+                    DropdownMenuItem(text = { Text("Ver la evolución") }, onClick = { elegir { alAbrir(PAGE_EVOLUTION) } })
+                    DropdownMenuItem(text = { Text("Ver las imágenes") }, onClick = { elegir { alAbrir(PAGE_IMAGES) } })
                     DropdownMenuItem(
                         text = { Text(if (fila.cedula == null) "Copiar la cédula (no tiene)" else "Copiar la cédula") },
                         enabled = fila.cedula != null,

@@ -45,7 +45,8 @@ import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
 import ec.cepi.telemedicina.chat.VisorImagen
 import ec.cepi.telemedicina.ficha.DerivarPantalla
-import ec.cepi.telemedicina.ficha.EvolucionDocumento
+import ec.cepi.telemedicina.ficha.EpisodeRequest
+import ec.cepi.telemedicina.ficha.EvolutionPage
 import ec.cepi.telemedicina.ficha.FormularioHoja
 import ec.cepi.telemedicina.ficha.SeccionesHoja
 import ec.cepi.telemedicina.ficha.VisorFicha
@@ -53,15 +54,22 @@ import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.galeria.ImagenesPaciente
 import kotlinx.coroutines.launch
 
-private val secciones = listOf("Chat", "Ficha", "Imágenes")
+private val secciones = listOf("Chat", "Ficha", "Evolución", "Imágenes")
+
+/** Índices de las páginas del paciente, en el orden de `secciones`. */
+const val PAGE_CHAT = 0
+const val PAGE_FICHA = 1
+const val PAGE_EVOLUTION = 2
+const val PAGE_IMAGES = 3
 
 /**
- * Un paciente abierto: tres secciones que se pasan deslizando (PAPER §24.2.1, D-Aux-22).
+ * Un paciente abierto: cuatro secciones que se pasan deslizando (PAPER §24.2.1, D-Aux-22).
  *
- *   Chat · Ficha · Imágenes
+ *   Chat · Ficha · Evolución · Imágenes
  *
- * El modelo del hilo vive acá y no en el chat: la ficha guarda con él (`ficha_save`). Las tres
- * quedan compuestas (`beyondViewportPageCount`): volver a una no la recarga.
+ * El modelo del hilo vive acá y no en el chat: la ficha guarda con él (`ficha_save`). Todas
+ * quedan compuestas (`beyondViewportPageCount`): volver a una no la recarga, salvo Evolución,
+ * que se vuelve a pedir cada vez que queda a la vista (§28.3).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,7 +77,7 @@ fun PacienteAbierto(
     entorno: Entorno,
     pacienteId: String,
     fila: FilaPaciente?,
-    /** La sección en la que abre (0 chat, 1 ficha, 2 imágenes): la elige el menú de la lista. */
+    /** La sección en la que abre (`PAGE_*`): la elige el menú de la lista. */
     seccionInicial: Int = 0,
     alVolver: () -> Unit,
 ) {
@@ -90,9 +98,11 @@ fun PacienteAbierto(
     var menu by remember { mutableStateOf(false) }
     var mostrarSecciones by remember { mutableStateOf(false) }
     var derivar by remember { mutableStateOf(false) }
-    var mostrarEvolucion by remember { mutableStateOf(false) }
     // La ficha que se eligió en la evolución: la sección Ficha va a esa.
-    var fichaPedida by remember { mutableStateOf<String?>(null) }
+    var fichaPedida by remember { mutableStateOf<EpisodeRequest?>(null) }
+    // La ficha que muestra la sección Ficha: Evolución la resalta.
+    var shownEpisode by remember { mutableStateOf<String?>(null) }
+    val showEvolution = { alcance.launch { paginas.animateScrollToPage(PAGE_EVOLUTION) } }
     // Abierto sin pasar por la lista (CEPI_DEV_PACIENTE, una notificación): el nombre se pide.
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
 
@@ -106,7 +116,7 @@ fun PacienteAbierto(
             }
         }
     }
-    LaunchedEffect(paginas.currentPage) { if (paginas.currentPage == 1) fichaMostrada = true }
+    LaunchedEffect(paginas.currentPage) { if (paginas.currentPage == PAGE_FICHA) fichaMostrada = true }
 
     Scaffold(
         topBar = {
@@ -133,17 +143,17 @@ fun PacienteAbierto(
                             alCerrar = { menu = false },
                             alNuevaConsulta = {
                                 alcance.launch {
-                                    paginas.animateScrollToPage(0)
+                                    paginas.animateScrollToPage(PAGE_CHAT)
                                     modelo.enviar("nuevo episodio")
                                 }
                             },
                             alSecciones = {
-                                alcance.launch { paginas.animateScrollToPage(0) }
+                                alcance.launch { paginas.animateScrollToPage(PAGE_CHAT) }
                                 mostrarSecciones = true
                             },
                             alAutoFormulario = { alcance.launch { modelo.alternarAutoFormulario() } },
                             alDerivar = { derivar = true },
-                            alEvolucion = { mostrarEvolucion = true },
+                            alEvolucion = { showEvolution() },
                         )
                     }
                 },
@@ -191,17 +201,31 @@ fun PacienteAbierto(
                 modifier = Modifier.weight(1f),
             ) { pagina ->
                 when (pagina) {
-                    0 -> HiloVista(modelo) { imagenAbierta = it }
-                    1 -> VisorFicha(
+                    PAGE_CHAT -> HiloVista(modelo) { imagenAbierta = it }
+                    PAGE_FICHA -> VisorFicha(
                         pacienteId = pacienteId,
                         nombre = cabecera?.nombre ?: "Paciente",
                         episodioActivo = modelo.episodioActivo,
                         api = api,
                         web = entorno.config.webBase,
                         mostrada = fichaMostrada,
-                        visible = paginas.settledPage == 1 && !paginas.isScrollInProgress,
+                        visible = paginas.settledPage == PAGE_FICHA && !paginas.isScrollInProgress,
                         alGuardar = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
                         episodioPedido = fichaPedida,
+                        onShowEvolution = { showEvolution() },
+                        onEpisodeShown = { shownEpisode = it },
+                    )
+                    PAGE_EVOLUTION -> EvolutionPage(
+                        pacienteId = pacienteId,
+                        currentEpisode = shownEpisode ?: modelo.episodioActivo,
+                        api = api,
+                        web = entorno.config.webBase,
+                        visible = paginas.settledPage == PAGE_EVOLUTION && !paginas.isScrollInProgress,
+                        onOpenEpisode = { episodio ->
+                            fichaPedida = EpisodeRequest(episodio)
+                            fichaMostrada = true
+                            alcance.launch { paginas.animateScrollToPage(PAGE_FICHA) }
+                        },
                     )
                     else -> ImagenesPaciente(imagenes)
                 }
@@ -226,20 +250,6 @@ fun PacienteAbierto(
             marcadores = modelo.marcadores,
             alElegir = { marcador -> alcance.launch { modelo.abrirSeccion(marcador) } },
             alCerrar = { mostrarSecciones = false },
-        )
-    }
-    if (mostrarEvolucion) {
-        EvolucionDocumento(
-            pacienteId = pacienteId,
-            actual = modelo.episodioActivo,
-            api = api,
-            web = entorno.config.webBase,
-            alElegir = { episodio ->
-                fichaPedida = episodio
-                fichaMostrada = true
-                alcance.launch { paginas.animateScrollToPage(1) }
-            },
-            alCerrar = { mostrarEvolucion = false },
         )
     }
     if (derivar) {

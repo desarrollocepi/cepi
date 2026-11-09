@@ -9,8 +9,8 @@
       @general="onGeneral"
     />
     <div class="shell-detail">
-      <!-- Dentro del paciente hay tres secciones (PAPER §24.2.1, D-Aux-22): las mismas que
-           en la app iOS, donde además se pasan deslizando. -->
+      <!-- Dentro del paciente hay cuatro secciones (PAPER §24.2.1, D-Aux-22): las mismas que
+           en las apps, donde además se pasan deslizando. -->
       <nav v-if="selectedId" class="shell-secciones" role="tablist">
         <button
           v-for="s in SECCIONES" :key="s.id" role="tab"
@@ -31,6 +31,11 @@
         :visitas="visitas" :cargando-visitas="cargandoVisitas"
         class="shell-chat" @navegar="episodioElegido = $event"
       />
+      <EvolucionPaciente
+        v-if="selectedId && seccion === 'evolucion'"
+        :key="selectedId" :patient-id="selectedId" :episode-id="episodioDeLaFicha" :plegable="false"
+        class="shell-chat" @navegar="abrirFichaDesdeEvolucion"
+      />
       <RejillaImagenes
         v-if="selectedId && seccion === 'imagenes'"
         :key="selectedId" :patient-id="selectedId" :mostrar-paciente="false"
@@ -47,6 +52,7 @@ import ChatList from './ChatList.vue';
 import IntakeChat from './IntakeChat.vue';
 import FichaCompleta from './FichaCompleta.vue';
 import RejillaImagenes from './RejillaImagenes.vue';
+import EvolucionPaciente from './EvolucionPaciente.vue';
 import { listarCasosDePaciente, obtenerEntidad } from '../api.js';
 import { bindBackState } from '../useBackStack.js';
 import { useRoute, useRouter } from 'vue-router';
@@ -67,6 +73,7 @@ const generalActive = ref(false);
 const SECCIONES = [
   { id: 'chat', label: '💬 Chat' },
   { id: 'ficha', label: '📋 Ficha' },
+  { id: 'evolucion', label: '📈 Evolución' },
   { id: 'imagenes', label: '🖼️ Imágenes' },
 ];
 const seccion = ref('chat');
@@ -152,6 +159,12 @@ function onSelect(p, s = 'chat') {
  *  la lista, no recorre las pestañas que se fueron tocando. */
 function irASeccion(s) {
   if (selectedId.value) router.replace(rutaDePaciente(selectedId.value, s));
+}
+
+/** Tocar una fila de la evolución abre esa ficha en la pestaña Ficha. */
+function abrirFichaDesdeEvolucion(episodeId) {
+  episodioElegido.value = episodeId;
+  irASeccion('ficha');
 }
 
 function onGeneral() {
@@ -281,7 +294,7 @@ onUnmounted(() => { mq.removeEventListener('change', onMq); });
 .shell-detail { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .shell-chat { flex: 1; min-height: 0; }
 .mchat-bar { display: none; }
-/* Pestañas Chat / Ficha / Imágenes. Sin estilo salían como botones nativos del navegador. */
+/* Pestañas Chat / Ficha / Evolución / Imágenes. Sin estilo salían como botones nativos del navegador. */
 .shell-secciones { display: flex; gap: 6px; flex-shrink: 0; padding: 0 0 8px; }
 .shell-secciones button {
   padding: 7px 16px; border: 1px solid var(--border); border-radius: 18px;
