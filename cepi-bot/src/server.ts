@@ -40,6 +40,7 @@ import { listarGaleria } from './galeria.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
 import { buildAnswerBatch, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
+import { buildConsentCreate, CONSENT_LABELS, createConsents, isConsentType, listConsents, type ConsentType } from './consentimientos.js';
 
 dotenv.config();
 
@@ -453,6 +454,56 @@ app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response,
 });
 
 /**
+ * /api/bot/consentimientos?patient_id= — los consentimientos del paciente, separados por
+ * tipo (PAPER §31): `informado` (firma el paciente) y `privacidad_datos` (firma el
+ * profesional). Read-only, con el JWT del caller: el alcance por org lo pone TodoERP.
+ */
+app.get('/api/bot/consentimientos', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const patientId = String(req.query.patient_id || '').trim();
+    if (!patientId) return res.status(400).json({ ok: false, error: 'patient_id required' });
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const data = await listConsents(mcp, patientId);
+    res.json({ ok: true, ...data });
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/consentimientos — sube las fotos de un consentimiento firmado.
+ * Body: {patient_id, tipo: 'informado'|'privacidad_datos', attachment_ids: string[]}
+ * Las fotos ya se subieron como adjuntos. Es una acción explícita: sin gate.
+ */
+app.post('/api/bot/consentimientos', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const { patient_id, tipo, attachment_ids } = req.body || {};
+    if (!patient_id) return res.status(400).json({ ok: false, error: 'patient_id required' });
+    if (!isConsentType(tipo)) return res.status(400).json({ ok: false, error: 'tipo debe ser informado o privacidad_datos' });
+    const ids = Array.isArray(attachment_ids)
+      ? attachment_ids.filter((x: unknown): x is string => typeof x === 'string' && x.trim() !== '')
+      : [];
+    if (!ids.length) return res.status(400).json({ ok: false, error: 'Sube al menos una foto' });
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const r = await createConsents(mcp, String(patient_id), tipo, ids);
+    if (!r.ids.length) {
+      return res.status(502).json({ ok: false, error: `No se pudo guardar el consentimiento: ${r.errors.join('; ')}` });
+    }
+    res.json({ ok: true, ids: r.ids, errors: r.errors });
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
  * /api/bot/ficha/guardar — guarda la ficha ENTERA desde un formato documental.
  * Body: {episode_id?, patient_id?, data}
  *
@@ -649,10 +700,12 @@ export function resumenDeChatter(data: unknown, max = 10): string {
 
 /** La pregunta que queda abierta tras subir una imagen suelta (`pending_image`). */
 const PREGUNTA_IMAGEN = {
-  text: '¿Esta imagen es de la lesión o un formulario de consentimiento?',
+  // Títulos cortos: WhatsApp corta los botones a 20 caracteres.
+  text: '¿Esta imagen es de la lesión, del consentimiento informado (firma el paciente) o del de privacidad de los datos (firma el profesional)?',
   quick_replies: [
     { label: '🔬 Imagen de lesión', send: 'imagen lesion' },
-    { label: '📄 Consentimiento',   send: 'imagen consentimiento' },
+    { label: '📄 Consentimiento', send: 'imagen consentimiento' },
+    { label: '🔒 Privacidad datos', send: 'imagen privacidad' },
   ],
 };
 const ATAJOS_SIN_PACIENTE = [
@@ -748,7 +801,6 @@ export function parsearDestinos(texto: string, conocidos?: string[]): {
 }
 
 /** Consent entity (PAPER §8 image-consent records). Mirrors flowV1's constant. */
-const CONSENT_ENTITY_ID = '18000000-0000-0000-0000-000000000000';
 
 /**
  * Execute the session's staged `pending_action` now (the work the old "sí"
@@ -2215,10 +2267,12 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
       // ── Image classification answer: lesión vs consentimiento ──
       // Resolves the pending image saved when the user uploaded it. The choice
       // IS the explicit user action, so we write directly (no sí/no gate).
-      const imgKind = message.trim().match(/^\/?\s*imagen\s+(lesi[oó]n|consentimiento)\s*$/i);
+      const imgKind = message.trim().match(/^\/?\s*imagen\s+(lesi[oó]n|consentimiento|privacidad)\s*$/i);
       const pendingImage = (session.extracted_slots as any)?.pending_image;
       if (imgKind && pendingImage?.attachment_id) {
-        const isConsent = /consent/i.test(imgKind[1]);
+        const consentType: ConsentType | null = /consent/i.test(imgKind[1]) ? 'informado'
+          : /privacidad/i.test(imgKind[1]) ? 'privacidad_datos' : null;
+        const isConsent = consentType !== null;
         const aid  = pendingImage.attachment_id as string;
         const name = (pendingImage.name as string) || aid.slice(0, 8);
         // Clear the pending image regardless of outcome.
@@ -2236,21 +2290,10 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
               toolCalls: [], active_patient_id: activePatientId, active_episode_id: activeEpisodeId });
           }
           session.pending_action = {
-            summary: `Crear consent (imagen) para paciente ${activePatientId}`,
+            summary: `Crear ${CONSENT_LABELS[consentType!]} (foto) para paciente ${activePatientId}`,
             tool: 'entities.create',
-            args: {
-              record_type: 'business',
-              entity_id:   CONSENT_ENTITY_ID,
-              title:       `consent_imagen_${aid.slice(0, 8)}`,
-              data: {
-                [`${PATIENT_ENTITY_ID}:patient_id`]: activePatientId,
-                tipo: 'imagen_clinica',
-                version: 'imagen-subida',
-                documento: aid,
-                firmado_at: new Date().toISOString().slice(0, 10),
-              },
-            },
-            successMessage: 'Imagen registrada como consentimiento del paciente.',
+            args: buildConsentCreate(activePatientId, consentType!, aid),
+            successMessage: `Foto registrada como ${CONSENT_LABELS[consentType!]} del paciente.`,
             createdAt: new Date().toISOString(),
           };
         } else {

@@ -50,9 +50,10 @@ describe('ficha image groups — spec', () => {
     const ids = FICHA_GROUPS.map(g => g.id);
     expect(ids.indexOf('g_4_7')).toBe(ids.indexOf('g_4_6') + 1);
   });
-  it('g_8 sits right after g_7', () => {
+  it('g_8 sits right after g_7, and g_8_2 right after g_8', () => {
     const ids = FICHA_GROUPS.map(g => g.id);
     expect(ids.indexOf('g_8')).toBe(ids.indexOf('g_7') + 1);
+    expect(ids.indexOf('g_8_2')).toBe(ids.indexOf('g_8') + 1);
   });
   it('g_4_7 has a multiple image_upload field on the episode', () => {
     const g = FICHA_GROUPS.find(x => x.id === 'g_4_7')!;
@@ -173,9 +174,29 @@ describe('§8 Imágenes Consentimiento submit', () => {
     const creates = mcp.calls.filter((c: any) => c.name === 'entities.create');
     expect(creates.length).toBe(1);
     expect(creates[0].args.entity_id).toBe(CONSENT_ENTITY_ID);
-    expect(creates[0].args.data.tipo).toBe('imagen_clinica');
+    expect(creates[0].args.data.tipo).toBe('informado');
     expect(creates[0].args.data['11000000-0000-0000-0000-000000000000:patient_id']).toBe('pat-1');
-    expect(creates[0].args.data.documento).toBe('dddddddd-0000-0000-0000-000000000001');
+    // La foto va en attachment_id: `documento` (tipo attachment) no tiene columna.
+    expect(creates[0].args.data.attachment_id).toBe('dddddddd-0000-0000-0000-000000000001');
+    expect(res!.text).toMatch(/consentimiento informado/);
+  });
+
+  it('g_8_2 crea el consentimiento de privacidad de los datos', async () => {
+    const mcp = fakeMcp();
+    const session = fichaSession();
+    const res = await handleV1Flow({
+      session, message: '', mcp,
+      formSubmission: {
+        form_id: 'ficha_grp_g_8_2',
+        data: { imagen_privacidad: 'eeeeeeee-0000-0000-0000-000000000001,eeeeeeee-0000-0000-0000-000000000002' },
+      },
+    });
+    expect(session.pending_action).toBeNull();
+    const creates = mcp.calls.filter((c: any) => c.name === 'entities.create');
+    expect(creates.map((c: any) => c.args.data.tipo)).toEqual(['privacidad_datos', 'privacidad_datos']);
+    expect(creates.map((c: any) => c.args.data.attachment_id)).toEqual([
+      'eeeeeeee-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000002']);
+    expect(res!.text).toMatch(/privacidad de los datos/);
   });
 
   it('rejects an empty submission', async () => {

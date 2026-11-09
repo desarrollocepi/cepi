@@ -39,7 +39,7 @@ const SIN_AVISO = new RegExp('^/?\\s*(' + [
   'ver\\s.*', 'recordatorios', 'reminders', 'resumen', 'help', 'ayuda', 'comandos',
   'entrantes', 'turno', 'casos\\s+similares', 'mostrar\\s+resultados.*', 'sugerir\\s+diagn[oó]stico',
   'whoami', 'definitions', 'pacientes', 'episodios', 'diagn[oó]sticos', 'tools',
-  'imagen\\s+(lesi[oó]n|consentimiento)',
+  'imagen\\s+(lesi[oó]n|consentimiento|privacidad)',
 ].join('|') + ')\\s*$', 'i');
 
 /** Texto del aviso para este turno, o '' si no corresponde mandarlo. */

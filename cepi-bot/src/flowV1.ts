@@ -8,12 +8,12 @@
 import { TodoErpMcpClient } from './mcpClient.js';
 import { BotSession, saveSession } from './sessionStore.js';
 import { inspectAttachment } from './imageInspect.js';
+import { CONSENT_LABELS, createConsents, listConsents, type ConsentType } from './consentimientos.js';
 import { tipoEsperado, validarDeterminista } from './validarCampo.js';
 
 const PATIENT_ENTITY_ID = '11000000-0000-0000-0000-000000000000';
 const EPISODE_ENTITY_ID = '12000000-0000-0000-0000-000000000000';
 const CLINICAL_IMAGE_ENTITY_ID = '16000000-0000-0000-0000-000000000000';
-const CONSENT_ENTITY_ID = '18000000-0000-0000-0000-000000000000';
 
 export interface QuickReply { label: string; send: string; }
 
@@ -253,8 +253,10 @@ const FICHA_FIELD_DEFS: FichaFieldDef[] = [
   // Resumen de lo más importante del caso: sale como columna en la evolución (PAPER §28).
   { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
   ] as BotFormField[]).map(field => ({ category: 'Tratamiento', target: 'episode' as const, field })),
-  // §8 Imágenes de consentimiento (paciente)
-  { category: 'Consentimiento', target: 'patient', field: { key: 'imagen_consentimiento', label: 'Imagen del consentimiento', type: 'image_upload' } },
+  // §8 Consentimientos (paciente, PAPER §31): el informado lo firma el paciente; el de
+  // privacidad de los datos, el profesional que lo atiende. Cada uno con su foto.
+  { category: 'Consentimiento', target: 'patient', field: { key: 'imagen_consentimiento', label: 'Foto del consentimiento informado firmado por el paciente', type: 'image_upload' } },
+  { category: 'Consentimiento', target: 'patient', field: { key: 'imagen_privacidad', label: 'Foto del consentimiento de privacidad de los datos firmado por el profesional', type: 'image_upload' } },
 ];
 
 /** La ficha se agrupa por sección/subsección: un formulario por grupo. */
@@ -290,8 +292,20 @@ const FICHA_GROUP_SPEC: { id: string; label: string; keys: string[] }[] = [
   { id: 'g_5',   label: '5 Diagnóstico',              keys: ['diagnostico','diagnostico_letra'] },
   { id: 'g_6',   label: '6 Estudios complementarios', keys: ['estudios_complementarios_presente','estudios_complementarios_resumen'] },
   { id: 'g_7',   label: '7 Tratamiento y plan',       keys: ['tratamiento_resumen','plan','proximo_control_fecha','proximo_control_motivo','observaciones'] },
-  { id: 'g_8',   label: '8 Imágenes Consentimiento',  keys: ['imagen_consentimiento'] },
+  { id: 'g_8',   label: '8.1 Consentimiento informado (firma el paciente)', keys: ['imagen_consentimiento'] },
+  { id: 'g_8_2', label: '8.2 Privacidad de los datos (firma el profesional)', keys: ['imagen_privacidad'] },
 ];
+
+/** Grupos de la ficha que se llenan subiendo fotos: crean registros, no escriben campos. */
+export type ImageGroupId = 'g_4_7' | 'g_8' | 'g_8_2';
+export function isImageGroup(gid: unknown): gid is ImageGroupId {
+  return gid === 'g_4_7' || gid === 'g_8' || gid === 'g_8_2';
+}
+/** Grupo de consentimiento → tipo del registro `consent` (PAPER §31). */
+export const CONSENT_GROUPS: Record<string, ConsentType | undefined> = {
+  g_8: 'informado',
+  g_8_2: 'privacidad_datos',
+};
 
 export const FICHA_GROUPS: FichaGroup[] = FICHA_GROUP_SPEC.map(g => ({
   id: g.id,
@@ -508,7 +522,7 @@ export async function fichaBookmarksFor(
   // clinical_image / consent records. Mark them done when such a record
   // exists for the active episode / patient.
   let hasLesionImages = false;
-  let hasConsentImages = false;
+  let consents: Record<ConsentType, unknown[]> = { informado: [], privacidad_datos: [] };
   if (session.active_episode_id) {
     try {
       const r = await mcp.call('entities.list', {
@@ -521,12 +535,7 @@ export async function fichaBookmarksFor(
   }
   if (session.active_patient_id) {
     try {
-      const r = await mcp.call('entities.list', {
-        type: CONSENT_ENTITY_ID,
-        filter: { patient_id: session.active_patient_id, tipo: 'imagen_clinica' },
-        limit: 1,
-      });
-      hasConsentImages = Array.isArray((r as any)?.data) && (r as any).data.length > 0;
+      consents = await listConsents(mcp, session.active_patient_id);
     } catch { /* treat as none */ }
   }
 
@@ -538,8 +547,10 @@ export async function fichaBookmarksFor(
     if (g.id === 'g_4_7') {
       return { id: g.id, label: g.label, category: g.category, done: hasLesionImages, conDato: hasLesionImages };
     }
-    if (g.id === 'g_8') {
-      return { id: g.id, label: g.label, category: g.category, done: hasConsentImages, conDato: hasConsentImages };
+    const consentType = CONSENT_GROUPS[g.id];
+    if (consentType) {
+      const has = consents[consentType].length > 0;
+      return { id: g.id, label: g.label, category: g.category, done: has, conDato: has };
     }
     const src = g.target === 'patient' ? patientData : episodeData;
     const done = lleno(src[g.fields[0].key as string]);
@@ -787,8 +798,8 @@ function parseAttachmentCsv(v: unknown): string[] {
  *   flagged `privada`. Adequate images become clinical_image records
  *   (embedding_status:'pending', linked to episode + patient). The
  *   clinicalImageProcessor worker does ISIC after.
- * §8 — each uploaded attachment becomes a consent record (tipo:
- *   'imagen_clinica') linked to the patient. No quality/face/ISIC checks.
+ * §8.1 / §8.2 — each uploaded attachment becomes a consent record of the patient
+ *   (tipo 'informado' / 'privacidad_datos', PAPER §31). No quality/face/ISIC checks.
  *
  * Like every other ficha group, the records are written directly on submit:
  * sending the ficha form is itself the user's explicit action, so no extra
@@ -927,7 +938,7 @@ export async function guardarGrupoFicha(
   if (!grp) throw new Error(`grupo de ficha desconocido: ${args.groupId}`);
   // Los grupos de imagen crean registros clinical_image / consent, no escriben campos:
   // su alta va por el flujo de subida, no por acá.
-  if (args.groupId === 'g_4_7' || args.groupId === 'g_8') {
+  if (isImageGroup(args.groupId)) {
     throw new Error(`el grupo ${grp.label} se completa subiendo imágenes, no con este endpoint`);
   }
 
@@ -966,13 +977,14 @@ export async function guardarGrupoFicha(
 }
 
 async function handleImageGroupSubmit(
-  gid: 'g_4_7' | 'g_8',
+  gid: ImageGroupId,
   data: Record<string, unknown>,
   session: BotSession,
   mcp: TodoErpMcpClient,
   message: string,
 ): Promise<FlowResponse> {
-  const key = gid === 'g_4_7' ? 'imagenes_lesion' : 'imagen_consentimiento';
+  const consentType = CONSENT_GROUPS[gid];
+  const key = gid === 'g_4_7' ? 'imagenes_lesion' : gid === 'g_8_2' ? 'imagen_privacidad' : 'imagen_consentimiento';
   const attachmentIds = parseAttachmentCsv(data[key]);
   const grp = FICHA_GROUPS.find(g => g.id === gid);
   const summary = `📋 ${grp?.label || ''}`;
@@ -988,24 +1000,11 @@ async function handleImageGroupSubmit(
   const creates: Array<{ title: string; data: Record<string, unknown> }> = [];
   let entityId = '';
 
-  if (gid === 'g_8') {
+  if (consentType) {
     if (!session.active_patient_id) {
       const text = 'Necesito un paciente activo para registrar el consentimiento.';
       await appendAndSave(session, summary, text, mcp);
       return { text };
-    }
-    entityId = CONSENT_ENTITY_ID;
-    for (const aid of attachmentIds) {
-      creates.push({
-        title: `consent_imagen_${aid.slice(0, 8)}`,
-        data: {
-          [`${PATIENT_ENTITY_ID}:patient_id`]: session.active_patient_id,
-          tipo: 'imagen_clinica',
-          version: 'imagen-subida',
-          documento: aid,
-          firmado_at: new Date().toISOString().slice(0, 10),
-        },
-      });
     }
   } else {
     // §4.7 — lesión: inspect each image, then keep the adequate ones.
@@ -1051,6 +1050,10 @@ async function handleImageGroupSubmit(
   let ok = 0;
   const okIds: string[] = [];
   const errs: string[] = [];
+  if (consentType) {
+    const r = await createConsents(mcp, session.active_patient_id!, consentType, attachmentIds);
+    ok = r.ids.length; okIds.push(...r.ids); errs.push(...r.errors);
+  }
   for (const c of creates) {
     const r = await mcp.call('entities.create', {
       record_type: 'business', entity_id: entityId, title: c.title, data: c.data,
@@ -1064,8 +1067,8 @@ async function handleImageGroupSubmit(
     }
   }
 
-  const head = gid === 'g_8'
-    ? `Registré ${ok} imagen(es) de consentimiento ligada(s) al paciente.`
+  const head = consentType
+    ? `Registré ${ok} foto(s) del ${CONSENT_LABELS[consentType]} del paciente.`
     : `Registré ${ok} imagen(es) clínica(s) ligada(s) al episodio y al paciente. ` +
       `El worker ISIC las clasifica en unos segundos — te muestro el resultado acá apenas termine.`;
   const lines = [
@@ -1322,7 +1325,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
       // These groups don't write a field on the episode/patient — they
       // create clinical_image / consent records. The image-upload field's
       // value is a CSV of already-uploaded attachment ids.
-      if (gid === 'g_4_7' || gid === 'g_8') {
+      if (isImageGroup(gid)) {
         // Se engancha en el punto de llamada y no dentro: la función tiene varias
         // salidas y así todas quedan cubiertas sin repetir el recálculo en cada una.
         const r = await handleImageGroupSubmit(gid, data, session, mcp, message);

@@ -145,7 +145,7 @@ const evolucion = ref(null);
 
 // Los grupos de imagen (§4.7, §8) no escriben campos: crean registros clinical_image /
 // consent al subir la foto. Editarlos desde acá no tendría dónde guardar.
-const GRUPOS_IMAGEN = new Set(['g_4_7', 'g_8']);
+const GRUPOS_IMAGEN = new Set(['g_4_7', 'g_8', 'g_8_2']);
 const editable = (g) => !GRUPOS_IMAGEN.has(g.id) && Boolean(g.form);
 
 function editar(g) { editando.value = g.id; avisoGuardado.value = ''; }

@@ -3100,3 +3100,45 @@ está en un estado que espera especialista (`enviada`, `en_triage`, `derivada`,
   dice quién respondió.
 - **Apps**: el mismo botón y el mismo endpoint (iOS y Android).
 
+
+## 31. Consentimientos del paciente (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** Dos lugares propios, separados del resto de las fotos y fáciles de encontrar:
+(a) el **consentimiento informado**, que firma el paciente; (b) el **consentimiento de
+privacidad de los datos del paciente**, que firma el profesional que lo atiende. En los dos
+se sube la foto de la hoja firmada.
+
+### 31.1 Datos
+
+Cada foto es un registro `consent` (`18000000-…`) del paciente:
+
+| tipo | quién firma | grupo de la ficha | clave del campo |
+|---|---|---|---|
+| `informado` | el paciente | `g_8` · 8.1 Consentimiento informado | `imagen_consentimiento` |
+| `privacidad_datos` | el profesional que atiende | `g_8_2` · 8.2 Privacidad de los datos | `imagen_privacidad` |
+
+- `attachment_id` (texto) guarda el adjunto, igual que `clinical_image`. **Bug corregido**:
+  hasta acá la foto iba en `documento`, que es de tipo `attachment` y no tiene columna en la
+  tabla tipada: `insertBusinessRecord` lo descartaba y el registro quedaba sin su foto. Los
+  registros viejos (`tipo = imagen_clinica`, `version = imagen-subida`) pasan a `informado`
+  (seed 005); su foto no se puede recuperar con certeza y no se inventa un enlace.
+- `firmado_at` es el día en que se sube; `created_by` dice quién la subió.
+- Un consentimiento es del **paciente**, no de la consulta: vale para todas sus visitas.
+
+### 31.2 Endpoints (`cepi-bot/src/consentimientos.ts`)
+
+- `GET /api/bot/consentimientos?patient_id=` → `{informado: [...], privacidad_datos: [...]}`,
+  cada fila `{id, attachment_id, fecha, subido_por}`, más nuevas primero.
+- `POST /api/bot/consentimientos {patient_id, tipo, attachment_ids}` → crea un registro por
+  foto. Subir la foto es la acción explícita del usuario: sin gate. El mismo código lo usan
+  los grupos `g_8`/`g_8_2` de la ficha y la pregunta «¿qué es esta imagen?» del chat, que
+  ahora ofrece las dos opciones.
+
+### 31.3 Dónde se ve
+
+En la sección **Imágenes** del paciente (§24.2.1), arriba de las fotos clínicas, dos
+recuadros: «Consentimiento informado · lo firma el paciente» y «Privacidad de los datos ·
+lo firma el profesional». Cada uno muestra sus fotos (con zoom) y un botón «📷 Subir foto»
+que está siempre; vacío dice «Todavía no hay foto». La Galería de la organización sigue
+mostrando solo fotos clínicas: los consentimientos no se mezclan. Igual en web, iOS y
+Android.

@@ -25,6 +25,7 @@ const ChatList = defineComponent({ name: 'ChatList', props: ['activeId', 'user',
 const FichaCompleta = defineComponent({ name: 'FichaCompleta', props: ['patientId', 'episodeId', 'visitas', 'cargandoVisitas'], emits: ['navegar'], render: () => h('div', { class: 'ficha-doble' }) });
 const EvolucionPaciente = defineComponent({ name: 'EvolucionPaciente', props: ['patientId', 'episodeId', 'plegable'], emits: ['navegar'], render: () => h('div', { class: 'evolucion-doble' }) });
 const RejillaImagenes = defineComponent({ name: 'RejillaImagenes', props: ['patientId', 'mostrarPaciente', 'vacio'], render: () => h('div', { class: 'rejilla-doble' }) });
+const ConsentimientosPaciente = defineComponent({ name: 'ConsentimientosPaciente', props: ['patientId'], render: () => h('div', { class: 'cons-doble' }) });
 
 let movil = false;
 async function montar(ruta = '/chat') {
@@ -39,7 +40,7 @@ async function montar(ruta = '/chat') {
   await router.push(ruta);
   const w = mount(ChatShell, {
     props: { user: { id: 'yo' } },
-    global: { plugins: [router], stubs: { ChatList, IntakeChat, FichaCompleta, EvolucionPaciente, RejillaImagenes } },
+    global: { plugins: [router], stubs: { ChatList, IntakeChat, FichaCompleta, EvolucionPaciente, RejillaImagenes, ConsentimientosPaciente } },
   });
   await flushPromises();
   return { w, router };
@@ -102,6 +103,8 @@ describe('ChatShell — el paciente abierto lo manda la URL', () => {
     const { w } = await montar('/chat/p9/imagenes');
     expect(pestana(w, 'Imágenes').attributes('aria-selected')).toBe('true');
     expect(w.findComponent(RejillaImagenes).props()).toMatchObject({ patientId: 'p9', mostrarPaciente: false });
+    // Los consentimientos van en su propio recuadro, arriba de las fotos clínicas (PAPER §31).
+    expect(w.findComponent(ConsentimientosPaciente).props()).toMatchObject({ patientId: 'p9' });
   });
 
   it('un paciente ajeno o inexistente no se abre: avisa y vuelve a la lista', async () => {

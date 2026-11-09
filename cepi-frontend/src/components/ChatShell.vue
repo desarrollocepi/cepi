@@ -38,12 +38,15 @@
         :key="selectedId" :patient-id="selectedId" :episode-id="episodioDeLaFicha" :plegable="false"
         class="shell-chat" @navegar="abrirFichaDesdeEvolucion"
       />
-      <RejillaImagenes
-        v-if="selectedId && seccion === 'imagenes'"
-        :key="selectedId" :patient-id="selectedId" :mostrar-paciente="false"
-        vacio="Este paciente todavía no tiene imágenes"
-        class="shell-chat"
-      />
+      <!-- Imágenes: arriba los dos consentimientos (PAPER §31), abajo las fotos clínicas. -->
+      <div v-if="selectedId && seccion === 'imagenes'" :key="selectedId" class="shell-chat shell-imagenes">
+        <ConsentimientosPaciente :patient-id="selectedId" />
+        <RejillaImagenes
+          :patient-id="selectedId" :mostrar-paciente="false"
+          vacio="Este paciente todavía no tiene fotos clínicas"
+          class="shell-rejilla"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -54,6 +57,7 @@ import ChatList from './ChatList.vue';
 import IntakeChat from './IntakeChat.vue';
 import FichaCompleta from './FichaCompleta.vue';
 import RejillaImagenes from './RejillaImagenes.vue';
+import ConsentimientosPaciente from './ConsentimientosPaciente.vue';
 import EvolucionPaciente from './EvolucionPaciente.vue';
 import { listarCasosDePaciente, obtenerEntidad } from '../api.js';
 import { bindBackState } from '../useBackStack.js';
@@ -297,6 +301,8 @@ onUnmounted(() => { mq.removeEventListener('change', onMq); });
 .shell-list { min-height: 0; }
 .shell-detail { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .shell-chat { flex: 1; min-height: 0; }
+.shell-imagenes { display: flex; flex-direction: column; overflow-y: auto; }
+.shell-rejilla { flex: 1 0 auto; overflow-y: visible; }
 .mchat-bar { display: none; }
 /* Pestañas Chat / Ficha / Evolución / Imágenes. Sin estilo salían como botones nativos del navegador. */
 .shell-secciones { display: flex; gap: 6px; flex-shrink: 0; padding: 0 0 8px; }

@@ -535,3 +535,16 @@ export async function lookupCareRating(cedula) {
 export async function rateCare(cedula, score) {
   return call('/api/care-rating', { method: 'POST', body: JSON.stringify({ cedula, score }) });
 }
+
+/** Consentimientos del paciente por tipo (PAPER §31): `{informado: [...], privacidad_datos: [...]}`. */
+export async function listarConsentimientos(patientId) {
+  return call(`/api/bot/consentimientos?patient_id=${encodeURIComponent(patientId)}`, { method: 'GET' });
+}
+
+/** Registra fotos ya subidas como consentimiento `informado` o `privacidad_datos`. */
+export async function guardarConsentimientos({ patientId, tipo, attachmentIds }) {
+  return call('/api/bot/consentimientos', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id: patientId, tipo, attachment_ids: attachmentIds }),
+  });
+}
