@@ -133,3 +133,32 @@ data class ImagenGaleria(
 /** `GET /api/bot/galeria`: la página pedida y cuántas hay en total. */
 @Serializable
 data class RespuestaGaleria(val data: List<ImagenGaleria> = emptyList(), val total: Int? = null)
+
+// Consentimientos del paciente (PAPER §31)
+
+/**
+ * Una foto de consentimiento firmado. `attachmentId` es `null` en los registros viejos cuya foto
+ * no se pudo recuperar: se muestran como «Sin foto». `fecha` es `YYYY-MM-DD`, como texto.
+ */
+@Serializable
+data class ConsentPhoto(
+    val id: String,
+    @SerialName("attachment_id") val attachmentId: String? = null,
+    val fecha: String? = null,
+    @SerialName("subido_por") val uploadedBy: String? = null,
+)
+
+/** `GET /api/bot/consentimientos`: las fotos de cada tipo, más nuevas primero. */
+@Serializable
+data class ConsentList(
+    val informado: List<ConsentPhoto> = emptyList(),
+    @SerialName("privacidad_datos") val privacidadDatos: List<ConsentPhoto> = emptyList(),
+)
+
+/** `POST /api/bot/consentimientos`: un registro por foto; `errors` trae lo que no se guardó. */
+@Serializable
+data class ConsentSaveResult(
+    val ok: Boolean = false,
+    val ids: List<String> = emptyList(),
+    val errors: List<String> = emptyList(),
+)

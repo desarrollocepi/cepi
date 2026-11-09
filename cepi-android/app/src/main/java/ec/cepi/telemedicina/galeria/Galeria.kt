@@ -59,11 +59,20 @@ fun Galeria(modelo: GaleriaModelo, organizacion: String?, relleno: PaddingValues
 }
 
 /**
- * Las imágenes clínicas de un paciente, de todas sus consultas: la tercera sección del paciente
- * (PAPER §24.2.1). El nombre del paciente no se repite en cada foto.
+ * Las imágenes de un paciente, de todas sus consultas: la sección Imágenes del paciente
+ * (PAPER §24.2.1). Arriba, los dos consentimientos firmados (§31.3), separados de las fotos
+ * clínicas; abajo, las clínicas. El nombre del paciente no se repite en cada foto.
  */
 @Composable
-fun ImagenesPaciente(modelo: GaleriaModelo) {
+fun ImagenesPaciente(modelo: GaleriaModelo, consents: ConsentModel) {
     LaunchedEffect(modelo) { modelo.buscar("", esperaMs = 0) }
-    RejillaImagenes(modelo, vacio = "Este paciente todavía no tiene imágenes", mostrarPaciente = false)
+    Column(Modifier.fillMaxSize()) {
+        ConsentimientosPaciente(consents, Modifier.padding(top = 6.dp))
+        RejillaImagenes(
+            modelo,
+            vacio = "Este paciente todavía no tiene imágenes",
+            mostrarPaciente = false,
+            modifier = Modifier.weight(1f),
+        )
+    }
 }

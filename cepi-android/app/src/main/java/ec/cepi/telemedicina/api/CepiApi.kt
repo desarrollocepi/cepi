@@ -1,8 +1,10 @@
 package ec.cepi.telemedicina.api
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /** Los endpoints que usa la app, con tipos. Contrato completo en PAPER §24.4 y §25.4. */
@@ -198,6 +200,18 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun subirImagen(jpeg: ByteArray, nombre: String): Adjunto =
         cliente.subir("/api/attachments", jpeg, nombre, "image/jpeg")
 
+    // Consentimientos del paciente (PAPER §31)
+
+    suspend fun consents(paciente: String): ConsentList =
+        cliente.get("/api/bot/consentimientos", "patient_id" to paciente)
+
+    /**
+     * Un registro `consent` por foto ya subida (`subirImagen`). Subir es la acción explícita del
+     * usuario: cepi-bot lo guarda sin pedir sí/no. `tipo`: `informado` o `privacidad_datos`.
+     */
+    suspend fun saveConsents(paciente: String, tipo: String, adjuntos: List<String>): ConsentSaveResult =
+        cliente.post("/api/bot/consentimientos", consentsBody(paciente, tipo, adjuntos))
+
     // Avisos y push
 
     /** La bandeja es personal: aunque el rol lea todos, se pide solo lo del usuario (como la web). */
@@ -242,6 +256,13 @@ class CepiApi(val cliente: ApiClient) {
             put("diagnostico", diagnostico)
             put("tratamiento", tratamiento)
             put("observaciones", observaciones)
+        }
+
+        /** El cuerpo de `POST /api/bot/consentimientos`. Sin red, para probarlo. */
+        fun consentsBody(paciente: String, tipo: String, adjuntos: List<String>): JsonObject = buildJsonObject {
+            put("patient_id", paciente)
+            put("tipo", tipo)
+            putJsonArray("attachment_ids") { adjuntos.forEach { add(JsonPrimitive(it)) } }
         }
 
         /** El cuerpo de `POST /api/bot/ficha/grupo` para las observaciones. Sin red, para probarlo. */

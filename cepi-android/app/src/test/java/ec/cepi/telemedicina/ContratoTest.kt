@@ -164,6 +164,46 @@ class ContratoTest {
     }
 
     @Test
+    fun consentsContract() {
+        // GET /api/bot/consentimientos (PAPER §31.2): los dos tipos, y un registro viejo sin foto.
+        val lista = decodificar<ec.cepi.telemedicina.api.ConsentList>(
+            """
+            {"ok":true,
+             "informado":[{"id":"c1","attachment_id":"a1","fecha":"2026-11-09","subido_por":"Dra. Pérez"},
+                          {"id":"c0","attachment_id":null,"fecha":null,"subido_por":null}],
+             "privacidad_datos":[{"id":"c2","attachment_id":"a2","fecha":"2026-11-08","subido_por":"Dr. Ruiz"}]}
+            """,
+        )
+        assertEquals(2, lista.informado.size)
+        assertEquals("a1", lista.informado[0].attachmentId)
+        assertEquals("2026-11-09", lista.informado[0].fecha)
+        assertEquals("Dra. Pérez", lista.informado[0].uploadedBy)
+        assertEquals("c0", lista.informado[1].id)
+        assertNull(lista.informado[1].attachmentId)
+        assertNull(lista.informado[1].fecha)
+        assertNull(lista.informado[1].uploadedBy)
+        assertEquals(1, lista.privacidadDatos.size)
+        assertEquals("a2", lista.privacidadDatos[0].attachmentId)
+        assertEquals("Dr. Ruiz", lista.privacidadDatos[0].uploadedBy)
+        // Un tipo que el backend no manda queda vacío.
+        assertTrue(decodificar<ec.cepi.telemedicina.api.ConsentList>("""{"ok":true,"informado":[]}""").privacidadDatos.isEmpty())
+
+        // POST /api/bot/consentimientos.
+        assertEquals(
+            """{"patient_id":"p1","tipo":"privacidad_datos","attachment_ids":["a1","a2"]}""",
+            CepiApi.consentsBody("p1", "privacidad_datos", listOf("a1", "a2")).toString(),
+        )
+        assertEquals(
+            """{"patient_id":"p1","tipo":"informado","attachment_ids":["a3"]}""",
+            CepiApi.consentsBody("p1", "informado", listOf("a3")).toString(),
+        )
+        val guardado = decodificar<ec.cepi.telemedicina.api.ConsentSaveResult>("""{"ok":true,"ids":["c3","c4"],"errors":[]}""")
+        assertTrue(guardado.ok)
+        assertEquals(listOf("c3", "c4"), guardado.ids)
+        assertTrue(guardado.errors.isEmpty())
+    }
+
+    @Test
     fun observationsRequestBody() {
         // POST /api/bot/ficha/grupo desde la sección Evolución (grupo g_7, PAPER §28).
         val cuerpo = CepiApi.observationsBody("p1", "e2", "Control en 3 meses \"sin\" cambios")

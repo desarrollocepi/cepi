@@ -56,6 +56,7 @@ import ec.cepi.telemedicina.ficha.EvolutionPage
 import ec.cepi.telemedicina.ficha.FormularioHoja
 import ec.cepi.telemedicina.ficha.SeccionesHoja
 import ec.cepi.telemedicina.ficha.VisorFicha
+import ec.cepi.telemedicina.galeria.ConsentModel
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.galeria.ImagenesPaciente
 import kotlinx.coroutines.launch
@@ -100,6 +101,7 @@ fun PacienteAbierto(
         }
     }
     val imagenes = remember(pacienteId) { GaleriaModelo(api, paciente = pacienteId) }
+    val consents = remember(pacienteId) { ConsentModel(api, pacienteId) }
     val paginas = rememberPagerState(initialPage = seccionInicial) { secciones.size }
     var fichaMostrada by rememberSaveable { mutableStateOf(false) }
     var imagenAbierta by remember { mutableStateOf<String?>(null) }
@@ -256,7 +258,7 @@ fun PacienteAbierto(
                             alcance.launch { paginas.animateScrollToPage(PAGE_FICHA) }
                         },
                     )
-                    else -> ImagenesPaciente(imagenes)
+                    else -> ImagenesPaciente(imagenes, consents)
                 }
             }
         }
