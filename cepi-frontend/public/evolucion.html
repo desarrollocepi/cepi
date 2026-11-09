@@ -93,12 +93,14 @@
     .especialista { grid-column: 2; }
   }
   /* Edición de observaciones (data.editable). */
-  .obs-editar, .obs-acciones button {
+  .obs-acciones button {
     margin-top: 4px; padding: 3px 9px; font: 600 8.5pt -apple-system, system-ui, sans-serif; color: #2f5f66;
     background: #fff; border: 1px solid #9cc3c8; border-radius: 6px; cursor: pointer;
   }
-  .obs-editar { display: block; }
-  .obs-editar:disabled, .obs-acciones button:disabled { color: #aaa; border-color: #ddd; cursor: default; }
+  .obs-acciones button:disabled { color: #aaa; border-color: #ddd; cursor: default; }
+  .obs-linea { display: flex; align-items: flex-start; gap: 6px; }
+  .obs-editar { flex-shrink: 0; margin-left: auto; padding: 0 4px; font-size: 12pt; line-height: 1.2; background: none; border: 0; border-radius: 4px; cursor: pointer; }
+  .obs-editar:disabled { opacity: .35; filter: grayscale(1); cursor: default; }
   .obs-texto { width: 100%; box-sizing: border-box; padding: 5px; font: 10pt -apple-system, system-ui, sans-serif; border: 1px solid #888; border-radius: 6px; }
   .obs-acciones { display: flex; gap: 6px; }
   .obs-error { margin: 4px 0 0; color: #b91c1c; font: 8.5pt -apple-system, system-ui, sans-serif; }
@@ -230,9 +232,11 @@ function pintarObs(id, error) {
     cuerpo.appendChild(span);
     const sinHost = typeof window.onGuardarObservaciones !== 'function';
     const otra = obsEnEdicion && obsEnEdicion !== id;
-    const b = boton('✏️ Editar', () => editarObs(id), sinHost || otra,
-      sinHost ? 'Esta vista no puede guardar' : (otra ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha'));
+    const motivo = sinHost ? 'Esta vista no puede guardar' : (otra ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha');
+    const b = boton('✏️', () => editarObs(id), sinHost || otra, motivo);
     b.className = 'obs-editar';
+    b.setAttribute('aria-label', motivo);
+    cuerpo.className = 'obs-linea';
     cuerpo.appendChild(b);
     return;
   }

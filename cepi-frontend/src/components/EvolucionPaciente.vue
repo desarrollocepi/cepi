@@ -72,14 +72,15 @@
                     <button class="evo-btn evo-btn--junto" type="button" :disabled="guardando" @click="cancelarEdicion">Cancelar</button>
                   </div>
                 </div>
-                <div v-else>
+                <div v-else class="evo-obs-linea">
                   <span>{{ f.observaciones || 'Sin observaciones' }}</span>
                   <button
                     class="evo-obs-editar" type="button"
                     :disabled="!!editando"
                     :title="editando ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha'"
+                    :aria-label="editando ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha'"
                     @click="editar(f)"
-                  >✏️ Editar</button>
+                  >✏️</button>
                 </div>
               </td>
             </tr>
@@ -216,9 +217,10 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-tabla tr.evo-actual td:first-child { box-shadow: inset 3px 0 0 #0ea5e9; }
 .evo-fecha { white-space: nowrap; }
 .evo-obs { min-width: 160px; }
-.evo-obs-editar { display: block; margin-top: 4px; padding: 2px 8px; font-size: 12px; font-style: normal; color: #0369a1; background: #fff; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
+.evo-obs-linea { display: flex; align-items: flex-start; gap: 6px; }
+.evo-obs-editar { flex-shrink: 0; margin-left: auto; padding: 0 4px; font-size: 14px; line-height: 1.4; font-style: normal; background: none; border: 0; border-radius: 4px; cursor: pointer; }
 .evo-obs-editar:hover:not(:disabled) { background: #e0f2fe; }
-.evo-obs-editar:disabled { color: #94a3b8; border-color: #e2e8f0; cursor: default; }
+.evo-obs-editar:disabled { opacity: .35; filter: grayscale(1); cursor: default; }
 .evo-obs-texto { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; font-size: 13px; border: 1px solid #94a3b8; border-radius: 6px; resize: vertical; }
 .evo-obs-acciones { display: flex; gap: 6px; margin-top: 4px; }
 .evo-obs-acciones .evo-btn { margin-left: 0; }
