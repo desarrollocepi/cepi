@@ -270,3 +270,34 @@ struct ObservationsSave: Encodable, Sendable {
         case data
     }
 }
+
+// MARK: Responder interconsulta (PAPER §30)
+
+/// `POST /api/bot/interconsulta/responder`. Un campo vacío no borra lo que la ficha tenía.
+struct InterconsultaAnswer: Encodable, Sendable, Equatable {
+    let episodeId: String
+    let recomendacion: String
+    let diagnostico: String
+    let tratamiento: String
+    let observaciones: String
+
+    init(episodio: String, recomendacion: String, diagnostico: String, tratamiento: String, observaciones: String) {
+        func limpio(_ texto: String) -> String { texto.trimmingCharacters(in: .whitespacesAndNewlines) }
+        episodeId = episodio
+        self.recomendacion = limpio(recomendacion)
+        self.diagnostico = limpio(diagnostico)
+        self.tratamiento = limpio(tratamiento)
+        self.observaciones = limpio(observaciones)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case episodeId = "episode_id"
+        case recomendacion, diagnostico, tratamiento, observaciones
+    }
+}
+
+/// `{ok: true, notified}`: si se avisó al médico que envió el caso.
+struct InterconsultaAnswerResult: Decodable, Sendable {
+    let ok: Bool
+    let notified: Bool?
+}

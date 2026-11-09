@@ -110,6 +110,12 @@ struct CEPIAPI: Sendable {
         )
     }
 
+    /// El especialista responde la interconsulta (PAPER §30.2). Acción explícita: sin gate.
+    /// Un 400/409 llega como `APIError` con el motivo del bot en español.
+    func answerInterconsulta(_ respuesta: InterconsultaAnswer) async throws -> InterconsultaAnswerResult {
+        try await cliente.post("/api/bot/interconsulta/responder", json: respuesta)
+    }
+
     // MARK: Derivar
 
     func grupos() async throws -> [GrupoDerivacion] {

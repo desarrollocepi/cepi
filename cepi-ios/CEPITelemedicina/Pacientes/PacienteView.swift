@@ -10,6 +10,8 @@ struct PacienteView: View {
     let fila: FilaPaciente
     /// Cierra el paciente (tras derivar, el médico pasa al siguiente).
     let alTerminar: () -> Void
+    /// Vuelve a pedir la lista: tras responder, el paciente sale de "revisar".
+    let onListChanged: () async -> Void
 
     @Environment(Sesion.self) private var sesion
     @State private var modelo: HiloModelo
@@ -22,6 +24,11 @@ struct PacienteView: View {
     /// Sube cada vez que la Evolución vuelve a la vista: entre una vez y otra se pudo guardar
     /// un diagnóstico, así que se vuelve a pedir (PAPER §28.3).
     @State private var evolutionReload = 0
+    /// El episodio activo tal como está en el ERP (estado, quién lo envió, ficha): decide si
+    /// se puede responder la interconsulta y precarga el formulario.
+    @State private var episodeRecord: Registro?
+    @State private var showAnswer = false
+    @State private var answerConfirmation: String?
 
     enum Seccion: String, CaseIterable, Identifiable {
         case chat, ficha, evolucion, imagenes
@@ -37,9 +44,13 @@ struct PacienteView: View {
         }
     }
 
-    init(fila: FilaPaciente, seccion: Binding<Seccion>, alTerminar: @escaping () -> Void = {}) {
+    init(
+        fila: FilaPaciente, seccion: Binding<Seccion>,
+        onListChanged: @escaping () async -> Void = {}, alTerminar: @escaping () -> Void = {}
+    ) {
         self.fila = fila
         _seccion = seccion
+        self.onListChanged = onListChanged
         self.alTerminar = alTerminar
         _modelo = State(initialValue: HiloModelo(pacienteId: fila.id))
     }
@@ -114,6 +125,7 @@ struct PacienteView: View {
             }
         }
         .task { await modelo.abrir(api: sesion.api) }
+        .task(id: modelo.episodioActivo) { await loadEpisodeRecord() }
         .onChange(of: seccion) { _, nueva in
             if nueva == .evolucion { evolutionReload += 1 }
         }
@@ -141,6 +153,27 @@ struct PacienteView: View {
                 .environment(sesion)
             }
         }
+        .sheet(isPresented: $showAnswer) {
+            if let episodio = modelo.episodioActivo {
+                ResponderInterconsultaView(episodio: episodio, inicial: episodeRecord) { notified in
+                    answerConfirmation = notified
+                        ? "Quedó en la ficha y en la evolución, y se avisó al médico que envió el caso."
+                        : "Quedó en la ficha y en la evolución."
+                    await loadEpisodeRecord()
+                    await modelo.releer(api: sesion.api)
+                    await onListChanged()
+                }
+                .environment(sesion)
+            }
+        }
+        .alert("Interconsulta respondida", isPresented: Binding(
+            get: { answerConfirmation != nil },
+            set: { if !$0 { answerConfirmation = nil } }
+        )) {
+            Button("Aceptar", role: .cancel) {}
+        } message: {
+            Text(answerConfirmation ?? "")
+        }
         .sheet(isPresented: $mostrarSecciones) {
             SeccionesView(marcadores: modelo.marcadores) { marcador in
                 seccion = .chat
@@ -163,6 +196,21 @@ struct PacienteView: View {
             )
             .environment(sesion)
         }
+    }
+
+    private func loadEpisodeRecord() async {
+        let episodio = modelo.episodioActivo
+        episodeRecord = nil
+        guard let episodio else { return }
+        // Sin datos el botón queda deshabilitado con su motivo ("Cargando…").
+        let registro = try? await sesion.api.entidad(episodio)
+        if modelo.episodioActivo == episodio { episodeRecord = registro }
+    }
+
+    private var answerBlockReason: String? {
+        Interconsulta.blockReason(
+            episode: modelo.episodioActivo, episodeData: episodeRecord, userId: sesion.usuario?.id
+        )
     }
 
     /// Lo que todavía no está se ve, gris y con la razón (CLAUDE.md: nunca ocultes un botón).
@@ -201,6 +249,13 @@ struct PacienteView: View {
                 .disabled(modelo.ocupado || !enLaActual)
                 Button("Evolución del paciente", systemImage: "chart.line.uptrend.xyaxis") { seccion = .evolucion }
             }
+            Button {
+                showAnswer = true
+            } label: {
+                Label("Responder interconsulta", systemImage: "checkmark.bubble")
+                Text(answerBlockReason ?? "Queda en la ficha y le llega al médico que envió el caso")
+            }
+            .disabled(modelo.ocupado || answerBlockReason != nil)
             Button("Derivar", systemImage: "arrowshape.turn.up.right") { mostrarDerivar = true }
                 .disabled(modelo.ocupado)
         } label: {

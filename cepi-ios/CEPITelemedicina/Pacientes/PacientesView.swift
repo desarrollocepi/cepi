@@ -23,7 +23,9 @@ struct PacientesView: View {
         } detail: {
             if let id = seleccion, let fila = modelo.fila(id) {
                 // `.id`: otro paciente es otro hilo, con su estado desde cero.
-                PacienteView(fila: fila, seccion: $seccion) { seleccion = nil }
+                PacienteView(fila: fila, seccion: $seccion, onListChanged: { await modelo.cargar(api: sesion.api) }) {
+                    seleccion = nil
+                }
                     .id(fila.id)
             } else {
                 ContentUnavailableView(

@@ -182,3 +182,80 @@ struct GuardarObservacionesTests {
         }
     }
 }
+
+/// «Responder interconsulta» (PAPER §30): el cuerpo, la respuesta del bot y cuándo se puede.
+struct ResponderInterconsultaTests {
+    private func api(_ servidor: ServidorFalso) -> CEPIAPI {
+        let red = URLSessionConfiguration.ephemeral
+        red.protocolClasses = [ProtocoloFalso.self]
+        let base = URL(string: "https://\(servidor.host)")!
+        let credenciales = Credenciales(cuenta: "prueba-\(UUID().uuidString)")
+        return CEPIAPI(cliente: APIClient(base: base, baseBot: base, credenciales: credenciales, configuracion: red))
+    }
+
+    private func episodio(_ data: String) throws -> Registro {
+        try JSONDecoder().decode(Registro.self, from: Data(#"{"id":"e1","data":\#(data)}"#.utf8))
+    }
+
+    @Test func cuerpoDelPedido() throws {
+        let cuerpo = try JSONEncoder().encode(InterconsultaAnswer(
+            episodio: "e1", recomendacion: "  Biopsia por punch\n", diagnostico: "D22.5 — Nevus atípico",
+            tratamiento: "", observaciones: "Control en 3 meses",
+        ))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == [
+            "episode_id": "e1", "recomendacion": "Biopsia por punch", "diagnostico": "D22.5 — Nevus atípico",
+            "tratamiento": "", "observaciones": "Control en 3 meses",
+        ])
+    }
+
+    @Test func respondeYDiceSiAviso() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/interconsulta/responder", .http(200, #"{"ok":true,"notified":true}"#))
+        let resultado = try await api(servidor).answerInterconsulta(InterconsultaAnswer(
+            episodio: "e1", recomendacion: "Biopsia", diagnostico: "", tratamiento: "", observaciones: "",
+        ))
+        #expect(resultado.notified == true)
+        let cuerpo = try #require(servidor.cuerpo(de: "POST /api/bot/interconsulta/responder"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json["episode_id"] == "e1")
+        #expect(json["recomendacion"] == "Biopsia")
+    }
+
+    @Test func un409TraeElMotivoTalCual() async {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/interconsulta/responder",
+                       .http(409, #"{"ok":false,"error":"Esta consulta ya fue respondida."}"#))
+        do {
+            _ = try await api(servidor).answerInterconsulta(InterconsultaAnswer(
+                episodio: "e1", recomendacion: "x", diagnostico: "", tratamiento: "", observaciones: "",
+            ))
+            Issue.record("debía fallar")
+        } catch {
+            #expect((error as? APIError)?.status == 409)
+            #expect(error.localizedDescription == "Esta consulta ya fue respondida.")
+        }
+    }
+
+    @Test func motivosDelBotonComoLaWeb() throws {
+        #expect(Interconsulta.blockReason(episode: nil, episodeData: nil, userId: "u1")
+                == "Este paciente no tiene una consulta abierta")
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: nil, userId: "u1")
+                == "Cargando el estado de la consulta…")
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: try episodio(#"{"estado":"respondida"}"#), userId: "u1")
+                == "Esta interconsulta ya fue respondida")
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: try episodio(#"{"estado":"en_curso"}"#), userId: "u1")
+                == "Esta consulta no tiene una interconsulta pendiente")
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: try episodio(#"{}"#), userId: "u1")
+                == "Esta consulta no tiene una interconsulta pendiente")
+        let propia = try episodio(#"{"estado":"derivada","medico_primario_id":"u1"}"#)
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: propia, userId: "u1")
+                == "Tú enviaste esta interconsulta: la responde el especialista")
+        for estado in ["enviada", "en_triage", "derivada", "en_revisión_solicitada"] {
+            let ajena = try episodio(#"{"estado":"\#(estado)","medico_primario_id":"u2"}"#)
+            #expect(Interconsulta.blockReason(episode: "e1", episodeData: ajena, userId: "u1") == nil)
+        }
+    }
+}
