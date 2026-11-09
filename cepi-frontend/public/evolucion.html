@@ -10,9 +10,17 @@
     data.filas    = [{ episode_id, fecha, medico, especialista, diagnostico,
                        diagnostico_histopatologico, tratamiento, observaciones }]  (la más nueva primero)
     data.actual   = episode_id de la ficha que se está viendo (se resalta), opcional
+    data.editable = true para que cada fila tenga «Editar» en Observaciones, opcional
 
   Tocar una fila llama a window.onAbrirFicha(episode_id) si quien embebe el documento
   la definió.
+
+  Observaciones editables (data.editable, lo usan las apps): «Guardar» llama a
+  window.onGuardarObservaciones(episode_id, texto) —el texto ya recortado— y la fila queda
+  en «Guardando…». Quien embebe guarda (cepi-bot /api/bot/ficha/grupo, grupo g_7) y responde
+  con window.observacionesGuardadas(episode_id, texto) o
+  window.errorObservaciones(episode_id, mensaje). Sin onGuardarObservaciones definido, el
+  botón sale deshabilitado con el motivo. Impreso no aparece nada de esto.
 -->
 <html lang="es">
 <head>
@@ -84,7 +92,19 @@
     td.estado::before { content: none; }
     .especialista { grid-column: 2; }
   }
+  /* Edición de observaciones (data.editable). */
+  .obs-editar, .obs-acciones button {
+    margin-top: 4px; padding: 3px 9px; font: 600 8.5pt -apple-system, system-ui, sans-serif; color: #2f5f66;
+    background: #fff; border: 1px solid #9cc3c8; border-radius: 6px; cursor: pointer;
+  }
+  .obs-editar { display: block; }
+  .obs-editar:disabled, .obs-acciones button:disabled { color: #aaa; border-color: #ddd; cursor: default; }
+  .obs-texto { width: 100%; box-sizing: border-box; padding: 5px; font: 10pt -apple-system, system-ui, sans-serif; border: 1px solid #888; border-radius: 6px; }
+  .obs-acciones { display: flex; gap: 6px; }
+  .obs-error { margin: 4px 0 0; color: #b91c1c; font: 8.5pt -apple-system, system-ui, sans-serif; }
+  td.obs { cursor: default; }
   @media print {
+    .obs-editar, .obs-acciones, .obs-error { display: none !important; }
     body { background: #fff; padding: 0; }
     .hoja { box-shadow: none; margin: 0; min-height: 0; }
     td { color: #000; }
@@ -140,6 +160,8 @@ function fillEvolucion(data) {
   document.getElementById('f-cuenta').textContent = filas.length === 1 ? '· 1 ficha' : `· ${filas.length} fichas`;
   const tbody = document.getElementById('f-filas');
   tbody.textContent = '';
+  Object.keys(celdasObs).forEach((k) => delete celdasObs[k]);
+  obsEnEdicion = null;
   if (!filas.length) {
     const tr = document.createElement('tr');
     const td = celda('Este paciente todavía no tiene fichas registradas.');
@@ -164,13 +186,114 @@ function fillEvolucion(data) {
     tr.appendChild(celda(f.diagnostico, 'Sin diagnóstico', 'Dx clínico'));
     tr.appendChild(celda(f.diagnostico_histopatologico, 'Sin biopsia', 'Dx histopatológico'));
     tr.appendChild(celda(f.tratamiento, 'Sin tratamiento', 'Tratamiento'));
-    tr.appendChild(celda(f.observaciones, 'Sin observaciones', 'Observaciones'));
+    tr.appendChild(data.editable ? celdaObservaciones(f) : celda(f.observaciones, 'Sin observaciones', 'Observaciones'));
     tr.addEventListener('click', () => {
       if (typeof window.onAbrirFicha === 'function') window.onAbrirFicha(f.episode_id);
     });
     tbody.appendChild(tr);
   }
 }
+
+// ---------- Observaciones editables ----------
+const celdasObs = {};   // episode_id → { td, fila, editando }
+let obsEnEdicion = null;
+
+function celdaObservaciones(f) {
+  const td = document.createElement('td');
+  td.dataset.col = 'Observaciones';
+  td.className = 'obs';
+  // El toque dentro de la celda no abre la ficha de la fila.
+  td.addEventListener('click', (e) => e.stopPropagation());
+  celdasObs[f.episode_id] = { td, fila: f };
+  pintarObs(f.episode_id);
+  return td;
+}
+
+function boton(texto, alTocar, deshabilitado, motivo) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = texto; b.disabled = !!deshabilitado;
+  if (motivo) b.title = motivo;
+  b.addEventListener('click', alTocar);
+  return b;
+}
+
+function pintarObs(id, error) {
+  const c = celdasObs[id]; if (!c) return;
+  const { td, fila } = c;
+  td.textContent = '';
+  td.classList.toggle('vacio', !fila.observaciones && obsEnEdicion !== id);
+  const cuerpo = document.createElement('div');
+  td.appendChild(cuerpo);
+  if (obsEnEdicion !== id) {
+    const span = document.createElement('span');
+    span.textContent = fila.observaciones || 'Sin observaciones';
+    cuerpo.appendChild(span);
+    const sinHost = typeof window.onGuardarObservaciones !== 'function';
+    const otra = obsEnEdicion && obsEnEdicion !== id;
+    const b = boton('✏️ Editar', () => editarObs(id), sinHost || otra,
+      sinHost ? 'Esta vista no puede guardar' : (otra ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha'));
+    b.className = 'obs-editar';
+    cuerpo.appendChild(b);
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.className = 'obs-texto'; area.rows = 3;
+  area.placeholder = 'Resumen de lo más importante de esta ficha';
+  area.value = c.borrador != null ? c.borrador : (fila.observaciones || '');
+  area.disabled = !!c.guardando;
+  cuerpo.appendChild(area);
+  if (error) {
+    const p = document.createElement('p'); p.className = 'obs-error'; p.textContent = error;
+    cuerpo.appendChild(p);
+  }
+  const acciones = document.createElement('div'); acciones.className = 'obs-acciones';
+  const guardar = boton(c.guardando ? 'Guardando…' : 'Guardar', () => {
+    const texto = area.value.trim();
+    c.borrador = area.value; c.guardando = true;
+    pintarObs(id);
+    window.onGuardarObservaciones(id, texto);
+  }, c.guardando, c.guardando ? 'Guardando…' : 'Guardar en la ficha');
+  const cancelar = boton('Cancelar', () => { obsEnEdicion = null; c.borrador = null; repintarObs(); }, c.guardando);
+  // Sin cambios no hay nada que guardar.
+  const sinCambios = () => area.value.trim() === (fila.observaciones || '');
+  if (!c.guardando) {
+    guardar.disabled = sinCambios();
+    guardar.title = sinCambios() ? 'No hay cambios que guardar' : 'Guardar en la ficha';
+    area.addEventListener('input', () => {
+      guardar.disabled = sinCambios();
+      guardar.title = sinCambios() ? 'No hay cambios que guardar' : 'Guardar en la ficha';
+    });
+  }
+  acciones.appendChild(guardar); acciones.appendChild(cancelar);
+  cuerpo.appendChild(acciones);
+  if (!c.guardando) area.focus();
+}
+
+function repintarObs() { Object.keys(celdasObs).forEach((id) => pintarObs(id)); }
+
+function editarObs(id) {
+  obsEnEdicion = id;
+  celdasObs[id].borrador = null;
+  repintarObs();
+}
+
+// Respuestas de quien embebe.
+function observacionesGuardadas(id, texto) {
+  const c = celdasObs[id]; if (!c) return;
+  c.fila.observaciones = texto || null;
+  c.guardando = false; c.borrador = null;
+  obsEnEdicion = null;
+  repintarObs();
+}
+
+function errorObservaciones(id, mensaje) {
+  const c = celdasObs[id]; if (!c) return;
+  c.guardando = false;
+  pintarObs(id, mensaje || 'No se pudo guardar');
+}
+
+window.observacionesGuardadas = observacionesGuardadas;
+window.errorObservaciones = errorObservaciones;
 
 // Error de carga del lado de quien embebe: se dice en la propia hoja.
 function errorEvolucion(mensaje) {
