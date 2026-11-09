@@ -1946,10 +1946,13 @@ Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
 | dentro del paciente | **Chat** · **Ficha** · **Evolución** · **Imágenes** (las del paciente) |
 
 - **Chat** es el hilo de siempre, con su composer y sus acciones.
-- **Ficha** es el visor documental (`ficha.html` en `WKWebView`), que hasta ahora se abría
-  desde "Acciones → Ver ficha": se lee completa, marca en rojo lo que cambió respecto de la
-  consulta anterior y se imprime. Editar sigue siendo por el chat y por "Secciones", para que
-  no haya dos formas distintas de escribir lo mismo.
+- **Ficha** es la ficha **editable y adaptable**, igual que la pestaña de la web
+  (`FichaCompleta.vue`, 2026-11-09, pedido del dueño): los grupos de `GET /api/bot/ficha` con
+  lo que tienen cargado, «Completar» / «Editar» con el mismo formulario del bot (se guarda con
+  `POST /api/bot/ficha/grupo`), «Solo lo que falta», navegación entre consultas y el bloque
+  «Respuesta del especialista». Los grupos de fotos (4.7, 8.1, 8.2) se llenan en Imágenes o
+  en el chat. El documento imprimible (`ficha.html`) queda detrás de «Imprimir»: antes era
+  esta pestaña, y en el teléfono se leía como hoja A4 y no se podía editar.
 - **Evolución** es la ficha de evolución del paciente (§28), abierta y a toda la altura.
   Entró como cuarta sección el 2026-11-09 por pedido de las dermatólogas: antes se abría desde
   un botón y no la encontraban.
@@ -2973,8 +2976,9 @@ usuarios. `GET /api/patient-evolution?patient_id=` (TodoERP,
 web es `EvolucionPaciente.vue` con `plegable=false` (la adaptable: tabla en escritorio,
 tarjetas en el teléfono) con «Actualizar» e «Imprimir»; «Imprimir» abre el documento A4
 (`evolucion.html`) en `VisorEvolucion`. En iOS y Android es la página que se desliza después
-de Ficha y carga `evolucion.html`, que en pantallas angostas muestra cada ficha como tarjeta
-(solo en pantalla: impreso sigue la tabla). Tocar una fila abre esa ficha en la sección Ficha.
+de Ficha y, como en la web, es **nativa y adaptable** (2026-11-09): una tarjeta por ficha con
+las seis columnas de §28.1 y el ✏️ de observaciones en línea (`g_7`); `evolucion.html`
+queda detrás de «Imprimir». Tocar una tarjeta abre esa ficha en la sección Ficha.
 
 Además, dentro de la ficha, plegada, encima de la barra de episodios. Así se consulta desde
 cualquier ficha sin dejar la que se está leyendo. Abrirla trae los datos en ese momento,
