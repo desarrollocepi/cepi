@@ -227,6 +227,11 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun saveConsents(paciente: String, tipo: String, adjuntos: List<String>): ConsentSaveResult =
         cliente.post("/api/bot/consentimientos", consentsBody(paciente, tipo, adjuntos))
 
+    // Próximos controles de los pacientes (PAPER §33)
+
+    /** Los controles de la org activa en la ventana del servidor (atrasados y próximos 90 días). */
+    suspend fun followUps(): FollowUpList = cliente.get("/api/bot/controles")
+
     // Avisos y push
 
     /** La bandeja es personal: aunque el rol lea todos, se pide solo lo del usuario (como la web). */

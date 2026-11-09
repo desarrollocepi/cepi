@@ -47,10 +47,13 @@ import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.notificaciones.BandejaHoja
 import ec.cepi.telemedicina.notificaciones.BandejaModelo
 import ec.cepi.telemedicina.notificaciones.Notificador
+import ec.cepi.telemedicina.controles.Controles
+import ec.cepi.telemedicina.controles.FollowUpsModel
 import ec.cepi.telemedicina.galeria.Galeria
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.pacientes.ListaPacientes
 import ec.cepi.telemedicina.pacientes.NuevoPaciente
+import ec.cepi.telemedicina.pacientes.PAGE_FICHA
 import ec.cepi.telemedicina.pacientes.PacienteAbierto
 import ec.cepi.telemedicina.pacientes.PacientesModelo
 import ec.cepi.telemedicina.turnos.ShiftsModel
@@ -60,10 +63,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
-private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria("Galería"), Turnos("Turnos") }
+private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria("Galería"), Turnos("Turnos"), Controles("Controles") }
 
 /**
- * Lo que se ve con la sesión abierta: Pacientes, Galería y Turnos (PAPER §24.2.1, D-Aux-22, §32). Dentro de
+ * Lo que se ve con la sesión abierta: Pacientes, Galería, Turnos y Controles (PAPER §24.2.1, D-Aux-22, §32,
+ * §33). Dentro de
  * un paciente hay otras cuatro secciones (`PacienteAbierto`).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +79,7 @@ fun Principal(entorno: Entorno) {
     val modelo = remember { PacientesModelo() }
     val galeria = remember { GaleriaModelo(sesion.api) }
     val turnos = remember { ShiftsModel(sesion.api) }
+    val controles = remember { FollowUpsModel(sesion.api) }
     val bandeja = remember { BandejaModelo(sesion.api) }
     var bandejaAbierta by rememberSaveable { mutableStateOf(false) }
     val contexto = LocalContext.current
@@ -192,6 +197,12 @@ fun Principal(entorno: Entorno) {
                         icon = { Icon(Icons.Filled.DateRange, contentDescription = null) },
                         label = { Text(Seccion.Turnos.titulo) },
                     )
+                    NavigationBarItem(
+                        selected = seccion == Seccion.Controles.ordinal,
+                        onClick = { seccion = Seccion.Controles.ordinal },
+                        icon = { Icon(painterResource(R.drawable.ic_evento), contentDescription = null) },
+                        label = { Text(Seccion.Controles.titulo) },
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(avisos) },
@@ -209,6 +220,10 @@ fun Principal(entorno: Entorno) {
                 )
                 Seccion.Galeria -> Galeria(galeria, organizacion, relleno)
                 Seccion.Turnos -> Turnos(turnos, sesion.usuario, organizacion, relleno)
+                Seccion.Controles -> Controles(controles, organizacion, relleno) { paciente ->
+                    seccionAlAbrir = PAGE_FICHA
+                    abierto = paciente
+                }
             }
         }
     }
