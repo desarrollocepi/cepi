@@ -280,19 +280,46 @@ struct InterconsultaAnswer: Encodable, Sendable, Equatable {
     let diagnostico: String
     let tratamiento: String
     let observaciones: String
+    /// Prioridad clínica (PAPER §34); vacía si no se eligió: el backend no la toca.
+    let prioridad: String
 
-    init(episodio: String, recomendacion: String, diagnostico: String, tratamiento: String, observaciones: String) {
+    init(
+        episodio: String, recomendacion: String, diagnostico: String, tratamiento: String, observaciones: String,
+        prioridad: ClinicalPriority? = nil,
+    ) {
         func limpio(_ texto: String) -> String { texto.trimmingCharacters(in: .whitespacesAndNewlines) }
         episodeId = episodio
         self.recomendacion = limpio(recomendacion)
         self.diagnostico = limpio(diagnostico)
         self.tratamiento = limpio(tratamiento)
         self.observaciones = limpio(observaciones)
+        self.prioridad = prioridad?.rawValue ?? ""
     }
 
     enum CodingKeys: String, CodingKey {
         case episodeId = "episode_id"
-        case recomendacion, diagnostico, tratamiento, observaciones
+        case recomendacion, diagnostico, tratamiento, observaciones, prioridad
+    }
+}
+
+/// Prioridad clínica del episodio (PAPER §34). La guía es la tabla del documento abreviada, la
+/// misma que `ResponderInterconsulta.vue`. La decisión es del médico responsable.
+enum ClinicalPriority: String, CaseIterable, Identifiable, Sendable {
+    case urgent = "Urgente"
+    case preferred = "Preferente"
+    case scheduled = "Programada"
+
+    var id: String { rawValue }
+
+    var guide: String {
+        switch self {
+        case .urgent:
+            "Compromiso general, ampollas extensas, reacción grave a fármacos, eritrodermia, púrpura que progresa → supervisor y atención presencial ya"
+        case .preferred:
+            "Sospecha de cáncer, crecimiento rápido, úlcera o sangrado persistente, inmunosuprimido → ruta prioritaria"
+        case .scheduled:
+            "Estable, sin alarma, o control de algo ya evaluado → seguimiento según plazo"
+        }
     }
 }
 

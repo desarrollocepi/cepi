@@ -41,8 +41,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.R
 import ec.cepi.telemedicina.api.Asignacion
+import ec.cepi.telemedicina.api.ClinicalPriority
 import ec.cepi.telemedicina.api.PendienteRevision
 import ec.cepi.telemedicina.app.Marca
+import ec.cepi.telemedicina.app.color
 
 /**
  * Una fila de la lista. El LED de la derecha es el estado de la ficha actual: va al costado y no
@@ -100,11 +102,26 @@ fun FilaPacienteVista(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    "CC: ${fila.cedula ?: "—"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "CC: ${fila.cedula ?: "—"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Prioridad clínica de la consulta (PAPER §34), como el chip `.prio` de ChatList.vue.
+                    ClinicalPriority.of(asignacion?.prioridad)?.let { prioridad ->
+                        Text(
+                            prioridad.value,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier
+                                .background(prioridad.color, RoundedCornerShape(50))
+                                .padding(horizontal = 6.dp)
+                                .semantics { contentDescription = "Prioridad clínica: ${prioridad.value}" },
+                        )
+                    }
+                }
                 asignacion?.aCargo?.let { nombre ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(

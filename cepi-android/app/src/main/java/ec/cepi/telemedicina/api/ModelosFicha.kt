@@ -199,3 +199,25 @@ data class FilaEvolucion(
 /** `POST /api/bot/interconsulta/responder`: `notified` = se avisó al médico que envió el caso. */
 @Serializable
 data class ConsultationAnswerResult(val ok: Boolean = false, val notified: Boolean = false)
+
+/**
+ * Prioridad clínica del episodio (PAPER §34). La guía es la tabla del documento abreviada, la
+ * misma que `ResponderInterconsulta.vue`. La decisión es del médico responsable.
+ */
+enum class ClinicalPriority(val value: String, val guide: String) {
+    Urgent(
+        "Urgente",
+        "Compromiso general, ampollas extensas, reacción grave a fármacos, eritrodermia, púrpura que progresa → supervisor y atención presencial ya",
+    ),
+    Preferred(
+        "Preferente",
+        "Sospecha de cáncer, crecimiento rápido, úlcera o sangrado persistente, inmunosuprimido → ruta prioritaria",
+    ),
+    Scheduled("Programada", "Estable, sin alarma, o control de algo ya evaluado → seguimiento según plazo"),
+    ;
+
+    companion object {
+        /** `null` si el episodio no tiene prioridad o trae un valor que no se conoce. */
+        fun of(value: String?): ClinicalPriority? = entries.firstOrNull { it.value == value }
+    }
+}

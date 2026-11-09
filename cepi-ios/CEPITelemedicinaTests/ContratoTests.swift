@@ -119,6 +119,21 @@ struct ContratoTests {
         #expect(asignaciones.porPaciente["p1"]?.nombre == "Dr. Mora")
         #expect(asignaciones.porPaciente["p1"]?.origen == "derivado_grupo")
         #expect(asignaciones.porPaciente["p1"]?.estado == "derivada")
+        // Sin `prioridad` (backend anterior o consulta sin clasificar): no hay chip.
+        #expect(asignaciones.porPaciente["p1"]?.prioridad == nil)
+
+        // PAPER §34: la prioridad clínica de la consulta alimenta el chip de la fila.
+        let conPrioridad = try decodificar(Asignaciones.self, """
+        {"ok":true,"assignments":{"p1":{"assignee_id":"u9","assignee_name":"Dr. Mora","source":"responsable",
+         "estado":"en_curso","prioridad":"Urgente","derivados":[]},
+         "p2":{"assignee_name":"Dra. Paz","estado":"en_curso","prioridad":null},
+         "p3":{"estado":"en_curso","prioridad":"Programada"}}}
+        """)
+        #expect(conPrioridad.porPaciente["p1"]?.prioridad == "Urgente")
+        #expect(conPrioridad.porPaciente["p1"]?.prioridadClinica == .urgent)
+        #expect(conPrioridad.porPaciente["p2"]?.prioridadClinica == nil)
+        #expect(conPrioridad.porPaciente["p3"]?.prioridadClinica == .scheduled)
+        #expect(Asignacion(prioridad: "BLINK").prioridadClinica == nil)
 
         // Derivado a varios: la fila resume los nombres en vez del único "a cargo".
         let varios = try decodificar(Asignaciones.self, """
@@ -205,8 +220,22 @@ struct ResponderInterconsultaTests {
         let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
         #expect(json == [
             "episode_id": "e1", "recomendacion": "Biopsia por punch", "diagnostico": "D22.5 — Nevus atípico",
-            "tratamiento": "", "observaciones": "Control en 3 meses",
+            "tratamiento": "", "observaciones": "Control en 3 meses", "prioridad": "",
         ])
+    }
+
+    /// PAPER §34: la prioridad elegida viaja como `prioridad`; el mismo cuerpo que ContratoTest.kt.
+    @Test func cuerpoConPrioridad() throws {
+        let cuerpo = try JSONEncoder().encode(InterconsultaAnswer(
+            episodio: "e2", recomendacion: "Biopsia escisional", diagnostico: "D22.5 — Nevus atípico",
+            tratamiento: "", observaciones: "", prioridad: .preferred,
+        ))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == [
+            "episode_id": "e2", "recomendacion": "Biopsia escisional", "diagnostico": "D22.5 — Nevus atípico",
+            "tratamiento": "", "observaciones": "", "prioridad": "Preferente",
+        ])
+        #expect(ClinicalPriority.allCases.map(\.rawValue) == ["Urgente", "Preferente", "Programada"])
     }
 
     @Test func respondeYDiceSiAviso() async throws {

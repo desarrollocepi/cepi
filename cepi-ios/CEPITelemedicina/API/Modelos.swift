@@ -211,6 +211,11 @@ struct Asignacion: Decodable, Sendable, Hashable {
     let estado: String?
     /// A quién está derivado el caso ahora; puede ser más de uno.
     let derivados: [DerivadoBreve]
+    /// Prioridad clínica de la consulta (PAPER §34): `Urgente` | `Preferente` | `Programada`.
+    let prioridad: String?
+
+    /// La prioridad si es una de las tres conocidas; `nil` si no hay o no se reconoce.
+    var prioridadClinica: ClinicalPriority? { prioridad.flatMap(ClinicalPriority.init(rawValue:)) }
 
     /// Cómo se resume "a cargo" en la fila: con varios derivados, sus nombres.
     var aCargo: String? {
@@ -222,7 +227,7 @@ struct Asignacion: Decodable, Sendable, Hashable {
     enum CodingKeys: String, CodingKey {
         case nombre = "assignee_name"
         case origen = "source"
-        case estado, derivados
+        case estado, derivados, prioridad
     }
 
     init(from decoder: any Decoder) throws {
@@ -231,13 +236,18 @@ struct Asignacion: Decodable, Sendable, Hashable {
         origen = try c.decodeIfPresent(String.self, forKey: .origen)
         estado = try c.decodeIfPresent(String.self, forKey: .estado)
         derivados = try c.decodeIfPresent([DerivadoBreve].self, forKey: .derivados) ?? []
+        prioridad = try c.decodeIfPresent(String.self, forKey: .prioridad)
     }
 
-    init(nombre: String? = nil, origen: String? = nil, estado: String? = nil, derivados: [DerivadoBreve] = []) {
+    init(
+        nombre: String? = nil, origen: String? = nil, estado: String? = nil, derivados: [DerivadoBreve] = [],
+        prioridad: String? = nil,
+    ) {
         self.nombre = nombre
         self.origen = origen
         self.estado = estado
         self.derivados = derivados
+        self.prioridad = prioridad
     }
 }
 

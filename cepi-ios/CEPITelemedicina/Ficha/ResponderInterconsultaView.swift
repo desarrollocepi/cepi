@@ -40,6 +40,8 @@ struct ResponderInterconsultaView: View {
     @State private var tratamiento = ""
     @State private var recomendacion = ""
     @State private var observaciones = ""
+    /// PAPER §34: opcional; precargada con la del episodio si ya tiene.
+    @State private var prioridad: ClinicalPriority?
     @State private var guardando = false
     @State private var error: String?
     @State private var precargado = false
@@ -57,6 +59,30 @@ struct ResponderInterconsultaView: View {
                     Text("Diagnóstico clínico")
                 } footer: {
                     Text("Se guarda en la ficha de esta consulta y le llega al médico que envió el caso.")
+                }
+                Section("Prioridad clínica") {
+                    ForEach(ClinicalPriority.allCases) { opcion in
+                        Button {
+                            prioridad = opcion
+                        } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: prioridad == opcion ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(prioridad == opcion ? opcion.color : .secondary)
+                                    .padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(opcion.rawValue)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(opcion.color)
+                                    Text(opcion.guide)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(prioridad == opcion ? .isSelected : [])
+                    }
                 }
                 Section("Tratamiento") {
                     TextField("Tratamiento", text: $tratamiento, axis: .vertical)
@@ -107,6 +133,7 @@ struct ResponderInterconsultaView: View {
             diagnostico = inicial?["diagnostico"] ?? ""
             tratamiento = inicial?["tratamiento_resumen"] ?? ""
             observaciones = inicial?["observaciones"] ?? ""
+            prioridad = inicial?["prioridad"].flatMap(ClinicalPriority.init(rawValue:))
         }
     }
 
@@ -119,6 +146,7 @@ struct ResponderInterconsultaView: View {
             let resultado = try await sesion.api.answerInterconsulta(InterconsultaAnswer(
                 episodio: episodio, recomendacion: recomendacion,
                 diagnostico: diagnostico, tratamiento: tratamiento, observaciones: observaciones,
+                prioridad: prioridad,
             ))
             cerrar()
             await alResponder(resultado.notified ?? false)

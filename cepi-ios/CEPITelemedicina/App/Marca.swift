@@ -10,3 +10,14 @@ enum Marca {
     /// Naranja de "revisar" (`.rev-badge` en ChatList.vue).
     static let revisar = Color(red: 249 / 255, green: 115 / 255, blue: 22 / 255)
 }
+
+extension ClinicalPriority {
+    /// Color de la prioridad clínica (`.prio-*` en ChatList.vue, PAPER §34).
+    var color: Color {
+        switch self {
+        case .urgent: Color(red: 0xDC / 255, green: 0x26 / 255, blue: 0x26 / 255)
+        case .preferred: Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x06 / 255)
+        case .scheduled: Color(red: 0x64 / 255, green: 0x74 / 255, blue: 0x8B / 255)
+        }
+    }
+}

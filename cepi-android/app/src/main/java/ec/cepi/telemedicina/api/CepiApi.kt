@@ -137,8 +137,12 @@ class CepiApi(val cliente: ApiClient) {
         diagnostico: String,
         tratamiento: String,
         observaciones: String,
+        prioridad: String,
     ): ConsultationAnswerResult =
-        cliente.post("/api/bot/interconsulta/responder", answerConsultationBody(episodio, recomendacion, diagnostico, tratamiento, observaciones))
+        cliente.post(
+            "/api/bot/interconsulta/responder",
+            answerConsultationBody(episodio, recomendacion, diagnostico, tratamiento, observaciones, prioridad),
+        )
 
     // Registros
 
@@ -270,12 +274,15 @@ class CepiApi(val cliente: ApiClient) {
             diagnostico: String,
             tratamiento: String,
             observaciones: String,
+            /** Vacío si no se eligió (PAPER §34): el backend no toca la prioridad. */
+            prioridad: String = "",
         ): JsonObject = buildJsonObject {
             put("episode_id", episodio)
             put("recomendacion", recomendacion)
             put("diagnostico", diagnostico)
             put("tratamiento", tratamiento)
             put("observaciones", observaciones)
+            put("prioridad", prioridad)
         }
 
         /** El cuerpo de `POST /api/groups/:slug/shifts`. Sin red, para probarlo. */

@@ -30,9 +30,21 @@ struct PacienteFila: View {
                     // El círculo de iniciales también es texto: sin esto, quien lea la fila de
                     // afuera (los UI tests) se queda con "FS" en lugar del nombre.
                     .accessibilityIdentifier("paciente.nombre")
-                Text("CC: \(fila.cedula ?? "—")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("CC: \(fila.cedula ?? "—")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    // Prioridad clínica de la consulta (PAPER §34), como el chip `.prio` de ChatList.vue.
+                    if let prioridad = asignacion?.prioridadClinica {
+                        Text(prioridad.rawValue)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(prioridad.color, in: Capsule())
+                            .accessibilityLabel("Prioridad clínica: \(prioridad.rawValue)")
+                    }
+                }
                 if let nombre = asignacion?.aCargo {
                     Label(nombre, systemImage: iconoACargo)
                         .font(.caption.weight(.medium))

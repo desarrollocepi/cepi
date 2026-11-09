@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import ec.cepi.telemedicina.api.ClinicalPriority
 
 /**
  * Colores de marca, tomados de `cepi-frontend/src/style.css` y del catálogo de iOS para que las
@@ -21,6 +22,14 @@ object Marca {
     /** Naranja de "revisar" (`.rev-badge` en ChatList.vue). */
     val revisar = Color(0xFFF97316)
 }
+
+/** Color de la prioridad clínica (`.prio-*` en ChatList.vue, PAPER §34). */
+val ClinicalPriority.color: Color
+    get() = when (this) {
+        ClinicalPriority.Urgent -> Color(0xFFDC2626)
+        ClinicalPriority.Preferred -> Color(0xFFD97706)
+        ClinicalPriority.Scheduled -> Color(0xFF64748B)
+    }
 
 private val claro = lightColorScheme(
     primary = Marca.acento,

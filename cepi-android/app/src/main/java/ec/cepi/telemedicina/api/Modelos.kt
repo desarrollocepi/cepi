@@ -103,6 +103,8 @@ data class Asignacion(
     val estado: String? = null,
     /** A quién está derivado el caso ahora; puede ser más de uno. */
     val derivados: List<DerivadoBreve> = emptyList(),
+    /** Prioridad clínica de la consulta (PAPER §34): `Urgente` | `Preferente` | `Programada`. */
+    val prioridad: String? = null,
 ) {
     /** Cómo se resume "a cargo" en la fila: con varios derivados, sus nombres. */
     val aCargo: String?

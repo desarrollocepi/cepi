@@ -4,6 +4,7 @@ import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.Asignaciones
 import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.ClinicalPriority
 import ec.cepi.telemedicina.api.ColaRevision
 import ec.cepi.telemedicina.api.Confirmacion
 import ec.cepi.telemedicina.api.FilaEvolucion
@@ -101,6 +102,21 @@ class ContratoTest {
         assertEquals("Dr. Mora", asignaciones.porPaciente["p1"]?.nombre)
         assertEquals("derivado_grupo", asignaciones.porPaciente["p1"]?.origen)
         assertEquals("derivada", asignaciones.porPaciente["p1"]?.estado)
+        // Sin `prioridad` (backend anterior o consulta sin clasificar): no hay chip.
+        assertNull(asignaciones.porPaciente["p1"]?.prioridad)
+
+        // PAPER §34: la prioridad clínica de la consulta alimenta el chip de la fila.
+        val conPrioridad = decodificar<Asignaciones>(
+            """{"ok":true,"assignments":{"p1":{"assignee_id":"u9","assignee_name":"Dr. Mora","source":"responsable",
+               "estado":"en_curso","prioridad":"Urgente","derivados":[]},
+               "p2":{"assignee_name":"Dra. Paz","estado":"en_curso","prioridad":null},
+               "p3":{"estado":"en_curso","prioridad":"Programada"}}}""",
+        )
+        assertEquals("Urgente", conPrioridad.porPaciente["p1"]?.prioridad)
+        assertEquals(ClinicalPriority.Urgent, ClinicalPriority.of(conPrioridad.porPaciente["p1"]?.prioridad))
+        assertNull(ClinicalPriority.of(conPrioridad.porPaciente["p2"]?.prioridad))
+        assertEquals(ClinicalPriority.Scheduled, ClinicalPriority.of(conPrioridad.porPaciente["p3"]?.prioridad))
+        assertNull(ClinicalPriority.of("BLINK"))
 
         // Derivado a varios: la fila resume los nombres en vez del único "a cargo".
         val varios = decodificar<Asignaciones>(
@@ -154,9 +170,18 @@ class ContratoTest {
         // POST /api/bot/interconsulta/responder (PAPER §30.2).
         val cuerpo = CepiApi.answerConsultationBody("e2", "Biopsia escisional", "D22.5 — Nevus atípico", "", "Control en 6 meses")
         assertEquals(
-            """{"episode_id":"e2","recomendacion":"Biopsia escisional","diagnostico":"D22.5 — Nevus atípico","tratamiento":"","observaciones":"Control en 6 meses"}""",
+            """{"episode_id":"e2","recomendacion":"Biopsia escisional","diagnostico":"D22.5 — Nevus atípico","tratamiento":"","observaciones":"Control en 6 meses","prioridad":""}""",
             cuerpo.toString(),
         )
+        // PAPER §34: la prioridad elegida viaja como `prioridad`.
+        val conPrioridad = CepiApi.answerConsultationBody(
+            "e2", "Biopsia escisional", "D22.5 — Nevus atípico", "", "", ClinicalPriority.Preferred.value,
+        )
+        assertEquals(
+            """{"episode_id":"e2","recomendacion":"Biopsia escisional","diagnostico":"D22.5 — Nevus atípico","tratamiento":"","observaciones":"","prioridad":"Preferente"}""",
+            conPrioridad.toString(),
+        )
+        assertEquals(listOf("Urgente", "Preferente", "Programada"), ClinicalPriority.entries.map { it.value })
         val respuesta = decodificar<ec.cepi.telemedicina.api.ConsultationAnswerResult>("""{"ok":true,"notified":true,"episode_id":"e2"}""")
         assertTrue(respuesta.ok)
         assertTrue(respuesta.notified)
