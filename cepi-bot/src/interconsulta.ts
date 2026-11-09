@@ -19,6 +19,8 @@ export interface InterconsultaAnswer {
   diagnostico?: string | null;
   tratamiento?: string | null;
   observaciones?: string | null;
+  /** Prioridad clínica (PAPER §34): la decide el médico responsable. */
+  prioridad?: string | null;
   /** Fecha de hoy (YYYY-MM-DD); se inyecta para los tests. */
   today?: string;
 }
@@ -29,6 +31,9 @@ export interface BatchStep { tool: string; args: Record<string, unknown> }
 export const ESTADOS_CON_INTERCONSULTA = ['enviada', 'en_triage', 'derivada', 'en_revisión_solicitada'];
 
 const limpio = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+/** Las de PAPER §34 (mismo orden que la ficha). */
+export const PRIORIDADES_VALIDAS = ['Urgente', 'Preferente', 'Programada'];
 
 export function buildAnswerBatch(a: InterconsultaAnswer): BatchStep[] {
   const recomendacion = limpio(a.recomendacion);
@@ -45,6 +50,8 @@ export function buildAnswerBatch(a: InterconsultaAnswer): BatchStep[] {
   if (diagnostico) data.diagnostico = diagnostico;
   if (tratamiento) data.tratamiento_resumen = tratamiento;
   if (observaciones) data.observaciones = observaciones;
+  const prioridad = limpio(a.prioridad);
+  if (prioridad && PRIORIDADES_VALIDAS.includes(prioridad)) data.prioridad = prioridad;
 
   const batch: BatchStep[] = [
     { tool: 'entities.update', args: { id: a.episodeId, record_type: 'business', data } },

@@ -14,6 +14,14 @@
         <span>Diagnóstico clínico</span>
         <input v-model="diagnostico" type="text" :disabled="guardando" placeholder="Ej.: D22.5 — Nevus atípico" />
       </label>
+      <fieldset class="ri-prioridad" :disabled="guardando">
+        <legend>Prioridad clínica</legend>
+        <label v-for="o in PRIORIDADES" :key="o.valor" class="ri-prio" :class="[`ri-prio-${o.valor.toLowerCase()}`, { on: prioridad === o.valor }]" :title="o.guia">
+          <input v-model="prioridad" type="radio" name="prioridad" :value="o.valor" />
+          <strong>{{ o.valor }}</strong>
+          <small>{{ o.guia }}</small>
+        </label>
+      </fieldset>
       <label class="ri-campo">
         <span>Tratamiento</span>
         <textarea v-model="tratamiento" rows="2" :disabled="guardando"></textarea>
@@ -53,6 +61,13 @@ const emit = defineEmits(['close', 'respondida']);
 const diagnostico = ref(props.inicial.diagnostico || '');
 const tratamiento = ref(props.inicial.tratamiento_resumen || '');
 const observaciones = ref(props.inicial.observaciones || '');
+const prioridad = ref(props.inicial.prioridad || '');
+// PAPER §34: la tabla del documento, abreviada. La decisión es del médico responsable.
+const PRIORIDADES = [
+  { valor: 'Urgente', guia: 'Compromiso general, ampollas extensas, reacción grave a fármacos, eritrodermia, púrpura que progresa → supervisor y atención presencial ya' },
+  { valor: 'Preferente', guia: 'Sospecha de cáncer, crecimiento rápido, úlcera o sangrado persistente, inmunosuprimido → ruta prioritaria' },
+  { valor: 'Programada', guia: 'Estable, sin alarma, o control de algo ya evaluado → seguimiento según plazo' },
+];
 const recomendacion = ref('');
 const guardando = ref(false);
 const error = ref('');
@@ -64,6 +79,7 @@ async function enviar() {
     const r = await responderInterconsulta({
       episodeId: props.episodeId, recomendacion: recomendacion.value,
       diagnostico: diagnostico.value, tratamiento: tratamiento.value, observaciones: observaciones.value,
+      prioridad: prioridad.value,
     });
     emit('respondida', { notificado: !!r?.notified });
   } catch (e) {
@@ -90,4 +106,12 @@ async function enviar() {
 .ri-pri { color: #fff; background: #16a34a; border: 1px solid #16a34a; }
 .ri-pri:disabled, .ri-sec:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 560px) { .ri-modal { padding: 0; } .ri-panel { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
+.ri-prioridad { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; }
+.ri-prioridad legend { padding: 0 4px; font-size: 13px; font-weight: 600; }
+.ri-prio { display: grid; grid-template-columns: auto auto 1fr; gap: 6px; align-items: baseline; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.ri-prio small { color: #64748b; font-size: 12px; }
+.ri-prio.on { border-color: currentColor; }
+.ri-prio-urgente strong { color: #b91c1c; }
+.ri-prio-preferente strong { color: #b45309; }
+.ri-prio-programada strong { color: #15803d; }
 </style>

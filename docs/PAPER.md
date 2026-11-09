@@ -3234,3 +3234,23 @@ los controles agrupados por semana (atrasados arriba, en rojo), cada uno con pac
 cédula, fecha, qué hacer (`motivo`, y el plan debajo), diagnóstico y médico que lo indicó.
 Un buscador filtra por paciente o cédula. Tocar una fila abre el paciente en su Ficha.
 Web, iOS y Android.
+
+## 34. Prioridad clínica (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** Clasificar a cada paciente en tres niveles para orientar la conducta inicial
+(documento «Teledermatología en atención primaria», p. 5). Reemplaza al BLINK, que deja de
+preguntarse.
+
+| prioridad | situaciones orientadoras | conducta |
+|---|---|---|
+| **Urgente** | erupción con compromiso general; ampollas o erosiones extensas; sospecha de reacción grave a medicamentos; eritrodermia; púrpura de rápida progresión | valoración inmediata por el supervisor y atención presencial urgente; no esperar respuesta diferida |
+| **Preferente** | lesión sospechosa de cáncer; crecimiento rápido; ulceración o sangrado persistentes; duda relevante en paciente inmunosuprimido | contactar al médico responsable y activar la ruta prioritaria |
+| **Programada** | problema estable, sin alarma, con historia e imágenes suficientes; control de una enfermedad ya evaluada | interconsulta o seguimiento según plazo acordado, con instrucciones de alarma y control |
+
+- Campo `prioridad` del **episodio** (select `Urgente` · `Preferente` · `Programada`).
+- Ficha: grupo `g_prioridad` «3.8 Prioridad clínica» en el lugar que ocupaba `g_blink`, con
+  la tabla como guía arriba de las opciones. **BLINK sale de las preguntas** (`g_blink` deja
+  de estar en la ficha); los campos `blink_*` siguen en la entidad y en el formato
+  documental para no perder lo ya cargado.
+- La decisión es del médico responsable: «Responder interconsulta» (§30) suma la prioridad.
+- Se ve en la lista de pacientes (chip rojo / ámbar / gris) y en la ficha imprimible.

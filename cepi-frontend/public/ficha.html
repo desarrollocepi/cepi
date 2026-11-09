@@ -655,6 +655,16 @@
 
   <!-- ============================== §7 TRATAMIENTO ============================== -->
   <section class="section" style="margin-top:8px">
+    <!-- Prioridad clínica (PAPER §34): reemplaza al BLINK en las preguntas. -->
+    <div class="row">
+      <span class="lbl">Prioridad clínica:</span>
+      <select name="prioridad">
+        <option value=""></option>
+        <option value="Urgente">Urgente</option>
+        <option value="Preferente">Preferente</option>
+        <option value="Programada">Programada</option>
+      </select>
+    </div>
     <div class="row">
       <span class="lbl">7. Tratamiento:</span>
       <input type="text" name="tratamiento_resumen" style="flex:1">
@@ -699,6 +709,8 @@ function fillFicha(data) {
     const el = form.elements[name];
     if (!el) return false;
     if (el.type === 'checkbox') el.checked = !!val;
+    // Un <select> también tiene .length (sus opciones): no es un grupo de radios.
+    else if (el.tagName === 'SELECT') el.value = val ?? '';
     else if (el.type === 'radio' || el.length) {
       // RadioNodeList
       [...form.elements[name]].forEach(r => { if (r.value === String(val)) r.checked = true; });
@@ -755,7 +767,7 @@ function readFicha() {
     'patologia_asociada', 'tratamientos_previos', 'lesion_otra', 'caract_eritema',
     'caract_descamacion', 'caract_exudacion', 'caract_liquenificacion', 'caract_otra',
     'topo_otra', 'notas_examen', 'diagnostico', 'estudios_complementarios_resumen',
-    'tratamiento_resumen', 'observaciones', 'medico',
+    'tratamiento_resumen', 'observaciones', 'medico', 'prioridad',
   ];
   PLAIN.forEach(k => { if (raw[k] != null && raw[k] !== '') out[k] = raw[k]; });
 
@@ -863,7 +875,7 @@ function markChanges(keys) {
     if (groupRep[k]) name = groupRep[k];
     else if (!form.elements[k] && form.elements[k + '_si']) name = k + '_si';
     let el = form.elements[name];
-    if (el && el.length) el = el[0];   // RadioNodeList → first node
+    if (el && el.length && el.tagName !== 'SELECT') el = el[0];   // RadioNodeList → first node
     const lbl = labelFor(el);
     if (!lbl) return;
     lbl.classList.add('lbl-changed');

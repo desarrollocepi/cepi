@@ -559,10 +559,14 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
     expect(form.find('input').element.value).toBe('Nevus');
     const [, recomendacion] = form.findAll('textarea');
     await recomendacion.setValue('Exéresis y control en 6 meses');
+    // La prioridad clínica la decide el responsable al responder (PAPER §34).
+    expect(form.findAll('.ri-prio').map((l) => l.find('strong').text())).toEqual(['Urgente', 'Preferente', 'Programada']);
+    await form.find('input[value="Preferente"]').setValue(true);
     await form.find('form').trigger('submit');
     await flushPromises();
     expect(api.responderInterconsulta).toHaveBeenCalledWith({
       episodeId: 'ep2', recomendacion: 'Exéresis y control en 6 meses', diagnostico: 'Nevus', tratamiento: '', observaciones: '',
+      prioridad: 'Preferente',
     });
     expect(w.findComponent({ name: 'ResponderInterconsulta' }).exists()).toBe(false);
     expect(turnos(w).join(' ')).toContain('Interconsulta respondida');

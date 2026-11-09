@@ -57,3 +57,12 @@ describe('canAnswer (PAPER §32)', () => {
     expect(canAnswer({ estado: 'cerrado', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
   });
 });
+
+describe('prioridad en la respuesta (PAPER §34)', () => {
+  it('se guarda si es una de las tres; un valor inventado se ignora', () => {
+    const ok = buildAnswerBatch({ ...base, primarioId: null, recomendacion: 'x', prioridad: 'Preferente' });
+    expect((ok[0].args as any).data.prioridad).toBe('Preferente');
+    const mal = buildAnswerBatch({ ...base, primarioId: null, recomendacion: 'x', prioridad: 'altísima' });
+    expect((mal[0].args as any).data.prioridad).toBeUndefined();
+  });
+});

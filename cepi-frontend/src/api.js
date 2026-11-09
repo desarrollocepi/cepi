@@ -473,10 +473,10 @@ export async function guardarFichaCompleta({ episodeId, patientId, data }) {
  * guarda en la ficha (diagnóstico, tratamiento, observaciones y la respuesta), apaga la
  * campana de revisar y avisa al médico que envió el caso. Acción explícita: sin gate.
  */
-export async function responderInterconsulta({ episodeId, recomendacion, diagnostico = '', tratamiento = '', observaciones = '' }) {
+export async function responderInterconsulta({ episodeId, recomendacion, diagnostico = '', tratamiento = '', observaciones = '', prioridad = '' }) {
   return call('/api/bot/interconsulta/responder', {
     method: 'POST',
-    body: JSON.stringify({ episode_id: episodeId, recomendacion, diagnostico, tratamiento, observaciones }),
+    body: JSON.stringify({ episode_id: episodeId, recomendacion, diagnostico, tratamiento, observaciones, prioridad }),
   });
 }
 

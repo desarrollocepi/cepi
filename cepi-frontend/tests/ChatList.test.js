@@ -410,3 +410,15 @@ describe('ChatList — filas y acciones', () => {
     expect(w.find('.createform .error').text()).toBe('cédula duplicada');
   });
 });
+
+describe('ChatList — prioridad clínica (PAPER §34)', () => {
+  it('cada fila con prioridad lleva su chip de color; sin prioridad no hay chip', async () => {
+    preparar({ asignaciones: { ...ASIGNACIONES, p2: { ...ASIGNACIONES.p2, prioridad: 'Urgente' }, p4: { ...ASIGNACIONES.p4, prioridad: 'Programada' } } });
+    const w = await montar();
+    const fila = (n) => w.findAll('.row').find((r) => r.find('.name').text() === n);
+    expect(fila('José Curso').find('.prio').text()).toBe('Urgente');
+    expect(fila('José Curso').find('.prio').classes()).toContain('prio-urgente');
+    expect(fila('Marta Derivada').find('.prio').classes()).toContain('prio-programada');
+    expect(fila('Raúl Curso').find('.prio').exists()).toBe(false);
+  });
+});

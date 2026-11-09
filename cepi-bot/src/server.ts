@@ -441,7 +441,7 @@ app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response,
     const auth = req.header('authorization') || '';
     const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
     if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
-    const { episode_id, recomendacion, diagnostico, tratamiento, observaciones } = req.body || {};
+    const { episode_id, recomendacion, diagnostico, tratamiento, observaciones, prioridad } = req.body || {};
     if (!episode_id) return res.status(400).json({ ok: false, error: 'episode_id required' });
     if (typeof recomendacion !== 'string' || !recomendacion.trim()) {
       return res.status(400).json({ ok: false, error: 'Escribe la respuesta para el médico que envió el caso' });
@@ -467,7 +467,7 @@ app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response,
 
     const batch = buildAnswerBatch({
       episodeId: String(episode_id), userId, primarioId,
-      recomendacion, diagnostico, tratamiento, observaciones,
+      recomendacion, diagnostico, tratamiento, observaciones, prioridad,
     });
     for (const step of batch) {
       const r: any = await mcp.call(step.tool, step.args);

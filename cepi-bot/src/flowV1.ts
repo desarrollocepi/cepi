@@ -147,6 +147,18 @@ interface FichaFieldDef {
 
 // Todos los campos de la ficha, en orden — un bookmark / un formulario
 // atómico por campo (una pregunta por formulario), agrupados por categoría.
+/** Niveles de prioridad clínica (PAPER §34). */
+export const PRIORIDADES = ['Urgente', 'Preferente', 'Programada'];
+/** La guía de cada nivel: situaciones orientadoras → conducta. */
+export const PRIORIDAD_GUIA =
+  'Urgente: erupción con compromiso general, ampollas o erosiones extensas, sospecha de reacción grave a ' +
+  'medicamentos, eritrodermia o púrpura de rápida progresión → valoración inmediata por el supervisor y ' +
+  'atención presencial urgente; no esperar respuesta diferida. ' +
+  'Preferente: lesión sospechosa de cáncer, crecimiento rápido, ulceración o sangrado persistentes, duda ' +
+  'relevante en inmunosuprimido → contactar al médico responsable y activar la ruta prioritaria. ' +
+  'Programada: problema estable, sin alarma, con historia e imágenes suficientes, o control de una ' +
+  'enfermedad ya evaluada → interconsulta o seguimiento según plazo, con instrucciones de alarma.';
+
 const FICHA_FIELD_DEFS: FichaFieldDef[] = [
   // §1 Filiación (paciente)
   { category: 'Filiación', target: 'patient', field: { key: 'direccion', label: 'Dirección', type: 'text' } },
@@ -189,6 +201,9 @@ const FICHA_FIELD_DEFS: FichaFieldDef[] = [
   { key: 'blink_nervios_cambios', label: 'N/C — ¿Paciente nervioso por cáncer o lesión cambiante?', type: 'radio', options: SI_NO },
   { key: 'blink_known_clues', label: 'K — ¿≥1 pista dermatoscópica de malignidad?', type: 'radio', options: SI_NO },
   ] as BotFormField[]).map(field => ({ category: 'BLINK', target: 'episode' as const, field })),
+  // §3.8 Prioridad clínica (PAPER §34): reemplaza al BLINK en las preguntas. La guía de la
+  // tabla del documento va como encabezado arriba de las opciones.
+  { category: 'Anamnesis', target: 'episode', field: { key: 'prioridad', label: 'Prioridad clínica', type: 'radio', options: PRIORIDADES } },
   // §4 Examen físico (episodio)
   ...([
   // §4.1 Lesión elemental
@@ -265,7 +280,7 @@ const byKey: Record<string, FichaFieldDef> =
 
 // Un grupo = un ítem numerado de la ficha (1.1, 1.2, … 3.1, 3.2 …),
 // no la sección entera. La categoría (§) sigue agrupando el riel.
-const FICHA_GROUP_SPEC: { id: string; label: string; keys: string[] }[] = [
+const FICHA_GROUP_SPEC: { id: string; label: string; keys: string[]; heading?: string }[] = [
   { id: 'g_1_1', label: '1.1 Datos de contacto',     keys: ['direccion','telefono','sector_ciudad','ocupacion','email'] },
   { id: 'g_1_2', label: '1.2 Fecha de nacimiento',   keys: ['fecha_nac'] },
   { id: 'g_1_3', label: '1.3 Sexo',                  keys: ['sexo'] },
@@ -281,7 +296,9 @@ const FICHA_GROUP_SPEC: { id: string; label: string; keys: string[] }[] = [
   { id: 'g_3_5', label: '3.5 Causa aparente',         keys: ['causa_aparente_presente','causa_aparente'] },
   { id: 'g_3_6', label: '3.6 Patología asociada / RAS', keys: ['patologia_asociada_presente','patologia_asociada'] },
   { id: 'g_3_7', label: '3.7 Tratamientos previos',   keys: ['tratamientos_previos_presente','tratamientos_previos'] },
-  { id: 'g_blink', label: 'BLINK',                    keys: ['blink_benigna','blink_lonely','blink_irregular','blink_nervios_cambios','blink_known_clues'] },
+  // BLINK ya no se pregunta (PAPER §34): lo reemplaza la prioridad clínica. Sus campos
+  // siguen en la entidad y en el formato documental.
+  { id: 'g_prioridad', label: '3.8 Prioridad clínica', keys: ['prioridad'], heading: PRIORIDAD_GUIA },
   { id: 'g_4_1', label: '4.1 Lesión elemental',       keys: ['lesion_macula','lesion_papula','lesion_placa','lesion_vesicula','lesion_ampolla','lesion_tumor','lesion_nodulo','lesion_ulcera','lesion_otra'] },
   { id: 'g_4_2', label: '4.2 Características',         keys: ['caract_eritema','caract_descamacion','caract_exudacion','caract_liquenificacion','caract_otra'] },
   { id: 'g_4_3', label: '4.3 Topografía',             keys: ['topo_unica','topo_multiples','topo_bilateral','topo_simetrico','topo_confluente','topo_agrupadas','topo_circular','topo_lineal','topo_borde','topo_otra'] },
@@ -312,7 +329,11 @@ export const FICHA_GROUPS: FichaGroup[] = FICHA_GROUP_SPEC.map(g => ({
   label: g.label,
   category: byKey[g.keys[0]].category,
   target: byKey[g.keys[0]].target,
-  fields: g.keys.map(k => byKey[k].field),
+  // Un encabezado (guía) va arriba de las preguntas; no tiene clave y no cuenta como dato.
+  fields: [
+    ...(g.heading ? [{ label: g.heading, type: 'heading' as const }] : []),
+    ...g.keys.map(k => byKey[k].field),
+  ],
 }));
 
 // ── Coerción de campos select/radio a sus opciones válidas ───────────────────
@@ -553,7 +574,8 @@ export async function fichaBookmarksFor(
       return { id: g.id, label: g.label, category: g.category, done: has, conDato: has };
     }
     const src = g.target === 'patient' ? patientData : episodeData;
-    const done = lleno(src[g.fields[0].key as string]);
+    const primera = g.fields.find(f => f.key)?.key as string;
+    const done = lleno(src[primera]);
     const conDato = g.fields.some(f => f.key && lleno(src[f.key as string]));
     return { id: g.id, label: g.label, category: g.category, done, conDato };
   });

@@ -71,16 +71,10 @@ describe('guardarGrupoFicha', () => {
       .rejects.toThrow(/episode_id/);
   });
 
-  it('aplica los mismos derivados que el chat: BLINK se autocalcula', async () => {
+  it('guarda la prioridad clínica (reemplaza al BLINK, PAPER §34)', async () => {
     const mcp = fakeMcp();
-    await guardarGrupoFicha(mcp, {
-      groupId: 'g_blink',
-      data: { blink_benigna: false, blink_lonely: true, blink_irregular: true, blink_nervios_cambios: false, blink_known_clues: false },
-      ...IDS,
-    });
-    const escrito = updates(mcp)[0].args.data;
-    expect(escrito.blink_total).toBe(2);
-    expect(String(escrito.blink_resultado)).toMatch(/malignidad/i);
+    await guardarGrupoFicha(mcp, { groupId: 'g_prioridad', data: { prioridad: 'Urgente' }, ...IDS });
+    expect(updates(mcp)[0].args.data.prioridad).toBe('Urgente');
   });
 
   it('gravedad_total se re-deriva con lo que ya hay en el episodio', async () => {

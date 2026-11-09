@@ -75,7 +75,10 @@
         <span class="avatar">{{ initials(p) }}</span>
         <span class="info">
           <span class="name">{{ fullName(p) }}</span>
-          <span class="cc">CC: {{ p.data?.cedula || '—' }}</span>
+          <span class="cc">CC: {{ p.data?.cedula || '—' }}
+            <span v-if="assignments[p.id]?.prioridad" class="prio" :class="`prio-${assignments[p.id].prioridad.toLowerCase()}`"
+                  :title="`Prioridad clínica: ${assignments[p.id].prioridad}`">{{ assignments[p.id].prioridad }}</span>
+          </span>
           <span v-if="assignments[p.id]?.assignee_name" class="acargo" :title="acargoMeta(p).title">
             {{ acargoMeta(p).icon }} {{ acargoMeta(p).texto }}
           </span>
@@ -522,4 +525,8 @@ defineExpose({ reload: load });
 .cf-actions .cf-cancel { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 .empty, .error { padding: 14px; color: var(--text-muted); font-size: 14px; }
 .error { color: #dc2626; }
+.prio { display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 10.5px; font-weight: 700; line-height: 16px; border-radius: 999px; color: #fff; vertical-align: 1px; }
+.prio-urgente { background: #dc2626; }
+.prio-preferente { background: #d97706; }
+.prio-programada { background: #64748b; }
 </style>
