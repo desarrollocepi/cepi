@@ -151,6 +151,27 @@ struct CEPIAPI: Sendable {
         return r.derivados
     }
 
+    // MARK: Turnos (PAPER §32)
+
+    /// Los turnos del grupo que tocan `[from, to]` y el «hoy» del servidor.
+    func shifts(group slug: String, from: String, to: String) async throws -> ShiftList {
+        try await cliente.get("/api/groups/\(slug)/shifts", query: [
+            URLQueryItem(name: "from", value: from),
+            URLQueryItem(name: "to", value: to),
+        ])
+    }
+
+    /// Asigna a alguien al grupo entre dos días (`groups:manage_shifts`). Un 400/403/404 llega
+    /// como `APIError` con el motivo del backend.
+    func createShift(group slug: String, _ shift: ShiftCreate) async throws -> Shift {
+        let creado: Uno<Shift> = try await cliente.post("/api/groups/\(slug)/shifts", json: shift)
+        return creado.data
+    }
+
+    func deleteShift(group slug: String, id: String) async throws {
+        let _: Confirmacion = try await cliente.delete("/api/groups/\(slug)/shifts/\(id)")
+    }
+
     // MARK: Registros
 
     func entidad(_ id: String) async throws -> Registro {
