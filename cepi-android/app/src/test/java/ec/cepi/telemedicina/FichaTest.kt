@@ -104,11 +104,18 @@ class IdiomasDictadoTest {
     /** El mismo orden de motivos que `responderMotivo` de `IntakeChat.vue` (PAPER §30.2). */
     @Test
     fun consultationAnswerReasons() {
-        fun episodio(estado: String, primario: String? = "u1") = ec.cepi.telemedicina.api.Registro(
+        fun episodio(
+            estado: String,
+            primario: String? = "u1",
+            medico: String? = null,
+            responsable: String? = null,
+        ) = ec.cepi.telemedicina.api.Registro(
             id = "e1",
             data = buildMap {
                 put("estado", JsonPrimitive(estado))
                 primario?.let { put("medico_primario_id", JsonPrimitive(it)) }
+                medico?.let { put("medico_id", JsonPrimitive(it)) }
+                responsable?.let { put("responsable_actual_id", JsonPrimitive(it)) }
             },
         )
         val logica = ec.cepi.telemedicina.ficha.ConsultationAnswer
@@ -117,8 +124,27 @@ class IdiomasDictadoTest {
         assertEquals("Esta interconsulta ya fue respondida", logica.disabledReason("e1", episodio("respondida"), "u2"))
         assertEquals("Esta consulta no tiene una interconsulta pendiente", logica.disabledReason("e1", episodio("en_curso"), "u2"))
         assertEquals(
-            "Tú enviaste esta interconsulta: la responde el especialista",
+            "Tú ingresaste este caso: lo responde el especialista responsable",
             logica.disabledReason("e1", episodio("enviada"), "u1"),
+        )
+        // Sin medico_primario_id, el primario es medico_id.
+        assertEquals(
+            "Tú ingresaste este caso: lo responde el especialista responsable",
+            logica.disabledReason("e1", episodio("enviada", primario = null, medico = "u1"), "u1"),
+        )
+        // El responsable de turno responde el caso nuevo aunque siga en_curso (PAPER §32.2.1).
+        assertNull(logica.disabledReason("e1", episodio("en_curso", primario = null, medico = "u2", responsable = "u3"), "u3"))
+        assertEquals(
+            "Esta consulta no tiene una interconsulta pendiente",
+            logica.disabledReason("e1", episodio("en_curso", primario = null, medico = "u2", responsable = "u4"), "u3"),
+        )
+        assertEquals(
+            "Esta consulta no tiene una interconsulta pendiente",
+            logica.disabledReason("e1", episodio("cerrado", primario = null, medico = "u2", responsable = "u3"), "u3"),
+        )
+        assertEquals(
+            "Esta interconsulta ya fue respondida",
+            logica.disabledReason("e1", episodio("respondida", responsable = "u3"), "u3"),
         )
         for (estado in listOf("enviada", "en_triage", "derivada", "en_revisión_solicitada")) {
             assertNull(estado, logica.disabledReason("e1", episodio(estado), "u2"))

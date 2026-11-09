@@ -37,7 +37,7 @@ final class ShiftsModel {
         return ShiftCalendar.onCall(on: today, shifts: shifts)
     }
 
-    /// «De turno hoy: …»
+    /// «Responsable de turno hoy: …»
     var onCallText: String {
         onCallToday.isEmpty ? "nadie asignado (avisa a todo el grupo)" : onCallToday.joined(separator: ", ")
     }

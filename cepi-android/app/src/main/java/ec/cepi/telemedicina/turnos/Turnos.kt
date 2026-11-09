@@ -74,7 +74,7 @@ fun Turnos(model: ShiftsModel, user: Usuario?, organization: String?, padding: P
                 scope.launch { model.selectGroup(slug) }
             }
             Text(
-                buildString { append("De turno hoy: "); append(model.onCallText) },
+                buildString { append("Responsable de turno hoy: "); append(model.onCallText) },
                 style = MaterialTheme.typography.bodyMedium,
             )
             model.notice?.let {

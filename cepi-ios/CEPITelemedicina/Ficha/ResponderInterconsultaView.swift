@@ -13,11 +13,13 @@ enum Interconsulta {
         guard let datos = episodeData else { return "Cargando el estado de la consulta…" }
         let estado = datos["estado"]
         if estado == "respondida" { return "Esta interconsulta ya fue respondida" }
-        guard let estado, pendingStates.contains(estado) else {
+        // El responsable de turno del caso nuevo responde aunque no se haya enviado (PAPER §32.2.1).
+        let isResponsible = userId != nil && datos["responsable_actual_id"] == userId && estado != "cerrado"
+        guard isResponsible || estado.map(pendingStates.contains) == true else {
             return "Esta consulta no tiene una interconsulta pendiente"
         }
-        if let userId, datos["medico_primario_id"] == userId {
-            return "Tú enviaste esta interconsulta: la responde el especialista"
+        if let userId, (datos["medico_primario_id"] ?? datos["medico_id"]) == userId {
+            return "Tú ingresaste este caso: lo responde el especialista responsable"
         }
         return nil
     }

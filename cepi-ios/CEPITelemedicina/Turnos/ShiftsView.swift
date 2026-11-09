@@ -88,7 +88,7 @@ private extension ShiftsView {
                 }
             }
             .disabled(model.groups.isEmpty)
-            Text("De turno hoy: \(Text(model.onCallText).bold().foregroundStyle(.primary))")
+            Text("Responsable de turno hoy: \(Text(model.onCallText).bold().foregroundStyle(.primary))")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

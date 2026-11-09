@@ -50,9 +50,11 @@ object ConsultationAnswer {
         if (episode == null) return "Cargando el estado de la consulta…"
         val estado = episode["estado"]
         if (estado == "respondida") return "Esta interconsulta ya fue respondida"
-        if (estado !in PENDING_STATES) return "Esta consulta no tiene una interconsulta pendiente"
-        if (userId != null && episode["medico_primario_id"] == userId) {
-            return "Tú enviaste esta interconsulta: la responde el especialista"
+        // El responsable de turno del caso nuevo responde aunque no se haya enviado (PAPER §32.2.1).
+        val isResponsible = userId != null && episode["responsable_actual_id"] == userId && estado != "cerrado"
+        if (estado !in PENDING_STATES && !isResponsible) return "Esta consulta no tiene una interconsulta pendiente"
+        if (userId != null && (episode["medico_primario_id"] ?: episode["medico_id"]) == userId) {
+            return "Tú ingresaste este caso: lo responde el especialista responsable"
         }
         return null
     }
