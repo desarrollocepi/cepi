@@ -217,6 +217,14 @@ struct CEPIAPI: Sendable {
         return respuesta.results
     }
 
+    // MARK: Controles (PAPER §33)
+
+    /// Los próximos controles de los pacientes (30 días atrás a 90 adelante) y el «hoy» del
+    /// servidor. El alcance por organización y la PII los pone TodoERP con el JWT del caller.
+    func controls() async throws -> ControlList {
+        try await cliente.get("/api/bot/controles")
+    }
+
     // MARK: Galería
 
     /// Imágenes clínicas de la organización activa, con búsqueda por texto (paciente, cédula,
