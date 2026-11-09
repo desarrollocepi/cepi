@@ -191,6 +191,8 @@ function quitar(t) {
   return cambiar(() => quitarTurno(grupo.value, t.id), `Se quitó a ${t.user_name} del turno`);
 }
 
+// Cada semana arranca con «Elegir…» seleccionado: sin la clave, el select quedaba en blanco.
+watch(semanas, (ss) => { for (const s of ss) if (eleccion[s.inicio] === undefined) eleccion[s.inicio] = ''; }, { immediate: true });
 watch(grupo, () => { aviso.value = ''; cargar(); });
 onMounted(cargarGrupos);
 </script>
