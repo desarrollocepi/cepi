@@ -37,6 +37,7 @@
           <button v-if="!isPending && !showProfile" @click="openProfile">👤 Perfil</button>
           <button v-if="!isPending && !showCases" @click="openCases">🗂️ Casos</button>
           <button v-if="!isPending && !showGallery" @click="openGallery">🖼️ Galería</button>
+          <button v-if="!isPending && !showTurnos" @click="openTurnos" title="Quién está de turno cada semana">📅 Turnos</button>
           <button v-if="showCases" @click="goChat">💬 Telemedicina</button>
           <!-- La administración vive en console.cepi.ec, no acá (PAPER §26). El botón
                se queda: es el camino conocido. Quien no administra nada lo ve
@@ -112,6 +113,7 @@ const router = useRouter();
 const showProfile = computed(() => route.name === 'perfil');
 const showCases = computed(() => String(route.name || '').startsWith('caso') || route.name === 'paciente');
 const showGallery = computed(() => route.name === 'galeria');
+const showTurnos = computed(() => route.name === 'turnos');
 
 // Portal de casos (PAPER §22): misma app, misma sesión, otra superficie. Se sirve en
 // casos.cepi.ec, así que el host decide con qué vista arranca; el menú deja saltar de
@@ -119,6 +121,7 @@ const showGallery = computed(() => route.name === 'galeria');
 const brand = computed(() => route.meta?.marca || 'Telemedicina');
 function openCases() { showTopMenu.value = false; router.push('/casos'); }
 function openGallery() { showTopMenu.value = false; router.push('/galeria'); }
+function openTurnos() { showTopMenu.value = false; router.push('/turnos'); }
 const showTopMenu = ref(false);          // burger de acciones del topbar (mobile)
 const chatHeadActive = ref(false);       // el chat muestra su propio burger (paciente abierto)
 // Si el chat toma el header, cierra el menú del topbar (su burger desaparece).

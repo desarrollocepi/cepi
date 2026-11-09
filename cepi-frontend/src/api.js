@@ -548,3 +548,23 @@ export async function guardarConsentimientos({ patientId, tipo, attachmentIds })
     body: JSON.stringify({ patient_id: patientId, tipo, attachment_ids: attachmentIds }),
   });
 }
+
+/** Turnos de un grupo que tocan [from, to] (PAPER §32). Responde `{data, from, to, today}`. */
+export async function listarTurnos(grupo, { from = '', to = '' } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const qs = p.toString();
+  return call(`/api/groups/${encodeURIComponent(grupo)}/shifts${qs ? `?${qs}` : ''}`, { method: 'GET' });
+}
+
+export async function asignarTurno(grupo, { userId, startsOn, endsOn }) {
+  return call(`/api/groups/${encodeURIComponent(grupo)}/shifts`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, starts_on: startsOn, ends_on: endsOn }),
+  });
+}
+
+export async function quitarTurno(grupo, shiftId) {
+  return call(`/api/groups/${encodeURIComponent(grupo)}/shifts/${encodeURIComponent(shiftId)}`, { method: 'DELETE' });
+}

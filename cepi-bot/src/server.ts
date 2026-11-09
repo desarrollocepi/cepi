@@ -849,9 +849,13 @@ async function executePendingActionResult(
     // El destino pedido no tenía a nadie aprobado y el backend lo mandó al respaldo de la
     // org (en CEPI, el supermédico): el mensaje de éxito pensado para el destino mentiría.
     const respaldo = batchCalls.some(c => (c.result as any)?.data?.fallback === true);
+    // El grupo tenía a alguien de turno hoy y el aviso fue solo para esa persona (PAPER §32).
+    const deTurno = batchCalls.some(c => (c.result as any)?.data?.on_call === true);
     const exito = respaldo
       ? `El destino no tenía a nadie disponible: el caso fue a ${nombres.join(', ') || 'nadie'} (respaldo de la organización). Se les notificó.`
-      : conDatos(pa.successMessage);
+      : deTurno
+        ? `Caso enviado. Se notificó a ${nombres.join(', ') || 'nadie'}, de turno esta semana.`
+        : conDatos(pa.successMessage);
     const ackText = errs.length
       ? `${exito} (con ${errs.length} error(es): ${errs.join('; ')})`
       : exito;

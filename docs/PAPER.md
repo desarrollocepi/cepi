@@ -1942,7 +1942,7 @@ Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
 
 | nivel | secciones |
 |---|---|
-| fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) |
+| fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) · **Turnos** (calendario semanal de guardia, §32) |
 | dentro del paciente | **Chat** · **Ficha** · **Evolución** · **Imágenes** (las del paciente) |
 
 - **Chat** es el hilo de siempre, con su composer y sus acciones.
@@ -3142,3 +3142,45 @@ lo firma el profesional». Cada uno muestra sus fotos (con zoom) y un botón «�
 que está siempre; vacío dice «Todavía no hay foto». La Galería de la organización sigue
 mostrando solo fotos clínicas: los consentimientos no se mezclan. Igual en web, iOS y
 Android.
+
+## 32. Calendario de turnos de los especialistas (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** Un calendario dentro de la app con el dermatólogo que está de llamada cada
+semana, y que las notificaciones le lleguen a él.
+
+**Hoy.** Derivar a un círculo (`request_review` con `group_id`) crea un aviso para **cada
+miembro** del círculo en la org activa. Con varias dermatólogas, todas reciben todo.
+
+### 32.1 Capacidad genérica (TodoERP): turnos de un grupo
+
+Tabla `user_group_shifts` (migración 029): `group_id`, `user_id`, `starts_on`, `ends_on`
+(fechas, ambas incluidas), `org_id`, `created_by`. Sin vocabulario clínico: es «quién cubre
+este grupo en estas fechas». Puede haber más de una persona el mismo día.
+
+- `GET /api/groups/:idOrSlug/shifts?from=&to=` — los turnos que tocan ese rango, con el
+  nombre de la persona (`groups:read`).
+- `GET /api/groups/:idOrSlug/on-call?date=` — quién está de turno ese día (por defecto hoy).
+- `POST /api/groups/:idOrSlug/shifts {user_id, starts_on, ends_on}` y
+  `DELETE /api/groups/:idOrSlug/shifts/:id` — permiso `groups:manage_shifts`. La persona
+  tiene que ser de la org activa; el turno queda en esa org.
+- «Hoy» se calcula en la zona horaria `SHIFTS_TIMEZONE` (por defecto `America/Guayaquil`):
+  la semana empieza el lunes a las 00:00 de Ecuador, no de UTC.
+
+### 32.2 A quién avisa una derivación
+
+`request_review` a un grupo: si el grupo tiene a alguien de turno hoy en la org del caso,
+el aviso (reminder, push, campana «revisar») es **solo para quien está de turno**. Si nadie
+cubre hoy, avisa a todos los miembros, como antes: un hueco en el calendario no deja un caso
+sin aviso. El caso sigue visible para todo el círculo; lo que cambia es a quién se le
+notifica. La nota del chatter dice «de turno» cuando se usó el calendario. Vale para
+cualquier grupo con turnos (Dermatología, la bandeja `turno`), no para el virtual «Todos».
+
+### 32.3 Quién lo edita y dónde se ve
+
+- Editan `especialista` y `supermedico` (`groups:manage_shifts` en `medical-seed/002`): el
+  equipo es chico y se reparten las semanas entre ellos. Todos los roles clínicos lo ven.
+- **Turnos** es la tercera sección fuera del paciente (§24.2.1): un selector de grupo
+  (por defecto Dermatología), semanas de lunes a domingo desde la actual, y en cada semana
+  quién está de turno, con «Asignar» (elige a un miembro del grupo) y «Quitar». La semana en
+  curso se marca. Sin permiso de edición, los botones no aparecen (excepción de permisos).
+- Web primero; iOS y Android con la misma pantalla y los mismos endpoints.
