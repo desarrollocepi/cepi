@@ -115,6 +115,14 @@ class CepiApi(val cliente: ApiClient) {
             }
         }))
 
+    /**
+     * Guarda las observaciones de una ficha desde la sección Evolución (grupo `g_7`, PAPER §28).
+     * Es un envío explícito del usuario: cepi-bot lo guarda sin pedir sí/no.
+     */
+    suspend fun saveObservations(paciente: String, episodio: String, texto: String) {
+        cliente.post<Confirmacion>("/api/bot/ficha/grupo", observationsBody(paciente, episodio, texto))
+    }
+
     // Registros
 
     suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
@@ -206,5 +214,13 @@ class CepiApi(val cliente: ApiClient) {
         const val DEFINICION_PACIENTE = "11000000-0000-0000-0000-000000000000"
         const val DEFINICION_EPISODIO = "12000000-0000-0000-0000-000000000000"
         const val PERMISO_BORRAR_PACIENTE = "entity:$DEFINICION_PACIENTE:record:delete"
+
+        /** El cuerpo de `POST /api/bot/ficha/grupo` para las observaciones. Sin red, para probarlo. */
+        fun observationsBody(paciente: String, episodio: String, texto: String): JsonObject = buildJsonObject {
+            put("group_id", "g_7")
+            putJsonObject("data") { put("observaciones", texto) }
+            put("episode_id", episodio)
+            put("patient_id", paciente)
+        }
     }
 }

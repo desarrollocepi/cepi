@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -94,5 +95,9 @@ class IdiomasDictadoTest {
             """{"actual":"e2","filas":[{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","especialista":"Dr. Mora","diagnostico":"L40.0","diagnostico_histopatologico":"Psoriasis","tratamiento":null,"observaciones":"Control"}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
             DatosFicha.javascript(datos),
         )
+        // La sección Evolución la pide editable; el resto, de solo lectura.
+        val editable = ec.cepi.telemedicina.ficha.DatosEvolucion.objeto(paciente, filas, "e2", LocalDate.parse("2026-09-16"), editable = true)
+        assertEquals(JsonPrimitive(true), editable["editable"])
+        assertNull(datos["editable"])
     }
 }

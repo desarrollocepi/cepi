@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ import ec.cepi.telemedicina.api.CepiApi
 import ec.cepi.telemedicina.api.FilaEvolucion
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -58,6 +60,8 @@ object DatosEvolucion {
         filas: List<FilaEvolucion>,
         actual: String?,
         hoy: LocalDate = LocalDate.now(),
+        /** Observaciones editables desde el documento (solo la sección Evolución). */
+        editable: Boolean = false,
     ): Map<String, JsonElement> {
         val combinado = DatosFicha.combinar(paciente, emptyMap(), hoy)
         val texto = { valor: String? -> valor?.let(::JsonPrimitive) ?: JsonNull }
@@ -80,7 +84,7 @@ object DatosEvolucion {
                 ))
             }),
             "actual" to texto(actual),
-        )
+        ) + (if (editable) mapOf("editable" to JsonPrimitive(true)) else emptyMap())
     }
 
     /** Una cadena de JavaScript con el texto escapado. */
@@ -92,7 +96,17 @@ object DatosEvolucion {
  * al puente `CepiEvolucion`. Solo navega dentro del host de la web, como el de la ficha.
  */
 @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
-private class ControladorEvolucion(contexto: Context, web: okhttp3.HttpUrl, alTerminar: () -> Unit, alElegir: (String) -> Unit) {
+private class ControladorEvolucion(
+    contexto: Context,
+    web: okhttp3.HttpUrl,
+    alTerminar: () -> Unit,
+    alElegir: (String) -> Unit,
+    /**
+     * Guardar las observaciones de una ficha (id, texto, y con qué responderle al documento);
+     * `null` las deja de solo lectura.
+     */
+    onSaveObservations: ((String, String, (String) -> Unit) -> Unit)? = null,
+) {
     private val principal = Handler(Looper.getMainLooper())
     val vista = WebView(contexto).apply {
         settings.javaScriptEnabled = true
@@ -103,10 +117,19 @@ private class ControladorEvolucion(contexto: Context, web: okhttp3.HttpUrl, alTe
         addJavascriptInterface(object {
             @JavascriptInterface
             fun abrirFicha(id: String) = principal.post { alElegir(id) }
+
+            @JavascriptInterface
+            fun guardarObservaciones(id: String, texto: String) = principal.post { onSaveObservations?.invoke(id, texto, this@ControladorEvolucion::ejecutar) }
         }, "CepiEvolucion")
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript("window.onAbrirFicha = function (id) { CepiEvolucion.abrirFicha(String(id)); }; ''", null)
+                if (onSaveObservations != null) {
+                    view.evaluateJavascript(
+                        "window.onGuardarObservaciones = function (id, texto) { CepiEvolucion.guardarObservaciones(String(id), String(texto == null ? '' : texto)); }; ''",
+                        null,
+                    )
+                }
                 alTerminar()
             }
 
@@ -116,7 +139,9 @@ private class ControladorEvolucion(contexto: Context, web: okhttp3.HttpUrl, alTe
         loadUrl(web.newBuilder().addPathSegment("evolucion.html").build().toString())
     }
 
-    fun ejecutar(codigo: String) = vista.evaluateJavascript("$codigo; ''", null)
+    fun ejecutar(codigo: String) {
+        vista.evaluateJavascript("$codigo; ''", null)
+    }
 
     fun imprimir(contexto: Context) {
         contexto.getSystemService(PrintManager::class.java)
@@ -158,7 +183,20 @@ fun EvolutionPage(
     var error by remember { mutableStateOf<String?>(null) }
     var cargando by remember { mutableStateOf(true) }
     var reloadCount by remember { mutableIntStateOf(0) }
-    val controlador = remember { ControladorEvolucion(contexto, web, { documentoListo++ }, { open(it) }) }
+    val alcance = rememberCoroutineScope()
+    val controlador = remember {
+        ControladorEvolucion(contexto, web, { documentoListo++ }, { open(it) }) { id, texto, reply ->
+            alcance.launch {
+                val respuesta = try {
+                    api.saveObservations(pacienteId, id, texto)
+                    "window.observacionesGuardadas && window.observacionesGuardadas(${DatosEvolucion.cadena(id)}, ${DatosEvolucion.cadena(texto)})"
+                } catch (e: ApiError) {
+                    "window.errorObservaciones && window.errorObservaciones(${DatosEvolucion.cadena(id)}, ${DatosEvolucion.cadena("No se pudieron guardar las observaciones: ${e.mensaje}")})"
+                }
+                reply(respuesta)
+            }
+        }
+    }
     DisposableEffect(Unit) { onDispose { controlador.vista.destroy() } }
 
     LaunchedEffect(pacienteId, visible, reloadCount) {
@@ -168,7 +206,7 @@ fun EvolutionPage(
             datos = coroutineScope {
                 val filas = async { api.evolucion(pacienteId) }
                 val paciente = async { runCatching { api.entidad(pacienteId).data }.getOrDefault(emptyMap()) }
-                DatosFicha.javascript(DatosEvolucion.objeto(paciente.await(), filas.await(), currentEpisode))
+                DatosFicha.javascript(DatosEvolucion.objeto(paciente.await(), filas.await(), currentEpisode, editable = true))
             }
             error = null
         } catch (e: ApiError) {

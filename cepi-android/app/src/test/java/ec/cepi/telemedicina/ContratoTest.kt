@@ -150,6 +150,16 @@ class ContratoTest {
     }
 
     @Test
+    fun observationsRequestBody() {
+        // POST /api/bot/ficha/grupo desde la sección Evolución (grupo g_7, PAPER §28).
+        val cuerpo = CepiApi.observationsBody("p1", "e2", "Control en 3 meses \"sin\" cambios")
+        assertEquals(
+            """{"group_id":"g_7","data":{"observaciones":"Control en 3 meses \"sin\" cambios"},"episode_id":"e2","patient_id":"p1"}""",
+            cuerpo.toString(),
+        )
+    }
+
+    @Test
     fun urlCodificaElMas() {
         val url = ApiClient.url(
             "https://telemedicina.cepi.ec".toHttpUrl(),
