@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import java.time.LocalDate
 
 /** Los endpoints que usa la app, con tipos. Contrato completo en PAPER §24.4 y §25.4. */
 class CepiApi(val cliente: ApiClient) {
@@ -178,6 +179,20 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun miembros(grupo: String): List<MiembroGrupo> =
         cliente.get<Lista<MiembroGrupo>>("/api/groups/$grupo/members").data
 
+    // Turnos de un grupo (PAPER §32)
+
+    /** Los turnos que tocan el rango `from`–`to` (ambos incluidos), con el «hoy» del servidor. */
+    suspend fun shifts(group: String, from: LocalDate, to: LocalDate): ShiftList =
+        cliente.get("/api/groups/$group/shifts", "from" to from.toString(), "to" to to.toString())
+
+    /** Exige `groups:manage_shifts`; un 400/403/404 llega como `ApiError` con el mensaje del servidor. */
+    suspend fun createShift(group: String, userId: String, startsOn: LocalDate, endsOn: LocalDate): Shift =
+        cliente.post<Uno<Shift>>("/api/groups/$group/shifts", shiftBody(userId, startsOn, endsOn)).data
+
+    suspend fun deleteShift(group: String, id: String) {
+        cliente.delete<Confirmacion>("/api/groups/$group/shifts/$id")
+    }
+
     /** A quién está derivado el episodio ahora mismo. */
     suspend fun derivaciones(episodio: String): List<Derivado> =
         cliente.get<Derivaciones>("/api/review-queue/entity/$episodio").derivados
@@ -256,6 +271,13 @@ class CepiApi(val cliente: ApiClient) {
             put("diagnostico", diagnostico)
             put("tratamiento", tratamiento)
             put("observaciones", observaciones)
+        }
+
+        /** El cuerpo de `POST /api/groups/:slug/shifts`. Sin red, para probarlo. */
+        fun shiftBody(userId: String, startsOn: LocalDate, endsOn: LocalDate): JsonObject = buildJsonObject {
+            put("user_id", userId)
+            put("starts_on", startsOn.toString())
+            put("ends_on", endsOn.toString())
         }
 
         /** El cuerpo de `POST /api/bot/consentimientos`. Sin red, para probarlo. */

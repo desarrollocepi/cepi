@@ -13,6 +13,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,15 +53,17 @@ import ec.cepi.telemedicina.pacientes.ListaPacientes
 import ec.cepi.telemedicina.pacientes.NuevoPaciente
 import ec.cepi.telemedicina.pacientes.PacienteAbierto
 import ec.cepi.telemedicina.pacientes.PacientesModelo
+import ec.cepi.telemedicina.turnos.ShiftsModel
+import ec.cepi.telemedicina.turnos.Turnos
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
-private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria("Galería") }
+private enum class Seccion(val titulo: String) { Pacientes("Pacientes"), Galeria("Galería"), Turnos("Turnos") }
 
 /**
- * Lo que se ve con la sesión abierta: Pacientes y Galería (PAPER §24.2.1, D-Aux-22). Dentro de
+ * Lo que se ve con la sesión abierta: Pacientes, Galería y Turnos (PAPER §24.2.1, D-Aux-22, §32). Dentro de
  * un paciente hay otras cuatro secciones (`PacienteAbierto`).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +74,7 @@ fun Principal(entorno: Entorno) {
     // Aquí y no en la lista: pasar a Galería y volver no recarga ni vuelve a "Cargando…".
     val modelo = remember { PacientesModelo() }
     val galeria = remember { GaleriaModelo(sesion.api) }
+    val turnos = remember { ShiftsModel(sesion.api) }
     val bandeja = remember { BandejaModelo(sesion.api) }
     var bandejaAbierta by rememberSaveable { mutableStateOf(false) }
     val contexto = LocalContext.current
@@ -182,6 +186,12 @@ fun Principal(entorno: Entorno) {
                         icon = { Icon(painterResource(R.drawable.ic_galeria), contentDescription = null) },
                         label = { Text(Seccion.Galeria.titulo) },
                     )
+                    NavigationBarItem(
+                        selected = seccion == Seccion.Turnos.ordinal,
+                        onClick = { seccion = Seccion.Turnos.ordinal },
+                        icon = { Icon(Icons.Filled.DateRange, contentDescription = null) },
+                        label = { Text(Seccion.Turnos.titulo) },
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(avisos) },
@@ -198,6 +208,7 @@ fun Principal(entorno: Entorno) {
                     alFallar = { alcance.launch { avisos.showSnackbar(it) } },
                 )
                 Seccion.Galeria -> Galeria(galeria, organizacion, relleno)
+                Seccion.Turnos -> Turnos(turnos, sesion.usuario, organizacion, relleno)
             }
         }
     }
