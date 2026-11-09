@@ -39,7 +39,7 @@ import { erpClient } from './erp.js';
 import { listarGaleria } from './galeria.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
-import { buildAnswerBatch, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
+import { buildAnswerBatch, canAnswer, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
 import { buildConsentCreate, CONSENT_LABELS, createConsents, isConsentType, listConsents, type ConsentType } from './consentimientos.js';
 
 dotenv.config();
@@ -430,15 +430,19 @@ app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response,
     const cur: any = await mcp.call('entities.get', { id: String(episode_id) });
     if (!cur?.ok) return res.status(404).json({ ok: false, error: 'No se encontró la consulta' });
     const ep = cur.data?.data || {};
-    if (!ESTADOS_CON_INTERCONSULTA.includes(ep.estado)) {
-      return res.status(409).json({ ok: false, error: 'Esta consulta no tiene una interconsulta pendiente' });
+    // Quien ingresó o envió el caso: a él se le responde (PAPER §30, §32).
+    const primarioId: string | null = ep.medico_primario_id || ep.medico_id || null;
+    if (!canAnswer(ep, userId)) {
+      return res.status(409).json({ ok: false, error: ep.estado === 'respondida'
+        ? 'Esta interconsulta ya fue respondida'
+        : 'Esta consulta no tiene una interconsulta pendiente' });
     }
-    if (userId && ep.medico_primario_id && ep.medico_primario_id === userId) {
+    if (userId && primarioId && primarioId === userId) {
       return res.status(409).json({ ok: false, error: 'No puedes responder una interconsulta que enviaste tú' });
     }
 
     const batch = buildAnswerBatch({
-      episodeId: String(episode_id), userId, primarioId: ep.medico_primario_id || null,
+      episodeId: String(episode_id), userId, primarioId,
       recomendacion, diagnostico, tratamiento, observaciones,
     });
     for (const step of batch) {
@@ -448,7 +452,7 @@ app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response,
         return res.status(502).json({ ok: false, error: `No se pudo guardar la respuesta (${step.tool}): ${r?.error || 'error'}` });
       }
     }
-    res.json({ ok: true, notified: !!ep.medico_primario_id });
+    res.json({ ok: true, notified: !!primarioId });
   } catch (err: any) { next(err); }
   finally { if (mcp) await mcp.close().catch(() => {}); }
 });

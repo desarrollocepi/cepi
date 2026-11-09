@@ -3175,6 +3175,24 @@ sin aviso. El caso sigue visible para todo el círculo; lo que cambia es a quié
 notifica. La nota del chatter dice «de turno» cuando se usó el calendario. Vale para
 cualquier grupo con turnos (Dermatología, la bandeja `turno`), no para el virtual «Todos».
 
+### 32.2.1 El responsable del caso nuevo (definición del dueño, 2026-11-09)
+
+El de turno es el **responsable**: el médico que recibe el aviso de paciente nuevo cuando
+otro médico lo ingresa. Le toca revisar la ficha y completarla o pedir que se complete,
+responder las inquietudes del médico que lo ingresó y, si no puede resolverlo, derivar.
+
+- Hook `episode_new_responsible` (TodoERP `hooks/medical.ts`, `on_create` del episodio):
+  el de turno hoy del grupo `CEPI_RESPONSIBLE_GROUP` (por defecto `dermatologia`) queda en
+  `responsable_actual_id` y recibe «Revisión solicitada: Paciente nuevo — <paciente>»
+  (campana, push y correo; el caso le sale en «revisar»). Nota en el chatter.
+- Vale para cada consulta nueva (también la de un paciente que vuelve): cada una trae su
+  ficha a revisar.
+- Sin nadie de turno: avisa a todo el grupo y el caso queda sin responsable.
+- No corre para lo que crea una cuenta de servicio (espejo DrPro) ni se avisa a sí mismo.
+- **Responder** (§30) se habilita también para el responsable con la consulta en curso, no
+  solo cuando está derivada. Responde a quien ingresó el caso (`medico_primario_id`, o
+  `medico_id` si nunca se envió). Responder o derivar apagan el aviso.
+
 ### 32.3 Quién lo edita y dónde se ve
 
 - Editan `especialista` y `supermedico` (`groups:manage_shifts` en `medical-seed/002`): el

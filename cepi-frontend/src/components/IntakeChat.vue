@@ -722,8 +722,11 @@ const responderMotivo = computed(() => {
   if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
   const e = episodioInfo.value;
   if (e.estado === 'respondida') return 'Esta interconsulta ya fue respondida';
-  if (!ESTADOS_CON_INTERCONSULTA.includes(e.estado)) return 'Esta consulta no tiene una interconsulta pendiente';
-  if (props.user?.id && e.medico_primario_id === props.user.id) return 'Tú enviaste esta interconsulta: la responde el especialista';
+  // El responsable de turno del caso nuevo responde aunque no se haya enviado (PAPER §32).
+  const esResponsable = !!props.user?.id && e.responsable_actual_id === props.user.id && e.estado !== 'cerrado';
+  if (!ESTADOS_CON_INTERCONSULTA.includes(e.estado) && !esResponsable) return 'Esta consulta no tiene una interconsulta pendiente';
+  const primario = e.medico_primario_id || e.medico_id;
+  if (props.user?.id && primario === props.user.id) return 'Tú ingresaste este caso: lo responde el especialista responsable';
   return '';
 });
 function onRespondida({ notificado }) {

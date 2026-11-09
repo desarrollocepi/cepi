@@ -1,6 +1,7 @@
 <template>
-  <!-- Calendario de turnos (PAPER §32): quién está de llamada cada semana en un grupo.
-       Una derivación al grupo avisa solo a quien está de turno ese día. -->
+  <!-- Calendario de turnos (PAPER §32): quién es el RESPONSABLE cada semana. El de turno
+       recibe los pacientes nuevos y las derivaciones al grupo: revisa la ficha, responde
+       al médico que lo ingresó y deriva si no puede resolverlo. -->
   <section class="tur">
     <header class="tur-head">
       <h2>Turnos</h2>
@@ -9,7 +10,7 @@
         <option v-for="g in grupos" :key="g.slug" :value="g.slug">{{ g.name }}</option>
       </select>
       <span class="tur-hoy" data-test="de-turno-hoy">
-        De turno hoy: <strong>{{ deTurnoHoy.length ? deTurnoHoy.join(', ') : 'nadie asignado (avisa a todo el grupo)' }}</strong>
+        Responsable de turno hoy: <strong>{{ deTurnoHoy.length ? deTurnoHoy.join(', ') : 'nadie asignado (avisa a todo el grupo)' }}</strong>
       </span>
     </header>
 

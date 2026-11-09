@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildAnswerBatch, ESTADOS_CON_INTERCONSULTA } from '../src/interconsulta.js';
+import { canAnswer } from '../src/interconsulta.js';
 
 const base = { episodeId: 'ep1', userId: 'derma1', today: '2026-11-09' };
 
@@ -39,5 +40,20 @@ describe('buildAnswerBatch — respuesta a la interconsulta', () => {
 
   it('los estados que esperan especialista', () => {
     expect(ESTADOS_CON_INTERCONSULTA).toEqual(['enviada', 'en_triage', 'derivada', 'en_revisión_solicitada']);
+  });
+});
+
+describe('canAnswer (PAPER §32)', () => {
+  it('estado pendiente: cualquiera', () => {
+    expect(canAnswer({ estado: 'derivada' }, 'u1')).toBe(true);
+  });
+  it('caso nuevo en curso: solo su responsable', () => {
+    expect(canAnswer({ estado: 'en_curso', responsable_actual_id: 'u1' }, 'u1')).toBe(true);
+    expect(canAnswer({ estado: 'en_curso', responsable_actual_id: 'u1' }, 'u2')).toBe(false);
+    expect(canAnswer({ estado: 'en_curso' }, 'u1')).toBe(false);
+  });
+  it('respondida o cerrada: nadie', () => {
+    expect(canAnswer({ estado: 'respondida', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
+    expect(canAnswer({ estado: 'cerrado', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
   });
 });

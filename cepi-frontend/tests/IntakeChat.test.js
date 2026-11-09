@@ -536,7 +536,16 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
     expect(responder(w).attributes('title')).toBe('Esta interconsulta ya fue respondida');
     preparar({ episodio: { estado: 'derivada', medico_primario_id: 'yo' } });
     w = await abrir();
-    expect(responder(w).attributes('title')).toContain('Tú enviaste esta interconsulta');
+    expect(responder(w).attributes('title')).toContain('Tú ingresaste este caso');
+  });
+
+  it('caso nuevo en curso: lo responde su responsable de turno, nadie más (PAPER §32)', async () => {
+    preparar({ episodio: { estado: 'en_curso', responsable_actual_id: 'yo', medico_id: 'prim' } });
+    let w = await abrir();
+    expect(responder(w).attributes('disabled')).toBeUndefined();
+    preparar({ episodio: { estado: 'en_curso', responsable_actual_id: 'otro', medico_id: 'prim' } });
+    w = await abrir();
+    expect(responder(w).attributes('title')).toBe('Esta consulta no tiene una interconsulta pendiente');
   });
 
   it('derivada a mí: abre el formulario precargado, guarda y avisa a la lista', async () => {

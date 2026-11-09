@@ -65,3 +65,15 @@ export function buildAnswerBatch(a: InterconsultaAnswer): BatchStep[] {
   }
   return batch;
 }
+
+/**
+ * Si `userId` puede responder la consulta: cuando espera especialista (estado pendiente) o
+ * cuando es su RESPONSABLE (el de turno que recibió el paciente nuevo, PAPER §32), en
+ * cualquier estado salvo ya respondida o cerrada.
+ */
+export function canAnswer(ep: { estado?: string | null; responsable_actual_id?: string | null }, userId: string | null): boolean {
+  const estado = ep.estado || '';
+  if (ESTADOS_CON_INTERCONSULTA.includes(estado)) return true;
+  if (estado === 'respondida' || estado === 'cerrado') return false;
+  return !!userId && !!ep.responsable_actual_id && ep.responsable_actual_id === userId;
+}
