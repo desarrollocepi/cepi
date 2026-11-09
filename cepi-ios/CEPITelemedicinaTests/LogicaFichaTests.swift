@@ -109,14 +109,31 @@ struct LogicaFichaTests {
         let paciente: [String: JSONValor] = ["nombre": .texto("Ana"), "apellidos": .texto("Ruiz"),
                                              "cedula": .texto("0102"), "fecha_nac": .texto("2000-06-15")]
         let filas = try JSONDecoder().decode([FilaEvolucion].self, from: Data("""
-        [{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","diagnostico":"L40.0","tratamiento":null}]
+        [{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","diagnostico":"L40.0","tratamiento":null},
+         {"episode_id":"e1","fecha":"2026-08-15","medico":"Dra. Pérez","especialista":"Dr. Mora",
+          "diagnostico":"L43.9","diagnostico_histopatologico":"Dermatitis liquenoide",
+          "tratamiento":"Tacrolimus","observaciones":"Control en 4 semanas"}]
         """.utf8))
         let datos = DatosEvolucion.objeto(paciente: paciente, filas: filas, actual: "e2", hoy: Fechas.dia("2026-09-16")!)
         #expect(datos["paciente"] == .objeto(["nombre": .texto("Ana Ruiz"), "cedula": .texto("0102"), "edad": .numero(26)]))
         #expect(datos["actual"] == .texto("e2"))
-        #expect(datos["filas"] == .lista([.objeto([
-            "episode_id": .texto("e2"), "fecha": .texto("2026-10-01"), "medico": .texto("Dra. Pérez"),
-            "diagnostico": .texto("L40.0"), "tratamiento": .nulo,
-        ])]))
+        // `editable` es opcional: sin pedirlo, el documento queda de solo lectura.
+        #expect(datos["editable"] == .booleano(false))
+        let editable = DatosEvolucion.objeto(paciente: paciente, filas: filas, actual: nil, editable: true)
+        #expect(editable["editable"] == .booleano(true))
+        #expect(editable["actual"] == .nulo)
+        #expect(datos["filas"] == .lista([
+            .objeto([
+                "episode_id": .texto("e2"), "fecha": .texto("2026-10-01"), "medico": .texto("Dra. Pérez"),
+                "especialista": .nulo, "diagnostico": .texto("L40.0"), "diagnostico_histopatologico": .nulo,
+                "tratamiento": .nulo, "observaciones": .nulo,
+            ]),
+            .objeto([
+                "episode_id": .texto("e1"), "fecha": .texto("2026-08-15"), "medico": .texto("Dra. Pérez"),
+                "especialista": .texto("Dr. Mora"), "diagnostico": .texto("L43.9"),
+                "diagnostico_histopatologico": .texto("Dermatitis liquenoide"),
+                "tratamiento": .texto("Tacrolimus"), "observaciones": .texto("Control en 4 semanas"),
+            ]),
+        ]))
     }
 }

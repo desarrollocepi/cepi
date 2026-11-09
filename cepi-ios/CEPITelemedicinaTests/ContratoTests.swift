@@ -10,21 +10,48 @@ struct ContratoTests {
     }
 
     @Test func fichaDeEvolucion() throws {
-        // GET /api/patient-evolution (PAPER §28); el mismo cuerpo que ContratoTest.kt.
-        let filas = try decodificar(Lista<FilaEvolucion>.self, """
+        // GET /api/patient-evolution (PAPER §28). Las claves de especialista, histopatología y
+        // observaciones son nuevas: ContratoTest.kt de Android todavía no las trae.
+        var filas = try decodificar(Lista<FilaEvolucion>.self, """
         {"ok":true,"data":[
+           {"episode_id":"e3","fecha":"2026-11-02","estado":"respondida","medico":"Dra. Ana Pérez",
+            "especialista":"Dr. Luis Mora","diagnostico":"L43.9 — Liquen plano",
+            "diagnostico_histopatologico":"Dermatitis liquenoide","tratamiento":"Tacrolimus 0,1 %",
+            "observaciones":"Control en 4 semanas"},
            {"episode_id":"e2","fecha":"2026-10-01","estado":"cerrado","medico":"Dra. Ana Pérez",
-            "diagnostico":"L40.0 — Psoriasis vulgar","tratamiento":"Clobetasol 0,05 %"},
+            "especialista":null,"diagnostico":"L40.0 — Psoriasis vulgar",
+            "diagnostico_histopatologico":null,"tratamiento":"Clobetasol 0,05 %","observaciones":null},
            {"episode_id":"e1","fecha":"2026-08-15","estado":"en_curso","medico":null,
             "diagnostico":null,"tratamiento":null}]}
         """).data
-        #expect(filas.map(\.episodio) == ["e2", "e1"])
+        #expect(filas.map(\.episodio) == ["e3", "e2", "e1"])
+        #expect(filas[0].especialista == "Dr. Luis Mora")
+        #expect(filas[0].diagnosticoHistopatologico == "Dermatitis liquenoide")
+        #expect(filas[0].observaciones == "Control en 4 semanas")
+        // Con las claves nuevas en null y sin ellas (backend anterior) da lo mismo.
+        #expect(filas[1].especialista == nil)
+        #expect(filas[1].diagnosticoHistopatologico == nil)
+        #expect(filas[1].observaciones == nil)
+        #expect(filas[2].especialista == nil)
+        #expect(filas[2].observaciones == nil)
+        filas.removeFirst()
         #expect(filas[0].fecha == "2026-10-01")
         #expect(filas[0].medico == "Dra. Ana Pérez")
         #expect(filas[0].diagnostico == "L40.0 — Psoriasis vulgar")
         #expect(filas[0].tratamiento == "Clobetasol 0,05 %")
         #expect(filas[1].diagnostico == nil)
         #expect(filas[1].medico == nil)
+    }
+
+    @Test func cuerpoDeGuardarObservaciones() throws {
+        // POST /api/bot/ficha/grupo desde la sección Evolución (PAPER §28.3).
+        let cuerpo = try JSONEncoder().encode(ObservationsSave(episodio: "e2", paciente: "p1", texto: "Línea 1\n\"citada\""))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: Any])
+        #expect(Set(json.keys) == ["group_id", "data", "episode_id", "patient_id"])
+        #expect(json["group_id"] as? String == "g_7")
+        #expect(json["episode_id"] as? String == "e2")
+        #expect(json["patient_id"] as? String == "p1")
+        #expect(json["data"] as? [String: String] == ["observaciones": "Línea 1\n\"citada\""])
     }
 
     @Test func sesionDeMe() throws {
@@ -118,5 +145,40 @@ struct ContratoTests {
         #expect(url.absoluteString.hasPrefix("https://telemedicina.cepi.ec/api/entities?"))
         #expect(url.query(percentEncoded: true)?.contains("q=a%2Bb%20%C3%B1") == true)
         #expect(url.query(percentEncoded: false)?.contains("filter[patient_id]=p1") == true)
+    }
+}
+
+/// Guardar observaciones contra un bot falso: el cuerpo que sale y el error que vuelve.
+struct GuardarObservacionesTests {
+    private func api(_ servidor: ServidorFalso) -> CEPIAPI {
+        let red = URLSessionConfiguration.ephemeral
+        red.protocolClasses = [ProtocoloFalso.self]
+        let base = URL(string: "https://\(servidor.host)")!
+        let credenciales = Credenciales(cuenta: "prueba-\(UUID().uuidString)")
+        return CEPIAPI(cliente: APIClient(base: base, baseBot: base, credenciales: credenciales, configuracion: red))
+    }
+
+    @Test func guardaEnElGrupoSieteDelBot() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/ficha/grupo", .http(200, #"{"ok":true,"target":"episode","targetId":"e2","completitud":80}"#))
+        try await api(servidor).saveObservations(episodio: "e2", paciente: "p1", texto: "Control en 4 semanas")
+        let cuerpo = try #require(servidor.cuerpo(de: "POST /api/bot/ficha/grupo"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: Any])
+        #expect(json["group_id"] as? String == "g_7")
+        #expect(json["data"] as? [String: String] == ["observaciones": "Control en 4 semanas"])
+    }
+
+    @Test func unFalloTraeElMensajeDelBot() async {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/ficha/grupo", .http(400, #"{"ok":false,"error":"campo desconocido"}"#))
+        do {
+            try await api(servidor).saveObservations(episodio: "e2", paciente: "p1", texto: "x")
+            Issue.record("debía fallar")
+        } catch {
+            #expect((error as? APIError)?.status == 400)
+            #expect(error.localizedDescription == "campo desconocido")
+        }
     }
 }

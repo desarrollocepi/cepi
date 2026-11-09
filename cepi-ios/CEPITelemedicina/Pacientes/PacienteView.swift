@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Un paciente abierto: tres secciones que se pasan deslizando (PAPER §24.2.1, D-Aux-22).
+/// Un paciente abierto: cuatro secciones que se pasan deslizando (PAPER §24.2.1, D-Aux-22).
 ///
-///   Chat · Ficha · Imágenes
+///   Chat · Ficha · Evolución · Imágenes
 ///
 /// El modelo del hilo vive acá y no en el chat: la ficha guarda con él (`ficha_save`) y las
 /// acciones (nueva consulta, secciones, derivar) valen desde cualquier sección.
@@ -17,18 +17,21 @@ struct PacienteView: View {
     @Binding var seccion: Seccion
     @State private var mostrarSecciones = false
     @State private var mostrarDerivar = false
-    @State private var mostrarEvolucion = false
     /// La ficha que se eligió en la evolución: la sección Ficha va a esa.
     @State private var fichaPedida: String?
+    /// Sube cada vez que la Evolución vuelve a la vista: entre una vez y otra se pudo guardar
+    /// un diagnóstico, así que se vuelve a pedir (PAPER §28.3).
+    @State private var evolutionReload = 0
 
     enum Seccion: String, CaseIterable, Identifiable {
-        case chat, ficha, imagenes
+        case chat, ficha, evolucion, imagenes
 
         var id: Self { self }
         var titulo: String {
             switch self {
             case .chat: "Chat"
             case .ficha: "Ficha"
+            case .evolucion: "Evolución"
             case .imagenes: "Imágenes"
             }
         }
@@ -81,11 +84,22 @@ struct PacienteView: View {
                     nombre: fila.nombre,
                     episodioActivo: modelo.episodioActivo,
                     embebido: true,
-                    episodioPedido: fichaPedida
+                    episodioPedido: fichaPedida,
+                    onShowEvolution: { seccion = .evolucion }
                 ) { datos, episodio in
                     await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
                 }
                 .tag(Seccion.ficha)
+
+                EvolucionView(
+                    pacienteId: fila.id,
+                    actual: fichaPedida ?? modelo.episodioActivo,
+                    recarga: evolutionReload
+                ) { episodio in
+                    fichaPedida = episodio
+                    seccion = .ficha
+                }
+                .tag(Seccion.evolucion)
 
                 ImagenesPacienteView(paciente: fila)
                     .tag(Seccion.imagenes)
@@ -100,6 +114,9 @@ struct PacienteView: View {
             }
         }
         .task { await modelo.abrir(api: sesion.api) }
+        .onChange(of: seccion) { _, nueva in
+            if nueva == .evolucion { evolutionReload += 1 }
+        }
         // El formulario de la ficha va en una hoja: en el hilo, el teclado y el composer tapaban
         // su botón Guardar. Con auto-form encendido la hoja pasa al siguiente grupo sin cerrarse.
         .sheet(isPresented: Binding(
@@ -123,13 +140,6 @@ struct PacienteView: View {
                 .presentationDetents([.medium, .large])
                 .environment(sesion)
             }
-        }
-        .sheet(isPresented: $mostrarEvolucion) {
-            EvolucionView(pacienteId: fila.id, actual: modelo.episodioActivo) { episodio in
-                fichaPedida = episodio
-                seccion = .ficha
-            }
-            .environment(sesion)
         }
         .sheet(isPresented: $mostrarSecciones) {
             SeccionesView(marcadores: modelo.marcadores) { marcador in
@@ -189,7 +199,7 @@ struct PacienteView: View {
                     Text(modelo.autoFormulario ? "Pide la siguiente sección faltante" : "Solo muestra la sección que abras")
                 }
                 .disabled(modelo.ocupado || !enLaActual)
-                Button("Evolución del paciente", systemImage: "chart.line.uptrend.xyaxis") { mostrarEvolucion = true }
+                Button("Evolución del paciente", systemImage: "chart.line.uptrend.xyaxis") { seccion = .evolucion }
             }
             Button("Derivar", systemImage: "arrowshape.turn.up.right") { mostrarDerivar = true }
                 .disabled(modelo.ocupado)

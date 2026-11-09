@@ -101,6 +101,15 @@ struct CEPIAPI: Sendable {
         return try await cliente.post("/api/bot/chat", json: TurnoChat(message: "", sessionId: sesion, formulario: envio))
     }
 
+    /// Guarda las observaciones de una ficha desde la evolución (PAPER §28.3). Un fallo llega
+    /// como `APIError` con el mensaje del bot.
+    func saveObservations(episodio: String, paciente: String, texto: String) async throws {
+        let _: Confirmacion = try await cliente.post(
+            "/api/bot/ficha/grupo",
+            json: ObservationsSave(episodio: episodio, paciente: paciente, texto: texto),
+        )
+    }
+
     // MARK: Derivar
 
     func grupos() async throws -> [GrupoDerivacion] {

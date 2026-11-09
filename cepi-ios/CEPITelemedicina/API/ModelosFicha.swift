@@ -232,13 +232,41 @@ struct FilaEvolucion: Decodable, Sendable, Hashable, Identifiable {
     let fecha: String?
     let estado: String?
     let medico: String?
+    /// El especialista que respondió la derivación, si la hubo.
+    let especialista: String?
     let diagnostico: String?
+    let diagnosticoHistopatologico: String?
     let tratamiento: String?
+    let observaciones: String?
 
     var id: String { episodio }
 
     enum CodingKeys: String, CodingKey {
         case episodio = "episode_id"
-        case fecha, estado, medico, diagnostico, tratamiento
+        case diagnosticoHistopatologico = "diagnostico_histopatologico"
+        case fecha, estado, medico, especialista, diagnostico, tratamiento, observaciones
+    }
+}
+
+/// `POST /api/bot/ficha/grupo` con las observaciones de una ficha (grupo `g_7`), desde la
+/// sección Evolución. Es una acción explícita del usuario: el bot guarda sin pedir sí/no.
+struct ObservationsSave: Encodable, Sendable {
+    let groupId: String
+    let data: [String: String]
+    let episodeId: String
+    let patientId: String
+
+    init(episodio: String, paciente: String, texto: String) {
+        groupId = "g_7"
+        data = ["observaciones": texto]
+        episodeId = episodio
+        patientId = paciente
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case groupId = "group_id"
+        case episodeId = "episode_id"
+        case patientId = "patient_id"
+        case data
     }
 }
