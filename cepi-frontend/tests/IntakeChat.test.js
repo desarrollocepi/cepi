@@ -4,7 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 vi.mock('../src/api.js', () => ({
   chat: vi.fn(), saveSessionId: vi.fn(), uploadAttachment: vi.fn(), listGroups: vi.fn(),
   listGroupMembers: vi.fn(), listEntityDerivations: vi.fn(), listBotSessions: vi.fn(),
-  getPatientThread: vi.fn(),
+  getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(),
 }));
 vi.mock('../src/native/speech.js', () => ({ dictationSupported: false, createDictation: vi.fn() }));
 import * as api from '../src/api.js';
@@ -28,7 +28,8 @@ const HILO = [
   msg('y agrego esto', { author_id: 'u2', author_name: 'Dra. Colega' }),
 ];
 
-function preparar({ hilo = HILO, activacion = ACTIVACION, sesiones = [] } = {}) {
+function preparar({ hilo = HILO, activacion = ACTIVACION, sesiones = [], episodio = { estado: 'en_curso' } } = {}) {
+  api.obtenerEntidad.mockResolvedValue({ id: 'ep2', data: episodio });
   api.getPatientThread.mockResolvedValue({ messages: hilo });
   api.listBotSessions.mockResolvedValue({ sessions: sesiones });
   api.listEntityDerivations.mockResolvedValue({ derivados: [] });
@@ -517,5 +518,59 @@ describe('IntakeChat — refresco del hilo', () => {
     api.getPatientThread.mockClear();
     await vi.advanceTimersByTimeAsync(30000);
     expect(api.getPatientThread).not.toHaveBeenCalled();
+  });
+});
+
+describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)', () => {
+  const responder = (w) => boton(w, '.ihead-actions button', 'Responder interconsulta');
+
+  it('sin interconsulta pendiente el botón está, gris y con el motivo', async () => {
+    const w = await abrir();
+    expect(responder(w).attributes('disabled')).toBeDefined();
+    expect(responder(w).attributes('title')).toBe('Esta consulta no tiene una interconsulta pendiente');
+  });
+
+  it('respondida o enviada por uno mismo: gris con su motivo', async () => {
+    preparar({ episodio: { estado: 'respondida' } });
+    let w = await abrir();
+    expect(responder(w).attributes('title')).toBe('Esta interconsulta ya fue respondida');
+    preparar({ episodio: { estado: 'derivada', medico_primario_id: 'yo' } });
+    w = await abrir();
+    expect(responder(w).attributes('title')).toContain('Tú enviaste esta interconsulta');
+  });
+
+  it('derivada a mí: abre el formulario precargado, guarda y avisa a la lista', async () => {
+    preparar({ episodio: { estado: 'derivada', medico_primario_id: 'prim', diagnostico: 'Nevus', tratamiento_resumen: '' } });
+    api.responderInterconsulta.mockResolvedValue({ ok: true, notified: true });
+    const w = await abrir();
+    expect(responder(w).attributes('disabled')).toBeUndefined();
+    await responder(w).trigger('click');
+    const form = w.findComponent({ name: 'ResponderInterconsulta' });
+    expect(form.exists()).toBe(true);
+    expect(form.find('input').element.value).toBe('Nevus');
+    const [, recomendacion] = form.findAll('textarea');
+    await recomendacion.setValue('Exéresis y control en 6 meses');
+    await form.find('form').trigger('submit');
+    await flushPromises();
+    expect(api.responderInterconsulta).toHaveBeenCalledWith({
+      episodeId: 'ep2', recomendacion: 'Exéresis y control en 6 meses', diagnostico: 'Nevus', tratamiento: '', observaciones: '',
+    });
+    expect(w.findComponent({ name: 'ResponderInterconsulta' }).exists()).toBe(false);
+    expect(turnos(w).join(' ')).toContain('Interconsulta respondida');
+    expect(w.emitted('respondida')).toHaveLength(1);
+  });
+
+  it('si guardar falla, el formulario queda abierto con el error', async () => {
+    preparar({ episodio: { estado: 'derivada', medico_primario_id: 'prim' } });
+    api.responderInterconsulta.mockRejectedValue(new Error('Esta consulta no tiene una interconsulta pendiente'));
+    const w = await abrir();
+    await responder(w).trigger('click');
+    const form = w.findComponent({ name: 'ResponderInterconsulta' });
+    expect(form.find('.ri-pri').attributes('disabled')).toBeDefined(); // sin respuesta escrita
+    await form.findAll('textarea')[1].setValue('algo');
+    await form.find('form').trigger('submit');
+    await flushPromises();
+    expect(form.find('.ri-error').text()).toBe('Esta consulta no tiene una interconsulta pendiente');
+    expect(w.emitted('respondida')).toBeUndefined();
   });
 });

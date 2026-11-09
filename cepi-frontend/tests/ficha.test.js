@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn(), getPatientEvolution: vi.fn() }));
+vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn(), getPatientEvolution: vi.fn(), obtenerEntidad: vi.fn() }));
 import * as api from '../src/api.js';
 import BotForm from '../src/components/BotForm.vue';
 import BodyMapField from '../src/components/BodyMapField.vue';
@@ -334,7 +334,20 @@ describe('FichaCompleta', () => {
     return w;
   }
   const navegar = (w, texto) => w.findAll('.ficha-nav-btn').find((b) => b.text().includes(texto));
-  beforeEach(() => { api.fichaCompleta.mockResolvedValue(FICHA); });
+  beforeEach(() => {
+    api.fichaCompleta.mockResolvedValue(FICHA);
+    api.obtenerEntidad.mockResolvedValue({ id: 'ep2', data: {} });
+  });
+
+  it('muestra la respuesta del especialista cuando la consulta la tiene', async () => {
+    let w = await montar();
+    expect(w.find('.ficha-respuesta').exists()).toBe(false);
+    api.obtenerEntidad.mockResolvedValue({ id: 'ep2', data: { recomendacion: 'Exéresis y control en 6 meses', recomendacion_at: '2026-11-09' } });
+    w = await montar();
+    expect(api.obtenerEntidad).toHaveBeenCalledWith('ep2');
+    expect(w.find('.ficha-respuesta').text()).toContain('Exéresis y control en 6 meses');
+    expect(w.find('.ficha-respuesta').text()).toContain('2026-11-09');
+  });
 
   it('pide la ficha del episodio y muestra el avance', async () => {
     const w = await montar();

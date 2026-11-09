@@ -39,6 +39,7 @@ import { erpClient } from './erp.js';
 import { listarGaleria } from './galeria.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
+import { buildAnswerBatch, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
 
 dotenv.config();
 
@@ -397,6 +398,57 @@ app.post('/api/bot/ficha/grupo', async (req: Request, res: Response, next: NextF
     }
     next(err);
   }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/interconsulta/responder — el especialista responde la interconsulta desde el
+ * formulario «Responder interconsulta» (web y apps).
+ * Body: {episode_id, recomendacion, diagnostico?, tratamiento?, observaciones?}
+ *
+ * Es una acción explícita del usuario: se guarda directo, sin gate (CLAUDE.md). Hace lo
+ * mismo que `responder <texto>`: escribe en el episodio (ficha y evolución), apaga la
+ * campana de revisar de todos los revisores y avisa al médico que envió el caso.
+ */
+app.post('/api/bot/interconsulta/responder', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const { episode_id, recomendacion, diagnostico, tratamiento, observaciones } = req.body || {};
+    if (!episode_id) return res.status(400).json({ ok: false, error: 'episode_id required' });
+    if (typeof recomendacion !== 'string' || !recomendacion.trim()) {
+      return res.status(400).json({ ok: false, error: 'Escribe la respuesta para el médico que envió el caso' });
+    }
+
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const me: any = await mcp.call('auth.whoami', {});
+    const userId = (me?.data?.user?.id as string) || null;
+    const cur: any = await mcp.call('entities.get', { id: String(episode_id) });
+    if (!cur?.ok) return res.status(404).json({ ok: false, error: 'No se encontró la consulta' });
+    const ep = cur.data?.data || {};
+    if (!ESTADOS_CON_INTERCONSULTA.includes(ep.estado)) {
+      return res.status(409).json({ ok: false, error: 'Esta consulta no tiene una interconsulta pendiente' });
+    }
+    if (userId && ep.medico_primario_id && ep.medico_primario_id === userId) {
+      return res.status(409).json({ ok: false, error: 'No puedes responder una interconsulta que enviaste tú' });
+    }
+
+    const batch = buildAnswerBatch({
+      episodeId: String(episode_id), userId, primarioId: ep.medico_primario_id || null,
+      recomendacion, diagnostico, tratamiento, observaciones,
+    });
+    for (const step of batch) {
+      const r: any = await mcp.call(step.tool, step.args);
+      // El aviso al primario no tumba la respuesta ya guardada; lo demás sí se informa.
+      if ((r?.ok === false || r?.isError) && step.tool !== 'reminders.create') {
+        return res.status(502).json({ ok: false, error: `No se pudo guardar la respuesta (${step.tool}): ${r?.error || 'error'}` });
+      }
+    }
+    res.json({ ok: true, notified: !!ep.medico_primario_id });
+  } catch (err: any) { next(err); }
   finally { if (mcp) await mcp.close().catch(() => {}); }
 });
 
@@ -1993,21 +2045,9 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         const cur = await mcp.call('entities.get', { id: activeEpisodeId });
         const curData = ((cur as any)?.ok && (cur as any)?.data?.data) ? (cur as any).data.data : {};
         const primarioId = curData.medico_primario_id || null;
-        const today = new Date().toISOString().slice(0, 10);
-        const batch: any[] = [
-          { tool: 'entities.update', args: { id: activeEpisodeId, record_type: 'business',
-            data: { recomendacion, recomendacion_por: userId3, recomendacion_at: today, estado: 'respondida' } } },
-        ];
-        if (primarioId) {
-          // Notifica al primario. recomendacion es contenido clínico (no PII §13.3.1).
-          batch.push({ tool: 'reminders.create', args: {
-            entity_id: activeEpisodeId, owner_user_id: primarioId,
-            title: 'Respuesta a tu teleconsulta',
-            message: recomendacion,
-            due_at: new Date().toISOString(),
-            channels: ['in_app', 'email', 'telegram', 'web_push'],
-          } });
-        }
+        // Mismo lote que el formulario «Responder interconsulta»: guarda en la ficha,
+        // apaga la campana de los revisores y avisa al primario (interconsulta.ts).
+        const batch: any[] = buildAnswerBatch({ episodeId: activeEpisodeId, userId: userId3, primarioId, recomendacion });
         session.pending_action = {
           summary: `Responder ${consultaDe(session)}`,
           batch,

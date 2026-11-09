@@ -846,6 +846,14 @@ Acción explícita del médico para que un caso lo revisen colegas. **Nunca auto
   - Cuando un reviewer comenta o agrega entidad-hija (e.g., un `diagnosis` diferencial), notifica al solicitante.
 - **Genérico**: el ID de la tool no menciona dominio médico; sirve para escalar facturas dudosas, tickets, contratos, etc.
 - En el contexto médico: el médico escala un episodio a un colega o al supermédico cuando duda del diagnóstico (con o sin sugerencia de la IA).
+- **Cierre** (2026-11-09): `entities.complete_review(entity_id, { result? })` →
+  `POST /api/entities/:id/complete_review`. Marca como hechos **todos** los recordatorios
+  "Revisión solicitada" pendientes del registro (no solo los de quien responde: si fue a un
+  grupo, con que uno responda el caso ya no espera a nadie) y anota en el chatter. No toca
+  otros recordatorios (p. ej. el de un próximo control). Lo puede llamar quien tiene un
+  recordatorio de revisión pendiente en el registro o quien puede pedir revisiones;
+  idempotente. Antes no existía y la campana de "revisar" seguía encendida después de
+  responder (feedback de las dermatólogas, ver §30).
 
 ### 13.7 Registros por organización y org sandbox (D-Aux-21) — capacidad genérica
 
@@ -3054,4 +3062,41 @@ el episodio: la ficha se edita y se espeja, y una nota no tiene por qué viajar 
 - Fichas del espejo DrPro que nacen como cita `agendado` (§21.4): su `created_at` es el de
   la cita, que puede ser días antes de la consulta, y al pasar a `Terminada` salen como
   «caducado». Falta decidir desde cuándo corre el plazo para ellas.
+
+---
+## 30. Responder la interconsulta (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** (a) Después de responder, el paciente seguía como "revisar". (b) La respuesta del
+dermatólogo quedaba solo en el chat y se podía perder: tiene que salir en la evolución y en la
+hoja de historia clínica.
+
+### 30.1 Qué hace responder
+
+Un solo lote (`cepi-bot/src/interconsulta.ts`, `buildAnswerBatch`), el mismo para el comando
+`responder <texto>` (con gate: se infiere de texto libre) y para el formulario:
+
+1. `entities.update` del episodio: `recomendacion` (la respuesta, obligatoria),
+   `recomendacion_por`, `recomendacion_at`, `estado = respondida`, y si vinieron,
+   `diagnostico`, `tratamiento_resumen` y `observaciones`. Un campo vacío **no borra** lo
+   que la ficha tenía. El diagnóstico anterior queda en el chatter (§21.3).
+2. `entities.complete_review` (§13.6): se apaga la campana de todos los revisores.
+3. `reminders.create` al médico que envió el caso (`medico_primario_id`), si hay.
+
+### 30.2 Formulario «Responder interconsulta»
+
+`POST /api/bot/interconsulta/responder {episode_id, recomendacion, diagnostico?,
+tratamiento?, observaciones?}`. Acción explícita: sin gate. Responde 409 si la consulta no
+está en un estado que espera especialista (`enviada`, `en_triage`, `derivada`,
+`en_revisión_solicitada`) o si quien responde es quien la envió.
+
+- **Web**: botón «✅ Responder interconsulta» en las acciones del paciente (`IntakeChat`),
+  formulario `ResponderInterconsulta.vue` precargado con lo que la ficha ya tiene. El botón
+  está siempre; gris con el motivo cuando no aplica (ya respondida, sin interconsulta
+  pendiente, la enviaste tú). Al responder, la lista se recarga y el paciente sale de
+  "revisar".
+- **Dónde se ve la respuesta**: diagnóstico, tratamiento y observaciones en la ficha y en la
+  evolución (§28); el texto de la respuesta en la pestaña Ficha (bloque «Respuesta del
+  especialista») y en `ficha.html` (§7, solo lectura). En la evolución, la columna Atendió
+  dice quién respondió.
+- **Apps**: el mismo botón y el mismo endpoint (iOS y Android).
 

@@ -27,6 +27,10 @@
           :title="currentPatientId ? 'Fecha, médico, diagnóstico y tratamiento de todas las fichas del paciente' : 'Elige un paciente para ver su evolución'"
         >📈 Evolución</button>
         <button type="button" :disabled="busy" @click="openDerivar" title="Derivar el episodio a un círculo o a una persona">↪️ Derivar</button>
+        <button
+          type="button" class="ihead-responder" :disabled="busy || !!responderMotivo" @click="showResponder = true"
+          :title="responderMotivo || 'Responder la interconsulta: queda en la ficha y le llega al médico que envió el caso'"
+        >✅ Responder interconsulta</button>
         <button type="button" :disabled="busy" @click="nuevaConsulta" title="Abrir una consulta nueva (el episodio anterior queda en el historial)">＋ Nueva consulta</button>
         <button type="button" @click="showDoctoPro = true" title="Consultar pacientes en DoctoPro">🔎 DoctoPro</button>
       </div>
@@ -214,13 +218,20 @@
       @close="showEvolucion = false" @abrir="abrirFichaDesdeEvolucion"
     />
 
+    <ResponderInterconsulta
+      v-if="showResponder && activeEpisodeId"
+      :episode-id="activeEpisodeId" :inicial="episodioInfo || {}"
+      @close="showResponder = false" @respondida="onRespondida"
+    />
+
     <DoctoProSearch v-if="showDoctoPro" @close="showDoctoPro = false" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, listBotSessions, getPatientThread } from '../api.js';
+import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
+import ResponderInterconsulta from './ResponderInterconsulta.vue';
 import MessageContent from './MessageContent.vue';
 import BotForm from './BotForm.vue';
 import DoctoProSearch from './DoctoProSearch.vue';
@@ -228,8 +239,8 @@ import VisorEvolucion from './VisorEvolucion.vue';
 import { createDictation, dictationSupported } from '../native/speech.js';
 import { edadDesde } from '../edad.js';
 
-defineProps({ user: Object });
-const emit = defineEmits(['closed', 'back', 'head']);
+const props = defineProps({ user: Object });
+const emit = defineEmits(['closed', 'back', 'head', 'respondida']);
 
 const draft = ref('');
 const busy = ref(false);
@@ -689,6 +700,43 @@ async function openFicha(episodeId = null) {
 }
 // Ficha de evolución (PAPER §28): tocar una fila abre esa ficha en el visor.
 const showEvolucion = ref(false);
+
+// ── Responder interconsulta (feedback de las dermatólogas, 2026-11-09) ──
+// Estados en los que el caso espera a un especialista (igual que cepi-bot interconsulta.ts).
+const ESTADOS_CON_INTERCONSULTA = ['enviada', 'en_triage', 'derivada', 'en_revisión_solicitada'];
+const showResponder = ref(false);
+const episodioInfo = ref(null);   // datos del episodio activo: estado, médico que envió, ficha
+async function cargarEpisodioInfo() {
+  const id = activeEpisodeId.value;
+  episodioInfo.value = null;
+  if (!id) return;
+  try {
+    const r = await obtenerEntidad(id);
+    if (activeEpisodeId.value === id) episodioInfo.value = r?.data || {};
+  } catch { /* sin datos el botón queda deshabilitado con su motivo */ }
+}
+watch(activeEpisodeId, cargarEpisodioInfo);
+// El botón está siempre; el motivo dice por qué hoy no aplica (nunca ocultes un botón).
+const responderMotivo = computed(() => {
+  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
+  if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
+  const e = episodioInfo.value;
+  if (e.estado === 'respondida') return 'Esta interconsulta ya fue respondida';
+  if (!ESTADOS_CON_INTERCONSULTA.includes(e.estado)) return 'Esta consulta no tiene una interconsulta pendiente';
+  if (props.user?.id && e.medico_primario_id === props.user.id) return 'Tú enviaste esta interconsulta: la responde el especialista';
+  return '';
+});
+function onRespondida({ notificado }) {
+  showResponder.value = false;
+  messages.value = [...messages.value, {
+    role: 'assistant', is_bot: true, episode_id: activeEpisodeId.value,
+    content: notificado
+      ? '✅ Interconsulta respondida: quedó en la ficha y en la evolución, y se avisó al médico que envió el caso.'
+      : '✅ Interconsulta respondida: quedó en la ficha y en la evolución.',
+  }];
+  cargarEpisodioInfo();
+  emit('respondida');
+}
 function abrirFichaDesdeEvolucion(episodeId) {
   showEvolucion.value = false;
   openFicha(episodeId);

@@ -468,6 +468,18 @@ export async function guardarFichaCompleta({ episodeId, patientId, data }) {
   });
 }
 
+/**
+ * El especialista responde la interconsulta (cepi-bot /api/bot/interconsulta/responder):
+ * guarda en la ficha (diagnóstico, tratamiento, observaciones y la respuesta), apaga la
+ * campana de revisar y avisa al médico que envió el caso. Acción explícita: sin gate.
+ */
+export async function responderInterconsulta({ episodeId, recomendacion, diagnostico = '', tratamiento = '', observaciones = '' }) {
+  return call('/api/bot/interconsulta/responder', {
+    method: 'POST',
+    body: JSON.stringify({ episode_id: episodeId, recomendacion, diagnostico, tratamiento, observaciones }),
+  });
+}
+
 export async function guardarGrupoFicha({ groupId, data, episodeId = null, patientId = null }) {
   return call('/api/bot/ficha/grupo', {
     method: 'POST',

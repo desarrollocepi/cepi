@@ -17,6 +17,15 @@
         @navegar="emit('navegar', $event)"
       />
 
+      <!-- La respuesta del especialista a la interconsulta (feedback de las dermatólogas):
+           tiene que verse en la hoja, no solo en el chat. Se escribe con «Responder
+           interconsulta»; acá es de solo lectura. -->
+      <section v-if="respuesta" class="ficha-respuesta">
+        <strong>Respuesta del especialista</strong>
+        <span v-if="respuesta.fecha" class="ficha-respuesta-fecha">{{ respuesta.fecha }}</span>
+        <p>{{ respuesta.texto }}</p>
+      </section>
+
       <!-- Que existan fichas anteriores tiene que verse ANTES de leer la actual:
            un dato aislado dice poco si no se sabe que hay con qué compararlo.
            La barra sale SIEMPRE, aunque haya una sola visita. Escondiéndola con
@@ -108,7 +117,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
-import { fichaCompleta, guardarGrupoFicha } from '../api.js';
+import { fichaCompleta, guardarGrupoFicha, obtenerEntidad } from '../api.js';
 import BotForm from './BotForm.vue';
 import EvolucionPaciente from './EvolucionPaciente.vue';
 
@@ -305,7 +314,12 @@ async function cargar() {
 
   cargando.value = true; error.value = '';
   try {
-    const r = await fichaCompleta({ episodeId: props.episodeId, patientId: props.patientId });
+    const [r, ep] = await Promise.all([
+      fichaCompleta({ episodeId: props.episodeId, patientId: props.patientId }),
+      props.episodeId ? Promise.resolve().then(() => obtenerEntidad(props.episodeId)).catch(() => null) : null,
+    ]);
+    const d = ep?.data || {};
+    respuesta.value = d.recomendacion ? { texto: d.recomendacion, fecha: d.recomendacion_at || '' } : null;
     grupos.value = r.grupos || [];
     completos.value = r.completos ?? 0;
     total.value = r.total ?? grupos.value.length;
@@ -323,11 +337,16 @@ async function cargar() {
   }
 }
 
+const respuesta = ref(null);   // { texto, fecha } de la respuesta a la interconsulta
+
 watch(() => [props.episodeId, props.patientId], cargar, { immediate: true });
 defineExpose({ recargar: cargar });
 </script>
 
 <style scoped>
+.ficha-respuesta { margin-bottom: 10px; padding: 9px 12px; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 8px; background: #f0fdf4; font-size: 13px; color: #14532d; }
+.ficha-respuesta-fecha { margin-left: 8px; font-size: 12px; color: #4d7c0f; }
+.ficha-respuesta p { margin: 4px 0 0; white-space: pre-wrap; color: #0f172a; }
 .ficha { padding: 12px 14px 40px; overflow-y: auto; position: relative; }
 /* Atenuado y sin clics mientras llega la ficha nueva, pero VISIBLE: se sigue viendo
    dónde estabas. Bloquear el puntero evita editar un grupo del episodio anterior. */

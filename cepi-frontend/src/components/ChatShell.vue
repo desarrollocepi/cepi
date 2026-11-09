@@ -1,6 +1,7 @@
 <template>
   <div class="shell" :class="`shell--${view}`">
     <ChatList
+      ref="listaRef"
       class="shell-list"
       :user="user"
       :active-id="selectedId"
@@ -24,6 +25,7 @@
         v-show="seccion === 'chat'"
         ref="chatRef" :user="user" class="shell-chat"
         @closed="onChatClosed" @back="volverALista" @head="patientActive = $event"
+        @respondida="listaRef?.reload?.()"
       />
       <FichaCompleta
         v-if="selectedId && seccion === 'ficha'"
@@ -67,6 +69,8 @@ const patientActive = ref(false);  // IntakeChat tiene un paciente abierto (head
 const headActive = computed(() => patientActive.value && view.value === 'chat');
 watch(headActive, (v) => emit('head', v), { immediate: true });
 const selectedId = ref(null);
+// Al responder una interconsulta la lista se recarga ya: el paciente sale de "revisar".
+const listaRef = ref(null);
 const selectedName = ref('');
 const generalActive = ref(false);
 
