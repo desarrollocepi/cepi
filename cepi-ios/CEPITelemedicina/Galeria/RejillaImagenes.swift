@@ -1,21 +1,45 @@
 import SwiftUI
 
 /// Rejilla de imágenes clínicas. La usan la galería de la organización y la pestaña de
-/// imágenes del paciente: cambia qué se pide, no cómo se ve.
-struct RejillaImagenes: View {
+/// imágenes del paciente: cambia qué se pide, no cómo se ve. `header` va arriba de las fotos
+/// y se desplaza con ellas (los consentimientos del paciente, PAPER §31.3).
+struct RejillaImagenes<Header: View>: View {
     let modelo: GaleriaModelo
     /// Qué decir cuando no hay ninguna (con búsqueda vacía).
     let vacio: String
     /// Con el paciente abierto no hace falta repetir su nombre en cada foto.
     var mostrarPaciente = true
+    let header: Header
 
     @Environment(Sesion.self) private var sesion
     @State private var abierta: ImagenGaleria?
 
     private let columnas = [GridItem(.adaptive(minimum: 110), spacing: 6)]
 
+    init(modelo: GaleriaModelo, vacio: String, mostrarPaciente: Bool = true, @ViewBuilder header: () -> Header) {
+        self.modelo = modelo
+        self.vacio = vacio
+        self.mostrarPaciente = mostrarPaciente
+        self.header = header()
+    }
+
+    /// Con cabecera el estado (cargando, vacío, error) va debajo de ella y no la tapa.
+    private var hasHeader: Bool { Header.self != EmptyView.self }
+
     var body: some View {
         ScrollView {
+            if hasHeader {
+                header
+                Text("Imágenes clínicas")
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 8)
+                estado
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: modelo.cargado && !modelo.imagenes.isEmpty ? 0 : 220)
+            }
+
             LazyVGrid(columns: columnas, spacing: 6) {
                 ForEach(modelo.imagenes) { imagen in
                     Button { abierta = imagen } label: {
@@ -37,29 +61,34 @@ struct RejillaImagenes: View {
             }
         }
         .overlay {
-            if !modelo.cargado {
-                if let error = modelo.error {
-                    ContentUnavailableView {
-                        Label("No se pudieron cargar las imágenes", systemImage: "photo.badge.exclamationmark")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("Reintentar") { Task { await modelo.recargar(api: sesion.api) } }
-                    }
-                } else {
-                    ProgressView("Cargando imágenes…")
-                }
-            } else if modelo.imagenes.isEmpty {
-                if modelo.busqueda.isEmpty {
-                    ContentUnavailableView(vacio, systemImage: "photo.on.rectangle")
-                } else {
-                    ContentUnavailableView.search(text: modelo.busqueda)
-                }
-            }
+            if !hasHeader { estado }
         }
         .fullScreenCover(item: $abierta) { imagen in
             VisorImagen(id: imagen.adjunto)
                 .environment(sesion)
+        }
+    }
+
+    @ViewBuilder
+    private var estado: some View {
+        if !modelo.cargado {
+            if let error = modelo.error {
+                ContentUnavailableView {
+                    Label("No se pudieron cargar las imágenes", systemImage: "photo.badge.exclamationmark")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("Reintentar") { Task { await modelo.recargar(api: sesion.api) } }
+                }
+            } else {
+                ProgressView("Cargando imágenes…")
+            }
+        } else if modelo.imagenes.isEmpty {
+            if modelo.busqueda.isEmpty {
+                ContentUnavailableView(vacio, systemImage: "photo.on.rectangle")
+            } else {
+                ContentUnavailableView.search(text: modelo.busqueda)
+            }
         }
     }
 
@@ -94,5 +123,11 @@ struct RejillaImagenes: View {
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
         return [fecha, detalle].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+extension RejillaImagenes where Header == EmptyView {
+    init(modelo: GaleriaModelo, vacio: String, mostrarPaciente: Bool = true) {
+        self.init(modelo: modelo, vacio: vacio, mostrarPaciente: mostrarPaciente) { EmptyView() }
     }
 }

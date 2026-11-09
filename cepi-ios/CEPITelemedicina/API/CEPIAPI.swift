@@ -116,6 +116,23 @@ struct CEPIAPI: Sendable {
         try await cliente.post("/api/bot/interconsulta/responder", json: respuesta)
     }
 
+    // MARK: Consentimientos
+
+    /// Las fotos firmadas del consentimiento informado y del de privacidad (PAPER §31.2).
+    func consents(patient: String) async throws -> ConsentList {
+        try await cliente.get("/api/bot/consentimientos", query: [
+            URLQueryItem(name: "patient_id", value: patient),
+        ])
+    }
+
+    /// Registra fotos ya subidas (`subirImagen`) como consentimiento del paciente. Sin gate.
+    func saveConsents(patient: String, type: ConsentType, attachmentIds: [String]) async throws -> ConsentSaveResult {
+        try await cliente.post(
+            "/api/bot/consentimientos",
+            json: ConsentSave(patientId: patient, type: type, attachmentIds: attachmentIds),
+        )
+    }
+
     // MARK: Derivar
 
     func grupos() async throws -> [GrupoDerivacion] {

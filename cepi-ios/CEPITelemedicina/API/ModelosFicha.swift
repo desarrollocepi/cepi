@@ -301,3 +301,100 @@ struct InterconsultaAnswerResult: Decodable, Sendable {
     let ok: Bool
     let notified: Bool?
 }
+
+// MARK: Consentimientos (PAPER §31)
+
+/// Los dos consentimientos del paciente. El valor crudo es el `tipo` que entiende el bot.
+enum ConsentType: String, Codable, Sendable, CaseIterable, Identifiable {
+    case informado
+    case privacidadDatos = "privacidad_datos"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .informado: "Consentimiento informado"
+        case .privacidadDatos: "Privacidad de los datos"
+        }
+    }
+
+    var signer: String {
+        switch self {
+        case .informado: "Lo firma el paciente"
+        case .privacidadDatos: "Lo firma el profesional que atiende"
+        }
+    }
+}
+
+/// Una foto de hoja firmada. `attachment_id` llega null en los registros viejos cuya foto no
+/// se pudo recuperar (§31.1): se muestran como «Sin foto».
+struct ConsentPhoto: Decodable, Sendable, Identifiable, Hashable {
+    let id: String
+    let attachmentId: String?
+    let date: String?
+    let uploadedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case attachmentId = "attachment_id"
+        case date = "fecha"
+        case uploadedBy = "subido_por"
+    }
+}
+
+/// `GET /api/bot/consentimientos?patient_id=`: las fotos de cada tipo, más nuevas primero.
+struct ConsentList: Decodable, Sendable {
+    let informado: [ConsentPhoto]
+    let privacidadDatos: [ConsentPhoto]
+
+    enum CodingKeys: String, CodingKey {
+        case informado
+        case privacidadDatos = "privacidad_datos"
+    }
+
+    init(informado: [ConsentPhoto] = [], privacidadDatos: [ConsentPhoto] = []) {
+        self.informado = informado
+        self.privacidadDatos = privacidadDatos
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        informado = try c.decodeIfPresent([ConsentPhoto].self, forKey: .informado) ?? []
+        privacidadDatos = try c.decodeIfPresent([ConsentPhoto].self, forKey: .privacidadDatos) ?? []
+    }
+
+    func photos(_ type: ConsentType) -> [ConsentPhoto] {
+        switch type {
+        case .informado: informado
+        case .privacidadDatos: privacidadDatos
+        }
+    }
+}
+
+/// Cuerpo de `POST /api/bot/consentimientos`: un registro por foto ya subida. Subir es la
+/// acción explícita del usuario, sin gate.
+struct ConsentSave: Encodable, Sendable, Equatable {
+    let patientId: String
+    let type: ConsentType
+    let attachmentIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case patientId = "patient_id"
+        case type = "tipo"
+        case attachmentIds = "attachment_ids"
+    }
+}
+
+/// `{ok: true, ids, errors}`: los registros creados y, por cada foto que no se guardó, el motivo.
+struct ConsentSaveResult: Decodable, Sendable {
+    let ids: [String]
+    let errors: [String]
+
+    enum CodingKeys: String, CodingKey { case ids, errors }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try c.decodeIfPresent([String].self, forKey: .ids) ?? []
+        errors = try c.decodeIfPresent([String].self, forKey: .errors) ?? []
+    }
+}
