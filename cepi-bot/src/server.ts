@@ -38,6 +38,7 @@ import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_
 import { erpClient } from './erp.js';
 import { listarGaleria } from './galeria.js';
 import { listarControles } from './controles.js';
+import { buildDischargeBatch, dischargeBlockReason } from './alta.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
 import { buildAnswerBatch, canAnswer, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
@@ -527,6 +528,41 @@ app.post('/api/bot/consentimientos', async (req: Request, res: Response, next: N
       return res.status(502).json({ ok: false, error: `No se pudo guardar el consentimiento: ${r.errors.join('; ')}` });
     }
     res.json({ ok: true, ids: r.ids, errors: r.errors });
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/episodio/alta — da de alta al paciente (PAPER §35). Body: {episode_id, nota?}
+ * Acción explícita: sin gate. Cierra el caso; si vuelve, es una consulta nueva.
+ * Solo el cambio de estado es obligatorio: apagar los avisos y la nota no tumban el alta.
+ */
+app.post('/api/bot/episodio/alta', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const { episode_id, nota } = req.body || {};
+    if (!episode_id) return res.status(400).json({ ok: false, error: 'episode_id required' });
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const cur: any = await mcp.call('entities.get', { id: String(episode_id) });
+    const motivo = dischargeBlockReason(cur?.ok ? (cur.data?.data || {}) : null);
+    if (motivo) return res.status(cur?.ok ? 409 : 404).json({ ok: false, error: motivo });
+    const me: any = await mcp.call('auth.whoami', {});
+    const user = me?.data?.user || {};
+    const batch = buildDischargeBatch({
+      episodeId: String(episode_id), userId: user.id || null, userName: user.name || null,
+      nota: typeof nota === 'string' ? nota : null,
+    });
+    for (const step of batch) {
+      const r: any = await mcp.call(step.tool, step.args);
+      if ((r?.ok === false || r?.isError) && step.tool === 'entities.update') {
+        return res.status(502).json({ ok: false, error: `No se pudo dar el alta: ${r?.error || 'error'}` });
+      }
+    }
+    res.json({ ok: true });
   } catch (err: any) { next(err); }
   finally { if (mcp) await mcp.close().catch(() => {}); }
 });

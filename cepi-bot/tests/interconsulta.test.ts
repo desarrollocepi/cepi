@@ -55,6 +55,7 @@ describe('canAnswer (PAPER §32)', () => {
   it('respondida o cerrada: nadie', () => {
     expect(canAnswer({ estado: 'respondida', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
     expect(canAnswer({ estado: 'cerrado', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
+    expect(canAnswer({ estado: 'alta', responsable_actual_id: 'u1' }, 'u1')).toBe(false);
   });
 });
 

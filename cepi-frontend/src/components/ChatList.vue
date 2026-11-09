@@ -142,7 +142,7 @@ import {
   listPatients, createPatient, getReviewQueue, getPatientAssignments, eliminarPaciente,
   listarPacientesArchivados, restaurarPaciente,
 } from '../api.js';
-import { ESTADOS_FICHA, estadoFicha, normalizar } from '../estadoFicha.js';
+import { ESTADOS_FICHA, estadoFicha, normalizar, altaVencida } from '../estadoFicha.js';
 
 const props = defineProps({
   activeId: { type: String, default: null },
@@ -351,7 +351,9 @@ const filtered = computed(() => {
     .map((p, i) => ({ p, i, estado: estadoDe(p) }))
     .filter(({ p, estado }) =>
       (!t || normalizar(`${fullName(p)} ${p.data?.cedula || ''}`).includes(t))
-      && (!elegido || estado.id === elegido))
+      && (!elegido || estado.id === elegido)
+      // De alta desde antes de hoy: solo buscándolo o en el filtro «Alta» (PAPER §35).
+      && (t || elegido === 'alta' || !altaVencida(assignments.value[p.id])))
     .sort((a, b) => {
       if (a.estado.orden !== b.estado.orden) return a.estado.orden - b.estado.orden;
       const ra = rq[a.p.id], rb = rq[b.p.id];

@@ -79,7 +79,7 @@ describe('ChatList — estado de la ficha', () => {
 
   it('los filtros muestran el conteo y los vacíos quedan deshabilitados, no ocultos', async () => {
     const w = await montar();
-    expect(w.findAll('.filtro')).toHaveLength(11);   // Todos + los 10 estados, siempre
+    expect(w.findAll('.filtro')).toHaveLength(12);   // Todos + los 11 estados, siempre
     expect(filtro(w, 'Todos').text()).toBe('Todos · 6');
     expect(filtro(w, 'En curso').text()).toBe('En curso · 2');
     expect(filtro(w, 'En curso').element.disabled).toBe(false);
@@ -420,5 +420,22 @@ describe('ChatList — prioridad clínica (PAPER §34)', () => {
     expect(fila('José Curso').find('.prio').classes()).toContain('prio-urgente');
     expect(fila('Marta Derivada').find('.prio').classes()).toContain('prio-programada');
     expect(fila('Raúl Curso').find('.prio').exists()).toBe(false);
+  });
+});
+
+describe('ChatList — alta (PAPER §35)', () => {
+  it('de alta desde antes de hoy no sale; el de alta de hoy sí; buscándolo o en «Alta» aparece', async () => {
+    vi.setSystemTime(new Date(2026, 10, 10, 10, 0, 0));
+    preparar({ asignaciones: { ...ASIGNACIONES,
+      p3: { estado: 'alta', alta_at: '2026-11-09' },
+      p5: { estado: 'alta', alta_at: '2026-11-10' } } });
+    const w = await montar();
+    expect(nombres(w)).not.toContain('Luis Sinconsulta');
+    expect(nombres(w)).toContain('Raúl Curso');
+    await w.find('.search').setValue('luis');
+    expect(nombres(w)).toEqual(['Luis Sinconsulta']);
+    await w.find('.search').setValue('');
+    await filtro(w, 'Alta').trigger('click');
+    expect(nombres(w).sort()).toEqual(['Luis Sinconsulta', 'Raúl Curso']);
   });
 });

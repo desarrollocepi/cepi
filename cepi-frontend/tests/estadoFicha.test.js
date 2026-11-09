@@ -12,6 +12,7 @@ const TABLA = [
   ['en_curso', 'En curso', '#2563EB'],
   ['agendado', 'Agendada', '#64748B'],
   ['cerrado', 'Cerrada', '#9CA3AF'],
+  ['alta', 'Alta', '#0F766E'],
 ];
 
 describe('estadoFicha', () => {

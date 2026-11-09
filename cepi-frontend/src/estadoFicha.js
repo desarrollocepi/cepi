@@ -12,6 +12,8 @@ export const ESTADOS_FICHA = [
   { id: 'en_curso', valor: 'en_curso', etiqueta: 'En curso', color: '#2563EB' },
   { id: 'agendada', valor: 'agendado', etiqueta: 'Agendada', color: '#64748B' },
   { id: 'cerrada', valor: 'cerrado', etiqueta: 'Cerrada', color: '#9CA3AF' },
+  // Fin del caso (PAPER §35). Desde el día siguiente no sale en la lista salvo buscándolo.
+  { id: 'alta', valor: 'alta', etiqueta: 'Alta', color: '#0F766E' },
   // Un valor que la app no conoce: se muestra, al final de los abiertos, sin inventarle sentido.
   { id: 'otro', valor: null, etiqueta: 'Otro estado', color: '#6B7280' },
   // El paciente no tiene consulta en la org activa: el LED va hueco.
@@ -31,4 +33,17 @@ export function estadoFicha(valor) {
 /** Sin mayúsculas ni tildes: "jose" encuentra a "José". */
 export function normalizar(texto) {
   return String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** Fecha local del dispositivo (YYYY-MM-DD). toISOString() es UTC: en Ecuador, de noche ya es mañana. */
+export function hoyLocal(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Un paciente de alta desde ANTES de hoy ya no sale en la lista (PAPER §35): el día del
+ * alta todavía se ve, para que quien la dio no lo pierda de golpe.
+ */
+export function altaVencida(asignacion, hoy = hoyLocal()) {
+  return asignacion?.estado === 'alta' && !!asignacion.alta_at && asignacion.alta_at < hoy;
 }

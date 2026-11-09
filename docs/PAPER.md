@@ -3254,3 +3254,37 @@ preguntarse.
   documental para no perder lo ya cargado.
 - La decisión es del médico responsable: «Responder interconsulta» (§30) suma la prioridad.
 - Se ve en la lista de pacientes (chip rojo / ámbar / gris) y en la ficha imprimible.
+
+## 35. Alta del paciente (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** Poder dar el alta para cerrar el caso; si el paciente vuelve, saber que es por
+otro motivo de consulta. El episodio tiene su ciclo de vida y uno de los estados es el
+alta. Un paciente dado de alta ya no aparece en el chat desde el día siguiente.
+
+### 35.1 Ciclo de vida del episodio
+
+```
+agendado → en_curso → enviada → en_triage → derivada / en_revisión_solicitada → respondida
+                 └──────────────── cerrado (control pendiente) ──────────────┘
+                 cualquiera de los anteriores ──► alta  (fin del caso)
+```
+
+- `alta` es el estado final. Se guardan `alta_at` (fecha, Ecuador) y `alta_por`.
+- Si el paciente vuelve se abre una **consulta nueva** («＋ Nueva consulta»), con su propio
+  motivo; la del alta queda en el historial y en la evolución.
+- `cerrado` sigue existiendo: consulta terminada con control pendiente (§33). El alta, en
+  cambio, no deja nada pendiente.
+
+### 35.2 Dar de alta
+
+`POST /api/bot/episodio/alta {episode_id, nota?}` — acción explícita (sin gate): pone
+`estado = alta`, `alta_at`, `alta_por`, apaga los avisos de revisión pendientes
+(`complete_review`) y deja una nota en el chatter («Alta dada por X»). 409 si ya estaba
+de alta. Botón «🏁 Dar de alta» en las acciones del paciente (web y apps), con
+confirmación y nota opcional; gris con el motivo cuando no aplica.
+
+### 35.3 La lista de pacientes
+
+`/api/patient-assignments` devuelve `alta_at` de la consulta más reciente. La lista no
+muestra a quien está de alta desde antes de hoy; sí aparece si se lo busca por nombre o
+cédula, y en el filtro «Alta». Una consulta nueva lo devuelve a la lista.

@@ -577,3 +577,11 @@ export async function listarControles({ from = '', to = '' } = {}) {
   const qs = p.toString();
   return call(`/api/bot/controles${qs ? `?${qs}` : ''}`, { method: 'GET' });
 }
+
+/** Da de alta al paciente: cierra la consulta (PAPER §35). */
+export async function darDeAlta({ episodeId, nota = '' }) {
+  return call('/api/bot/episodio/alta', {
+    method: 'POST',
+    body: JSON.stringify({ episode_id: episodeId, nota }),
+  });
+}

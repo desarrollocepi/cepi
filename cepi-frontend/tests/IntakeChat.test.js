@@ -4,7 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 vi.mock('../src/api.js', () => ({
   chat: vi.fn(), saveSessionId: vi.fn(), uploadAttachment: vi.fn(), listGroups: vi.fn(),
   listGroupMembers: vi.fn(), listEntityDerivations: vi.fn(), listBotSessions: vi.fn(),
-  getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(),
+  getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(), darDeAlta: vi.fn(),
 }));
 vi.mock('../src/native/speech.js', () => ({ dictationSupported: false, createDictation: vi.fn() }));
 import * as api from '../src/api.js';
@@ -585,5 +585,45 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
     await flushPromises();
     expect(form.find('.ri-error').text()).toBe('Esta consulta no tiene una interconsulta pendiente');
     expect(w.emitted('respondida')).toBeUndefined();
+  });
+});
+
+describe('IntakeChat — dar de alta (PAPER §35)', () => {
+  const alta = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('Dar de alta'));
+
+  it('con la consulta abierta: confirma con nota, da el alta y avisa a la lista', async () => {
+    preparar({ episodio: { estado: 'en_curso' } });
+    api.darDeAlta.mockResolvedValue({ ok: true });
+    const w = await abrir();
+    expect(alta(w).attributes('disabled')).toBeUndefined();
+    await alta(w).trigger('click');
+    const modal = w.findComponent({ name: 'DarDeAlta' });
+    expect(modal.exists()).toBe(true);
+    expect(modal.text()).toContain('Desde mañana Ana Pérez no sale en la lista');
+    await modal.find('textarea').setValue('Lesión resuelta');
+    await modal.find('form').trigger('submit');
+    await flushPromises();
+    expect(api.darDeAlta).toHaveBeenCalledWith({ episodeId: 'ep2', nota: 'Lesión resuelta' });
+    expect(w.findComponent({ name: 'DarDeAlta' }).exists()).toBe(false);
+    expect(w.emitted('respondida')).toHaveLength(1);
+  });
+
+  it('ya de alta: el botón está gris con el motivo, y no se puede responder', async () => {
+    preparar({ episodio: { estado: 'alta', responsable_actual_id: 'yo' } });
+    const w = await abrir();
+    expect(alta(w).attributes('disabled')).toBeDefined();
+    expect(alta(w).attributes('title')).toContain('ya está de alta');
+    const responder = w.findAll('.ihead-actions button').find((b) => b.text().includes('Responder interconsulta'));
+    expect(responder.attributes('title')).toContain('está de alta');
+  });
+
+  it('si el alta falla, el modal queda abierto con el error', async () => {
+    preparar({ episodio: { estado: 'en_curso' } });
+    api.darDeAlta.mockRejectedValue(new Error('No se pudo dar el alta: HTTP 403'));
+    const w = await abrir();
+    await alta(w).trigger('click');
+    await w.findComponent({ name: 'DarDeAlta' }).find('form').trigger('submit');
+    await flushPromises();
+    expect(w.findComponent({ name: 'DarDeAlta' }).text()).toContain('HTTP 403');
   });
 });

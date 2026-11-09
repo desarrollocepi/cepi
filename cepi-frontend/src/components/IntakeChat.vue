@@ -31,6 +31,10 @@
           type="button" class="ihead-responder" :disabled="busy || !!responderMotivo" @click="showResponder = true"
           :title="responderMotivo || 'Responder la interconsulta: queda en la ficha y le llega al médico que envió el caso'"
         >✅ Responder interconsulta</button>
+        <button
+          type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
+          :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
+        >🏁 Dar de alta</button>
         <button type="button" :disabled="busy" @click="nuevaConsulta" title="Abrir una consulta nueva (el episodio anterior queda en el historial)">＋ Nueva consulta</button>
         <button type="button" @click="showDoctoPro = true" title="Consultar pacientes en DoctoPro">🔎 DoctoPro</button>
       </div>
@@ -224,6 +228,12 @@
       @close="showResponder = false" @respondida="onRespondida"
     />
 
+    <DarDeAlta
+      v-if="showAlta && activeEpisodeId"
+      :episode-id="activeEpisodeId" :paciente="patientName"
+      @close="showAlta = false" @alta="onAlta"
+    />
+
     <DoctoProSearch v-if="showDoctoPro" @close="showDoctoPro = false" />
   </div>
 </template>
@@ -232,6 +242,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
 import ResponderInterconsulta from './ResponderInterconsulta.vue';
+import DarDeAlta from './DarDeAlta.vue';
 import MessageContent from './MessageContent.vue';
 import BotForm from './BotForm.vue';
 import DoctoProSearch from './DoctoProSearch.vue';
@@ -722,6 +733,7 @@ const responderMotivo = computed(() => {
   if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
   const e = episodioInfo.value;
   if (e.estado === 'respondida') return 'Esta interconsulta ya fue respondida';
+  if (e.estado === 'alta') return 'El paciente está de alta: si vuelve, abre una consulta nueva';
   // El responsable de turno del caso nuevo responde aunque no se haya enviado (PAPER §32).
   const esResponsable = !!props.user?.id && e.responsable_actual_id === props.user.id && e.estado !== 'cerrado';
   if (!ESTADOS_CON_INTERCONSULTA.includes(e.estado) && !esResponsable) return 'Esta consulta no tiene una interconsulta pendiente';
@@ -729,6 +741,23 @@ const responderMotivo = computed(() => {
   if (props.user?.id && primario === props.user.id) return 'Tú ingresaste este caso: lo responde el especialista responsable';
   return '';
 });
+// Alta (PAPER §35): siempre está el botón; gris con el motivo cuando no aplica.
+const showAlta = ref(false);
+const altaMotivo = computed(() => {
+  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
+  if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
+  if (episodioInfo.value.estado === 'alta') return 'Este paciente ya está de alta. Si vuelve, abre una consulta nueva';
+  return '';
+});
+function onAlta() {
+  showAlta.value = false;
+  messages.value = [...messages.value, {
+    role: 'assistant', is_bot: true, episode_id: activeEpisodeId.value,
+    content: '🏁 Alta registrada. Desde mañana el paciente no sale en la lista; si vuelve, abre una consulta nueva.',
+  }];
+  cargarEpisodioInfo();
+  emit('respondida');
+}
 function onRespondida({ notificado }) {
   showResponder.value = false;
   messages.value = [...messages.value, {
