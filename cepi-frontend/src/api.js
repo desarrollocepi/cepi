@@ -568,3 +568,12 @@ export async function asignarTurno(grupo, { userId, startsOn, endsOn }) {
 export async function quitarTurno(grupo, shiftId) {
   return call(`/api/groups/${encodeURIComponent(grupo)}/shifts/${encodeURIComponent(shiftId)}`, { method: 'DELETE' });
 }
+
+/** Próximos controles de los pacientes (PAPER §33): `{today, from, to, data: [...]}`. */
+export async function listarControles({ from = '', to = '' } = {}) {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const qs = p.toString();
+  return call(`/api/bot/controles${qs ? `?${qs}` : ''}`, { method: 'GET' });
+}

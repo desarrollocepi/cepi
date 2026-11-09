@@ -20,6 +20,7 @@ import CasosShell from './components/CasosShell.vue';
 import Profile from './components/Profile.vue';
 import Galeria from './components/Galeria.vue';
 import Turnos from './components/Turnos.vue';
+import Controles from './components/Controles.vue';
 import CalificarAtencion from './components/CalificarAtencion.vue';
 
 /** Con qué arranca quien entra sin ruta: lo decide el dominio por el que llegó. */
@@ -44,6 +45,8 @@ const routes = [
   { path: '/galeria', name: 'galeria', component: Galeria, meta: { auth: true, marca: 'Galería' } },
   // Calendario de turnos de los especialistas (PAPER §32).
   { path: '/turnos', name: 'turnos', component: Turnos, meta: { auth: true, marca: 'Turnos' } },
+  // Próximos controles de los pacientes (PAPER §33).
+  { path: '/controles', name: 'controles', component: Controles, meta: { auth: true, marca: 'Controles' } },
   { path: '/perfil', name: 'perfil', component: Profile, meta: { auth: true, marca: 'Mi perfil' } },
   // Pública: la abre el QR impreso en la clínica, en el teléfono del paciente (PAPER §29).
   //   https://telemedicina.cepi.ec/#/calificar

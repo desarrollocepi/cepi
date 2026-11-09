@@ -37,6 +37,7 @@ import { extractPendingQuestions, pendingQuestionsNote } from './pendingQuestion
 import { listEpisodeImagesWithClassifications, CLINICAL_IMAGE_ENTITY_ID, HAM_TO_ICD } from './episodeImages.js';
 import { erpClient } from './erp.js';
 import { listarGaleria } from './galeria.js';
+import { listarControles } from './controles.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
 import { buildAnswerBatch, canAnswer, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
@@ -324,6 +325,29 @@ app.get('/api/bot/galeria', async (req: Request, res: Response, next: NextFuncti
     res.json({ ok: true, data: r.data, total: r.total });
   } catch (err: any) {
     // Un 401/403 del ERP es del caller, no del bot: se reenvía tal cual.
+    if (err?.status === 401 || err?.status === 403) {
+      return res.status(err.status).json({ ok: false, error: err.message });
+    }
+    next(err);
+  }
+});
+
+/**
+ * /api/bot/controles?from=&to= — próximos controles de los pacientes (PAPER §33): el de
+ * la consulta más reciente de cada paciente, con qué hacer. Read-only con el JWT del
+ * caller; el alcance por organización lo pone TodoERP.
+ */
+app.get('/api/bot/controles', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const r = await listarControles(erpClient({ jwt, apiKey: '' }), {
+      from: String(req.query.from || '') || undefined,
+      to: String(req.query.to || '') || undefined,
+    });
+    res.json({ ok: true, ...r });
+  } catch (err: any) {
     if (err?.status === 401 || err?.status === 403) {
       return res.status(err.status).json({ ok: false, error: err.message });
     }

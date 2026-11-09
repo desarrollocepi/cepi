@@ -1942,7 +1942,7 @@ Dos niveles, y en cada uno se pasa de una sección a otra **deslizando**:
 
 | nivel | secciones |
 |---|---|
-| fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) · **Turnos** (calendario semanal de guardia, §32) |
+| fuera del paciente | **Pacientes** · **Galería** (imágenes de todos los casos de la org, con buscador) · **Turnos** (calendario semanal de guardia, §32) · **Controles** (próximos controles de los pacientes, §33) |
 | dentro del paciente | **Chat** · **Ficha** · **Evolución** · **Imágenes** (las del paciente) |
 
 - **Chat** es el hilo de siempre, con su composer y sus acciones.
@@ -3202,3 +3202,35 @@ responder las inquietudes del médico que lo ingresó y, si no puede resolverlo,
   quién está de turno, con «Asignar» (elige a un miembro del grupo) y «Quitar». La semana en
   curso se marca. Sin permiso de edición, los botones no aparecen (excepción de permisos).
 - Web primero; iOS y Android con la misma pantalla y los mismos endpoints.
+
+## 33. Próximos controles de los pacientes (feedback de las dermatólogas, 2026-11-09)
+
+**Pedido.** Un calendario de los pacientes con las citas subsecuentes y qué hacer en cada
+una, para que con el cambio de internos no se pierda la información.
+
+**Dato.** Ya existe: cada consulta guarda en §7 `proximo_control_fecha` y
+`proximo_control_motivo` (qué hacer), además de `plan`. No hay entidad nueva.
+
+### 33.1 Regla
+
+- El control pendiente de un paciente es el de su **consulta más reciente** (por `fecha`,
+  luego `created_at`). Si después hubo otra consulta, el control viejo ya pasó o lo
+  reemplazó el de la nueva: no se lista.
+- Rango por defecto: desde 30 días atrás (atrasados) hasta 90 días adelante. Cada fila
+  dice `atrasado`, `hoy` o `proximo`, con la fecha de Ecuador.
+
+### 33.2 Endpoint (`cepi-bot/src/controles.ts`)
+
+`GET /api/bot/controles?from=&to=` → `{ok, today, data: [{episode_id, patient_id,
+paciente, cedula, fecha_control, motivo, plan, diagnostico, fecha_consulta, medico,
+estado_control}]}`, ordenado por fecha de control. Con el JWT del caller: el alcance por
+organización y la PII los pone TodoERP. Sin N+1: episodios del rango, episodios de esos
+pacientes (para saber cuál es el último), pacientes y médicos por lote de ids.
+
+### 33.3 Dónde se ve
+
+Sección **Controles** fuera del paciente (§24.2.1), junto a Pacientes, Galería y Turnos:
+los controles agrupados por semana (atrasados arriba, en rojo), cada uno con paciente,
+cédula, fecha, qué hacer (`motivo`, y el plan debajo), diagnóstico y médico que lo indicó.
+Un buscador filtra por paciente o cédula. Tocar una fila abre el paciente en su Ficha.
+Web, iOS y Android.
