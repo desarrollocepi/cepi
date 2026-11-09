@@ -3254,6 +3254,8 @@ preguntarse.
   documental para no perder lo ya cargado.
 - La decisión es del médico responsable: «Responder interconsulta» (§30) suma la prioridad.
 - Se ve en la lista de pacientes (chip rojo / ámbar / gris) y en la ficha imprimible.
+- **Urgente no avisa sola** (decisión del dueño, 2026-11-09): marcar la prioridad no
+  notifica a nadie. Al supervisor le llega solo si se le deriva el caso (§30, §32).
 
 ## 35. Alta del paciente (feedback de las dermatólogas, 2026-11-09)
 
