@@ -53,7 +53,35 @@
               <td data-col="Dx clínico" :class="{ 'evo-vacio': !f.diagnostico }">{{ f.diagnostico || 'Sin diagnóstico' }}</td>
               <td data-col="Dx histopatológico" :class="{ 'evo-vacio': !f.diagnostico_histopatologico }">{{ f.diagnostico_histopatologico || 'Sin biopsia' }}</td>
               <td data-col="Tratamiento" :class="{ 'evo-vacio': !f.tratamiento }">{{ f.tratamiento || 'Sin tratamiento' }}</td>
-              <td data-col="Observaciones" :class="{ 'evo-vacio': !f.observaciones }">{{ f.observaciones || 'Sin observaciones' }}</td>
+              <!-- Observaciones se escribe aquí mismo (pedido de las dermatólogas): es el
+                   resumen del caso. Guarda en la sección 7 de esa ficha, sin confirmación:
+                   es una acción explícita. El clic no abre la ficha de la fila. -->
+              <td data-col="Observaciones" class="evo-obs" :class="{ 'evo-vacio': !f.observaciones && editando !== f.episode_id }" @click.stop>
+                <div v-if="editando === f.episode_id">
+                  <textarea
+                    v-model="borrador" class="evo-obs-texto" rows="3" :disabled="guardando"
+                    placeholder="Resumen de lo más importante de esta ficha" aria-label="Observaciones"
+                  ></textarea>
+                  <p v-if="errorGuardar" class="evo-obs-error">{{ errorGuardar }}</p>
+                  <div class="evo-obs-acciones">
+                    <button
+                      class="evo-btn" type="button" :disabled="guardando || borrador.trim() === (f.observaciones || '')"
+                      :title="guardando ? 'Guardando…' : (borrador.trim() === (f.observaciones || '') ? 'No hay cambios que guardar' : 'Guardar en la ficha')"
+                      @click="guardarObservaciones(f)"
+                    >{{ guardando ? 'Guardando…' : 'Guardar' }}</button>
+                    <button class="evo-btn evo-btn--junto" type="button" :disabled="guardando" @click="cancelarEdicion">Cancelar</button>
+                  </div>
+                </div>
+                <div v-else>
+                  <span>{{ f.observaciones || 'Sin observaciones' }}</span>
+                  <button
+                    class="evo-obs-editar" type="button"
+                    :disabled="!!editando"
+                    :title="editando ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha'"
+                    @click="editar(f)"
+                  >✏️ Editar</button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -70,7 +98,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { getPatientEvolution } from '../api.js';
+import { getPatientEvolution, guardarGrupoFicha } from '../api.js';
 import VisorEvolucion from './VisorEvolucion.vue';
 
 const props = defineProps({
@@ -80,9 +108,13 @@ const props = defineProps({
   /** Plegada dentro de la ficha (por defecto) o abierta como pestaña del paciente. */
   plegable: { type: Boolean, default: true },
 });
-const emit = defineEmits(['navegar']);
+const emit = defineEmits(['navegar', 'guardado']);
 
 const abierta = ref(!props.plegable);
+const editando = ref(null);      // episode_id de la fila cuyas observaciones se editan
+const borrador = ref('');
+const guardando = ref(false);
+const errorGuardar = ref('');
 const imprimiendo = ref(false);
 const filas = ref([]);
 const cargando = ref(false);
@@ -116,12 +148,41 @@ function alternar() {
   if (abierta.value) cargar();
 }
 
+function editar(f) {
+  editando.value = f.episode_id;
+  borrador.value = f.observaciones || '';
+  errorGuardar.value = '';
+}
+
+function cancelarEdicion() {
+  editando.value = null;
+  errorGuardar.value = '';
+}
+
+// Va por el mismo camino que la sección 7 de la ficha (cepi-bot, grupo g_7): mismas
+// coerciones y mismo historial en el chatter. Solo viaja `observaciones`; el resto de
+// la sección no se toca.
+async function guardarObservaciones(f) {
+  guardando.value = true; errorGuardar.value = '';
+  try {
+    const texto = borrador.value.trim();
+    await guardarGrupoFicha({ groupId: 'g_7', data: { observaciones: texto }, episodeId: f.episode_id, patientId: props.patientId });
+    f.observaciones = texto || null;
+    editando.value = null;
+    emit('guardado', f.episode_id);
+  } catch (e) {
+    errorGuardar.value = e?.message || 'No se pudo guardar';
+  } finally {
+    guardando.value = false;
+  }
+}
+
 function abrir(f) {
   if (f.episode_id !== props.episodeId) emit('navegar', f.episode_id);
 }
 
 watch(() => props.patientId, () => {
-  filas.value = []; cargada.value = false;
+  filas.value = []; cargada.value = false; editando.value = null;
   if (abierta.value) cargar();
 });
 
@@ -154,6 +215,14 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-tabla tr.evo-actual { background: #e0f2fe; cursor: default; }
 .evo-tabla tr.evo-actual td:first-child { box-shadow: inset 3px 0 0 #0ea5e9; }
 .evo-fecha { white-space: nowrap; }
+.evo-obs { min-width: 160px; }
+.evo-obs-editar { display: block; margin-top: 4px; padding: 2px 8px; font-size: 12px; font-style: normal; color: #0369a1; background: #fff; border: 1px solid #bae6fd; border-radius: 6px; cursor: pointer; }
+.evo-obs-editar:hover:not(:disabled) { background: #e0f2fe; }
+.evo-obs-editar:disabled { color: #94a3b8; border-color: #e2e8f0; cursor: default; }
+.evo-obs-texto { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; font-size: 13px; border: 1px solid #94a3b8; border-radius: 6px; resize: vertical; }
+.evo-obs-acciones { display: flex; gap: 6px; margin-top: 4px; }
+.evo-obs-acciones .evo-btn { margin-left: 0; }
+.evo-obs-error { margin: 4px 0 0; font-size: 12px; color: #b91c1c; font-style: normal; }
 .evo-especialista { display: block; margin-top: 2px; font-size: 12px; color: #0369a1; }
 /* Como pestaña ocupa todo el alto: la tabla se desplaza dentro, con la cabecera fija. */
 .evo--pestana { display: flex; flex-direction: column; min-height: 0; height: 100%; margin: 0; border: 0; border-radius: 0; }

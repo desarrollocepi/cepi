@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-vi.mock('../src/api.js', () => ({ getPatientEvolution: vi.fn(), obtenerEntidad: vi.fn() }));
+vi.mock('../src/api.js', () => ({ getPatientEvolution: vi.fn(), obtenerEntidad: vi.fn(), guardarGrupoFicha: vi.fn() }));
 import * as api from '../src/api.js';
 import EvolucionPaciente from '../src/components/EvolucionPaciente.vue';
 
@@ -73,5 +73,61 @@ describe('EvolucionPaciente (PAPER §28)', () => {
     await flushPromises();
     await w.findAll('tbody tr')[1].trigger('click');
     expect(w.emitted('navegar')).toEqual([['ep1']]);
+  });
+});
+
+describe('EvolucionPaciente — observaciones editables', () => {
+  beforeEach(() => {
+    api.guardarGrupoFicha.mockReset();
+    api.guardarGrupoFicha.mockResolvedValue({ ok: true });
+  });
+
+  const montarPestana = async () => {
+    const w = mount(EvolucionPaciente, { props: { patientId: 'p1', plegable: false }, global: { stubs } });
+    await flushPromises();
+    return w;
+  };
+
+  it('Editar abre el texto; Guardar escribe solo observaciones en la sección 7 de esa ficha', async () => {
+    const w = await montarPestana();
+    await w.findAll('.evo-obs-editar')[1].trigger('click');
+    const guardar = () => w.findAll('.evo-obs-acciones button')[0];
+    expect(guardar().attributes('disabled')).toBeDefined(); // sin cambios todavía
+    await w.find('.evo-obs-texto').setValue('  Control con dermatología en 6 meses ');
+    await guardar().trigger('click'); await flushPromises();
+    expect(api.guardarGrupoFicha).toHaveBeenCalledWith({
+      groupId: 'g_7', data: { observaciones: 'Control con dermatología en 6 meses' }, episodeId: 'ep1', patientId: 'p1',
+    });
+    expect(w.find('.evo-obs-texto').exists()).toBe(false);
+    expect(w.findAll('tbody tr')[1].text()).toContain('Control con dermatología en 6 meses');
+    expect(w.emitted('guardado')).toEqual([['ep1']]);
+  });
+
+  it('editar no abre la ficha de la fila, y mientras se edita una, las demás se deshabilitan', async () => {
+    const w = await montarPestana();
+    await w.findAll('.evo-obs-editar')[0].trigger('click');
+    expect(w.emitted('navegar')).toBeUndefined();
+    const otro = w.findAll('.evo-obs-editar')[0]; // la única que queda, la de la otra fila
+    expect(otro.attributes('disabled')).toBeDefined();
+    expect(otro.attributes('title')).toContain('Termina primero');
+  });
+
+  it('si falla, lo dice y deja el texto para reintentar', async () => {
+    api.guardarGrupoFicha.mockRejectedValue(new Error('Sin permiso para editar esta ficha'));
+    const w = await montarPestana();
+    await w.findAll('.evo-obs-editar')[0].trigger('click');
+    await w.find('.evo-obs-texto').setValue('Otro resumen');
+    await w.findAll('.evo-obs-acciones button')[0].trigger('click'); await flushPromises();
+    expect(w.find('.evo-obs-error').text()).toBe('Sin permiso para editar esta ficha');
+    expect(w.find('.evo-obs-texto').element.value).toBe('Otro resumen');
+  });
+
+  it('Cancelar vuelve sin guardar', async () => {
+    const w = await montarPestana();
+    await w.findAll('.evo-obs-editar')[0].trigger('click');
+    await w.find('.evo-obs-texto').setValue('No lo quiero');
+    await w.findAll('.evo-obs-acciones button')[1].trigger('click');
+    expect(api.guardarGrupoFicha).not.toHaveBeenCalled();
+    expect(w.findAll('tbody tr')[0].text()).toContain('Cambió de color en 3 meses');
   });
 });

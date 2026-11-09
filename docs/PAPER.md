@@ -2925,7 +2925,11 @@ Una tabla de seis columnas, una fila por episodio, la más nueva primero:
 observaciones se pidieron para cruzar el diagnóstico clínico con el de patología
 (correlación clínico-patológica) y ver de un vistazo quién respondió cada derivación.
 `observaciones` ya existía en el episodio (lo llena el espejo DrPro, seed 008); ahora
-también se escribe desde la sección 7 de la ficha de CEPI.
+también se escribe desde la sección 7 de la ficha de CEPI y **desde la propia evolución**:
+cada fila tiene «Editar» en Observaciones (web, `EvolucionPaciente.vue`). Guarda por el mismo
+camino que la sección 7 (`/api/bot/ficha/grupo`, grupo `g_7`, solo esa clave) y sin
+confirmación, porque es una acción explícita. Mientras se edita una fila, el «Editar» de las
+demás queda deshabilitado con el motivo.
 
 Cada columna cae a la siguiente porque las dos fuentes de fichas llenan campos distintos
 (§21.2). Una ficha de CEPI guarda el diagnóstico como `"L40.0 — Psoriasis"` (el campo CIE-10

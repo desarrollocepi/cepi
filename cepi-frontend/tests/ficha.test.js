@@ -499,7 +499,7 @@ describe('EvolucionPaciente — ficha de evolución (PAPER §28)', () => {
     expect(w.findAll('th').map((t) => t.text())).toEqual(
       ['Fecha', 'Atendió', 'Diagnóstico clínico', 'Diagnóstico histopatológico', 'Tratamiento', 'Observaciones']);
     const celdas = w.findAll('tbody tr')[0].findAll('td').map((t) => t.text());
-    expect(celdas).toEqual(['2026-10-01', 'Dra. Ana Pérez', 'L40.0 — Psoriasis', 'Sin biopsia', 'Clobetasol', 'Sin observaciones']);
+    expect(celdas).toEqual(['2026-10-01', 'Dra. Ana Pérez', 'L40.0 — Psoriasis', 'Sin biopsia', 'Clobetasol', 'Sin observaciones✏️ Editar']);
     expect(w.findAll('tbody tr')[1].text()).toContain('Sin diagnóstico');
     expect(w.find('.evo-cuenta').text()).toBe('2 fichas');
     expect(boton(w).text()).toBe('Ocultar');
