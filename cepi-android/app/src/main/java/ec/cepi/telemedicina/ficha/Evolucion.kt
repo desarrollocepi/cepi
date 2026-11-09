@@ -157,16 +157,12 @@ private class ControladorEvolucion(
 class EpisodeRequest(val episodeId: String)
 
 /**
- * La ficha de evolución del paciente (PAPER §28), como sección del paciente: Chat · Ficha ·
- * Evolución · Imágenes (§24.2.1, §28.3). Fecha, médico, diagnósticos, tratamiento y
- * observaciones de cada ficha, la más nueva primero. Es el mismo documento de la web
- * (`evolucion.html`), así se lee e imprime igual en las tres. La ficha que se está viendo va
- * resaltada; tocar una fila la abre en la sección Ficha.
- * Se pide cada vez que la página queda a la vista: entre una vez y otra se pudo guardar un
- * diagnóstico.
+ * El documento imprimible de la evolución (`evolucion.html`), el mismo de la web: se abre desde
+ * «Imprimir» de la sección Evolución. La ficha que se está viendo va resaltada; tocar una fila
+ * la abre en la sección Ficha. Se pide cada vez que queda a la vista.
  */
 @Composable
-fun EvolutionPage(
+fun EvolutionDocument(
     pacienteId: String,
     /** La ficha que muestra la sección Ficha: se resalta. */
     currentEpisode: String?,
@@ -175,6 +171,8 @@ fun EvolutionPage(
     /** La página está asentada en pantalla: se recarga cada vez que pasa a `true`. */
     visible: Boolean,
     onOpenEpisode: (String) -> Unit,
+    /** Observaciones editables en el documento; la sección nativa ya las edita. */
+    editable: Boolean = false,
 ) {
     val contexto = LocalContext.current
     val open by rememberUpdatedState(onOpenEpisode)
@@ -185,7 +183,7 @@ fun EvolutionPage(
     var reloadCount by remember { mutableIntStateOf(0) }
     val alcance = rememberCoroutineScope()
     val controlador = remember {
-        ControladorEvolucion(contexto, web, { documentoListo++ }, { open(it) }) { id, texto, reply ->
+        val save: ((String, String, (String) -> Unit) -> Unit)? = if (!editable) null else { id, texto, reply ->
             alcance.launch {
                 val respuesta = try {
                     api.saveObservations(pacienteId, id, texto)
@@ -196,6 +194,7 @@ fun EvolutionPage(
                 reply(respuesta)
             }
         }
+        ControladorEvolucion(contexto, web, { documentoListo++ }, { open(it) }, save)
     }
     DisposableEffect(Unit) { onDispose { controlador.vista.destroy() } }
 
@@ -206,7 +205,7 @@ fun EvolutionPage(
             datos = coroutineScope {
                 val filas = async { api.evolucion(pacienteId) }
                 val paciente = async { runCatching { api.entidad(pacienteId).data }.getOrDefault(emptyMap()) }
-                DatosFicha.javascript(DatosEvolucion.objeto(paciente.await(), filas.await(), currentEpisode, editable = true))
+                DatosFicha.javascript(DatosEvolucion.objeto(paciente.await(), filas.await(), currentEpisode, editable = editable))
             }
             error = null
         } catch (e: ApiError) {

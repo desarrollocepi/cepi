@@ -57,7 +57,7 @@ import ec.cepi.telemedicina.ficha.EvolutionPage
 import ec.cepi.telemedicina.ficha.FormularioHoja
 import ec.cepi.telemedicina.ficha.PatientDischarge
 import ec.cepi.telemedicina.ficha.SeccionesHoja
-import ec.cepi.telemedicina.ficha.VisorFicha
+import ec.cepi.telemedicina.ficha.FichaPage
 import ec.cepi.telemedicina.galeria.ConsentModel
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.galeria.ImagenesPaciente
@@ -76,7 +76,8 @@ const val PAGE_IMAGES = 3
  *
  *   Chat · Ficha · Evolución · Imágenes
  *
- * El modelo del hilo vive acá y no en el chat: la ficha guarda con él (`ficha_save`). Todas
+ * El modelo del hilo vive acá y no en el chat: el documento imprimible de la ficha guarda con
+ * él (`ficha_save`); la Ficha editable guarda grupo a grupo por `/api/bot/ficha/grupo`. Todas
  * quedan compuestas (`beyondViewportPageCount`): volver a una no la recarga, salvo Evolución,
  * que se vuelve a pedir cada vez que queda a la vista (§28.3).
  */
@@ -242,7 +243,7 @@ fun PacienteAbierto(
             ) { pagina ->
                 when (pagina) {
                     PAGE_CHAT -> HiloVista(modelo) { imagenAbierta = it }
-                    PAGE_FICHA -> VisorFicha(
+                    PAGE_FICHA -> FichaPage(
                         pacienteId = pacienteId,
                         nombre = cabecera?.nombre ?: "Paciente",
                         episodioActivo = modelo.episodioActivo,
@@ -250,7 +251,7 @@ fun PacienteAbierto(
                         web = entorno.config.webBase,
                         mostrada = fichaMostrada,
                         visible = paginas.settledPage == PAGE_FICHA && !paginas.isScrollInProgress,
-                        alGuardar = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
+                        alGuardarDocumento = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
                         episodioPedido = fichaPedida,
                         onShowEvolution = { showEvolution() },
                         onEpisodeShown = { shownEpisode = it },

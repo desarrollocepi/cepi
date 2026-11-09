@@ -125,6 +125,49 @@ data class Marcador(
     }
 }
 
+// Ficha completa (GET /api/bot/ficha, `fichaCompleta` en cepi-bot/src/flowV1.ts)
+
+/**
+ * La ficha entera de un caso, como la pinta `FichaCompleta.vue`: los grupos en orden, cada uno
+ * con su formulario ya prellenado y si tiene dato. `completos` de `total` es el progreso.
+ */
+@Serializable
+data class FullFicha(
+    @SerialName("episode_id") val episodeId: String? = null,
+    @SerialName("patient_id") val patientId: String? = null,
+    @SerialName("grupos") val groups: List<FichaGroup> = emptyList(),
+    /** Las etiquetas de los grupos sin dato. */
+    @SerialName("faltantes") val missing: List<String> = emptyList(),
+    @SerialName("completos") val done: Int = 0,
+    @SerialName("total") val totalOriginal: Int? = null,
+) {
+    /** Si el servidor no manda `total`, son los grupos que llegaron (como la web). */
+    val total: Int get() = totalOriginal ?: groups.size
+}
+
+/**
+ * Un grupo de la ficha (`FichaGrupoCompleto`): `form` es el mismo formulario del chat
+ * (`ficha_grp_<id>`) con `values` = lo guardado. `target` dice dónde vive el dato: `patient`
+ * (filiación, antecedentes, consentimientos) o `episode` (todo lo de la consulta).
+ */
+@Serializable
+data class FichaGroup(
+    val id: String,
+    val label: String = "",
+    val category: String = "",
+    val done: Boolean = false,
+    val target: String = "episode",
+    val form: FormularioBot? = null,
+)
+
+/** `POST /api/bot/ficha/grupo`: `completitud` = % de la ficha tras guardar, si se pudo calcular. */
+@Serializable
+data class FichaGroupSaveResult(
+    val ok: Boolean = false,
+    val target: String? = null,
+    @SerialName("completitud") val completeness: Double? = null,
+)
+
 // Derivar
 
 /** Un círculo, especialidad o turno de `GET /api/groups`. */

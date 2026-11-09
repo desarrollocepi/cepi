@@ -127,6 +127,21 @@ class CepiApi(val cliente: ApiClient) {
     }
 
     /**
+     * La ficha completa de un caso (pestaña Ficha, PAPER §24.2.1): los grupos en orden con lo que
+     * tienen cargado. Sin episodio salen solo los grupos del paciente con dato.
+     */
+    suspend fun fullFicha(episodeId: String?, patientId: String?): FullFicha =
+        cliente.get("/api/bot/ficha", "episode_id" to episodeId, "patient_id" to patientId)
+
+    /**
+     * Guarda UN grupo de la ficha desde la pestaña Ficha. Es el envío explícito del formulario:
+     * cepi-bot lo guarda sin pedir sí/no, por el mismo camino que el chat (coerciones y campos
+     * derivados iguales). Un payload inválido llega como `ApiError` 400 con el motivo.
+     */
+    suspend fun saveFichaGroup(groupId: String, data: JsonObject, episodeId: String?, patientId: String?): FichaGroupSaveResult =
+        cliente.post("/api/bot/ficha/grupo", fichaGroupBody(groupId, data, episodeId, patientId))
+
+    /**
      * «Responder interconsulta» (PAPER §30.2). Acción explícita: cepi-bot la guarda sin pedir
      * sí/no. Un 409 (la consulta no espera especialista, o la envió quien responde) llega como
      * `ApiError` con el mensaje del servidor.
@@ -314,11 +329,16 @@ class CepiApi(val cliente: ApiClient) {
         }
 
         /** El cuerpo de `POST /api/bot/ficha/grupo` para las observaciones. Sin red, para probarlo. */
-        fun observationsBody(paciente: String, episodio: String, texto: String): JsonObject = buildJsonObject {
-            put("group_id", "g_7")
-            putJsonObject("data") { put("observaciones", texto) }
-            put("episode_id", episodio)
-            put("patient_id", paciente)
-        }
+        fun observationsBody(paciente: String, episodio: String, texto: String): JsonObject =
+            fichaGroupBody("g_7", buildJsonObject { put("observaciones", texto) }, episodio, paciente)
+
+        /** El cuerpo de `POST /api/bot/ficha/grupo`. Sin red, para probarlo. */
+        fun fichaGroupBody(groupId: String, data: JsonObject, episodeId: String?, patientId: String?): JsonObject =
+            buildJsonObject {
+                put("group_id", groupId)
+                put("data", data)
+                if (episodeId != null) put("episode_id", episodeId)
+                if (patientId != null) put("patient_id", patientId)
+            }
     }
 }
