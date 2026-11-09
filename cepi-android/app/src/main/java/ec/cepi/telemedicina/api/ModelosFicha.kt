@@ -193,3 +193,9 @@ data class FilaEvolucion(
     val tratamiento: String? = null,
     val observaciones: String? = null,
 )
+
+// Responder interconsulta (PAPER §30)
+
+/** `POST /api/bot/interconsulta/responder`: `notified` = se avisó al médico que envió el caso. */
+@Serializable
+data class ConsultationAnswerResult(val ok: Boolean = false, val notified: Boolean = false)

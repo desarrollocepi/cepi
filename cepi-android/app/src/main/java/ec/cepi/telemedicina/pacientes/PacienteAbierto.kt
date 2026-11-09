@@ -23,6 +23,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -30,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +47,9 @@ import ec.cepi.telemedicina.app.Entorno
 import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
 import ec.cepi.telemedicina.chat.VisorImagen
+import ec.cepi.telemedicina.api.Registro
+import ec.cepi.telemedicina.ficha.ConsultationAnswer
+import ec.cepi.telemedicina.ficha.ConsultationAnswerSheet
 import ec.cepi.telemedicina.ficha.DerivarPantalla
 import ec.cepi.telemedicina.ficha.EpisodeRequest
 import ec.cepi.telemedicina.ficha.EvolutionPage
@@ -79,6 +85,8 @@ fun PacienteAbierto(
     fila: FilaPaciente?,
     /** La sección en la que abre (`PAGE_*`): la elige el menú de la lista. */
     seccionInicial: Int = 0,
+    /** Se respondió la interconsulta: la lista de pacientes se recarga (sale de "revisar"). */
+    onConsultationAnswered: () -> Unit = {},
     alVolver: () -> Unit,
 ) {
     val api = entorno.sesion.api
@@ -103,10 +111,28 @@ fun PacienteAbierto(
     // La ficha que muestra la sección Ficha: Evolución la resalta.
     var shownEpisode by remember { mutableStateOf<String?>(null) }
     val showEvolution = { alcance.launch { paginas.animateScrollToPage(PAGE_EVOLUTION) } }
+    // El episodio activo (estado, quién lo envió, lo que ya tiene la ficha): decide si se puede
+    // responder la interconsulta y precarga el formulario (PAPER §30).
+    var activeEpisode by remember { mutableStateOf<Registro?>(null) }
+    var episodeReload by remember { mutableIntStateOf(0) }
+    var answering by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
     // Abierto sin pasar por la lista (CEPI_DEV_PACIENTE, una notificación): el nombre se pide.
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
 
     LaunchedEffect(modelo) { modelo.abrir() }
+    LaunchedEffect(modelo.episodioActivo, episodeReload) {
+        val id = modelo.episodioActivo
+        activeEpisode = null
+        if (id == null) return@LaunchedEffect
+        // Sin datos el botón queda deshabilitado con su motivo.
+        activeEpisode = try {
+            api.entidad(id)
+        } catch (_: ApiError) {
+            null
+        }
+    }
+    val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
     LaunchedEffect(pacienteId) {
         if (cabecera == null) {
             cabecera = try {
@@ -119,6 +145,7 @@ fun PacienteAbierto(
     LaunchedEffect(paginas.currentPage) { if (paginas.currentPage == PAGE_FICHA) fichaMostrada = true }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = {
@@ -154,6 +181,8 @@ fun PacienteAbierto(
                             alAutoFormulario = { alcance.launch { modelo.alternarAutoFormulario() } },
                             alDerivar = { derivar = true },
                             alEvolucion = { showEvolution() },
+                            answerReason = answerReason,
+                            onAnswer = { answering = true },
                         )
                     }
                 },
@@ -252,6 +281,20 @@ fun PacienteAbierto(
             alCerrar = { mostrarSecciones = false },
         )
     }
+    val episodeToAnswer = activeEpisode
+    if (answering && episodeToAnswer != null) {
+        ConsultationAnswerSheet(
+            api = api,
+            episode = episodeToAnswer,
+            onAnswered = { notified ->
+                answering = false
+                episodeReload++
+                onConsultationAnswered()
+                alcance.launch { snackbar.showSnackbar(ConsultationAnswer.confirmation(notified)) }
+            },
+            onClose = { answering = false },
+        )
+    }
     if (derivar) {
         DerivarPantalla(
             api = api,
@@ -286,6 +329,9 @@ private fun Acciones(
     alAutoFormulario: () -> Unit,
     alDerivar: () -> Unit,
     alEvolucion: () -> Unit,
+    /** Por qué no se puede responder la interconsulta; `null` si se puede. */
+    answerReason: String?,
+    onAnswer: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -347,6 +393,14 @@ private fun Acciones(
             onClick = {
                 alCerrar()
                 alEvolucion()
+            },
+        )
+        DropdownMenuItem(
+            text = { Explicado("Responder interconsulta", answerReason) },
+            enabled = libre && answerReason == null,
+            onClick = {
+                alCerrar()
+                onAnswer()
             },
         )
         DropdownMenuItem(

@@ -100,4 +100,29 @@ class IdiomasDictadoTest {
         assertEquals(JsonPrimitive(true), editable["editable"])
         assertNull(datos["editable"])
     }
+
+    /** El mismo orden de motivos que `responderMotivo` de `IntakeChat.vue` (PAPER §30.2). */
+    @Test
+    fun consultationAnswerReasons() {
+        fun episodio(estado: String, primario: String? = "u1") = ec.cepi.telemedicina.api.Registro(
+            id = "e1",
+            data = buildMap {
+                put("estado", JsonPrimitive(estado))
+                primario?.let { put("medico_primario_id", JsonPrimitive(it)) }
+            },
+        )
+        val logica = ec.cepi.telemedicina.ficha.ConsultationAnswer
+        assertEquals("Elige un paciente con una consulta abierta", logica.disabledReason(null, null, "u2"))
+        assertEquals("Cargando el estado de la consulta…", logica.disabledReason("e1", null, "u2"))
+        assertEquals("Esta interconsulta ya fue respondida", logica.disabledReason("e1", episodio("respondida"), "u2"))
+        assertEquals("Esta consulta no tiene una interconsulta pendiente", logica.disabledReason("e1", episodio("en_curso"), "u2"))
+        assertEquals(
+            "Tú enviaste esta interconsulta: la responde el especialista",
+            logica.disabledReason("e1", episodio("enviada"), "u1"),
+        )
+        for (estado in listOf("enviada", "en_triage", "derivada", "en_revisión_solicitada")) {
+            assertNull(estado, logica.disabledReason("e1", episodio(estado), "u2"))
+        }
+        assertNull(logica.disabledReason("e1", episodio("derivada", primario = null), "u2"))
+    }
 }

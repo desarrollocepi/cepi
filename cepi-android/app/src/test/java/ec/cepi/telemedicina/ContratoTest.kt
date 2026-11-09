@@ -150,6 +150,20 @@ class ContratoTest {
     }
 
     @Test
+    fun consultationAnswerContract() {
+        // POST /api/bot/interconsulta/responder (PAPER §30.2).
+        val cuerpo = CepiApi.answerConsultationBody("e2", "Biopsia escisional", "D22.5 — Nevus atípico", "", "Control en 6 meses")
+        assertEquals(
+            """{"episode_id":"e2","recomendacion":"Biopsia escisional","diagnostico":"D22.5 — Nevus atípico","tratamiento":"","observaciones":"Control en 6 meses"}""",
+            cuerpo.toString(),
+        )
+        val respuesta = decodificar<ec.cepi.telemedicina.api.ConsultationAnswerResult>("""{"ok":true,"notified":true,"episode_id":"e2"}""")
+        assertTrue(respuesta.ok)
+        assertTrue(respuesta.notified)
+        assertEquals(false, decodificar<ec.cepi.telemedicina.api.ConsultationAnswerResult>("""{"ok":true}""").notified)
+    }
+
+    @Test
     fun observationsRequestBody() {
         // POST /api/bot/ficha/grupo desde la sección Evolución (grupo g_7, PAPER §28).
         val cuerpo = CepiApi.observationsBody("p1", "e2", "Control en 3 meses \"sin\" cambios")

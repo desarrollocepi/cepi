@@ -127,7 +127,13 @@ fun Principal(entorno: Entorno) {
     LaunchedEffect(id) { if (id == null) seccionAlAbrir = 0 }
     if (id != null) {
         BackHandler { abierto = null }
-        PacienteAbierto(entorno, id, modelo.fila(id), seccionAlAbrir) { abierto = null }
+        PacienteAbierto(
+            entorno,
+            id,
+            modelo.fila(id),
+            seccionAlAbrir,
+            onConsultationAnswered = { alcance.launch { modelo.cargar(sesion.api) } },
+        ) { abierto = null }
     } else {
         Scaffold(
             topBar = {

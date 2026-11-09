@@ -123,6 +123,20 @@ class CepiApi(val cliente: ApiClient) {
         cliente.post<Confirmacion>("/api/bot/ficha/grupo", observationsBody(paciente, episodio, texto))
     }
 
+    /**
+     * «Responder interconsulta» (PAPER §30.2). Acción explícita: cepi-bot la guarda sin pedir
+     * sí/no. Un 409 (la consulta no espera especialista, o la envió quien responde) llega como
+     * `ApiError` con el mensaje del servidor.
+     */
+    suspend fun answerConsultation(
+        episodio: String,
+        recomendacion: String,
+        diagnostico: String,
+        tratamiento: String,
+        observaciones: String,
+    ): ConsultationAnswerResult =
+        cliente.post("/api/bot/interconsulta/responder", answerConsultationBody(episodio, recomendacion, diagnostico, tratamiento, observaciones))
+
     // Registros
 
     suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
@@ -214,6 +228,21 @@ class CepiApi(val cliente: ApiClient) {
         const val DEFINICION_PACIENTE = "11000000-0000-0000-0000-000000000000"
         const val DEFINICION_EPISODIO = "12000000-0000-0000-0000-000000000000"
         const val PERMISO_BORRAR_PACIENTE = "entity:$DEFINICION_PACIENTE:record:delete"
+
+        /** El cuerpo de `POST /api/bot/interconsulta/responder`. Sin red, para probarlo. */
+        fun answerConsultationBody(
+            episodio: String,
+            recomendacion: String,
+            diagnostico: String,
+            tratamiento: String,
+            observaciones: String,
+        ): JsonObject = buildJsonObject {
+            put("episode_id", episodio)
+            put("recomendacion", recomendacion)
+            put("diagnostico", diagnostico)
+            put("tratamiento", tratamiento)
+            put("observaciones", observaciones)
+        }
 
         /** El cuerpo de `POST /api/bot/ficha/grupo` para las observaciones. Sin red, para probarlo. */
         fun observationsBody(paciente: String, episodio: String, texto: String): JsonObject = buildJsonObject {
