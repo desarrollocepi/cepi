@@ -125,6 +125,15 @@ class ContratoTest {
         )
         assertEquals("Dra. Ramon, Dr. Mora +1", varios.porPaciente["p1"]?.aCargo)
 
+        // PAPER §35: la fecha del alta; sin la clave (backend anterior) queda null.
+        val conAlta = decodificar<Asignaciones>(
+            """{"ok":true,"assignments":{"p1":{"estado":"alta","alta_at":"2026-11-09","prioridad":null},
+               "p2":{"estado":"en_curso","alta_at":null}}}""",
+        )
+        assertEquals("2026-11-09", conAlta.porPaciente["p1"]?.dischargedOn)
+        assertNull(conAlta.porPaciente["p2"]?.dischargedOn)
+        assertNull(asignaciones.porPaciente["p1"]?.dischargedOn)
+
         val derivaciones = decodificar<Derivaciones>(
             """{"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}""",
         )
@@ -163,6 +172,16 @@ class ContratoTest {
         assertNull(filas[2].diagnosticoHistopatologico)
         assertNull(filas[2].observaciones)
         assertNull(filas[2].estado)
+    }
+
+    @Test
+    fun dischargeContract() {
+        // POST /api/bot/episodio/alta (PAPER §35.2); el mismo cuerpo que ContratoTests.swift.
+        assertEquals(
+            """{"episode_id":"e1","nota":"Lesión resuelta"}""",
+            CepiApi.dischargeBody("e1", "  Lesión resuelta\n").toString(),
+        )
+        assertEquals("""{"episode_id":"e1","nota":""}""", CepiApi.dischargeBody("e1", "").toString())
     }
 
     @Test

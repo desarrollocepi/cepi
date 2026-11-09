@@ -302,6 +302,22 @@ struct InterconsultaAnswer: Encodable, Sendable, Equatable {
     }
 }
 
+/// El cuerpo de `POST /api/bot/episodio/alta` (PAPER §35.2): la nota es opcional.
+struct PatientDischargeRequest: Encodable, Sendable, Equatable {
+    let episodeId: String
+    let nota: String
+
+    init(episodio: String, nota: String = "") {
+        episodeId = episodio
+        self.nota = nota.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case episodeId = "episode_id"
+        case nota
+    }
+}
+
 /// Prioridad clínica del episodio (PAPER §34). La guía es la tabla del documento abreviada, la
 /// misma que `ResponderInterconsulta.vue`. La decisión es del médico responsable.
 enum ClinicalPriority: String, CaseIterable, Identifiable, Sendable {

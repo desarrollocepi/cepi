@@ -144,6 +144,14 @@ class CepiApi(val cliente: ApiClient) {
             answerConsultationBody(episodio, recomendacion, diagnostico, tratamiento, observaciones, prioridad),
         )
 
+    /**
+     * «Dar de alta» (PAPER §35.2). Acción explícita: cepi-bot la guarda sin pedir sí/no. Un 409
+     * (ya estaba de alta) llega como `ApiError` con el mensaje del servidor.
+     */
+    suspend fun dischargePatient(episodio: String, nota: String) {
+        cliente.post<Confirmacion>("/api/bot/episodio/alta", dischargeBody(episodio, nota))
+    }
+
     // Registros
 
     suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
@@ -283,6 +291,12 @@ class CepiApi(val cliente: ApiClient) {
             put("tratamiento", tratamiento)
             put("observaciones", observaciones)
             put("prioridad", prioridad)
+        }
+
+        /** El cuerpo de `POST /api/bot/episodio/alta`. Sin red, para probarlo. */
+        fun dischargeBody(episodio: String, nota: String): JsonObject = buildJsonObject {
+            put("episode_id", episodio)
+            put("nota", nota.trim())
         }
 
         /** El cuerpo de `POST /api/groups/:slug/shifts`. Sin red, para probarlo. */

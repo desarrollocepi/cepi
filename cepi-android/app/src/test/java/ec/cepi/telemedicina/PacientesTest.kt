@@ -65,6 +65,10 @@ class PacientesTest {
         assertEquals(EstadoFicha.Derivada, EstadoFicha.de("derivada"))
         assertEquals(EstadoFicha.RevisionSolicitada, EstadoFicha.de("en_revisión_solicitada"))
         assertEquals(EstadoFicha.Agendada, EstadoFicha.de("agendado"))
+        assertEquals(EstadoFicha.Alta, EstadoFicha.de("alta"))
+        // «Alta» va después de «Cerrada», con su color (PAPER §35, estadoFicha.js).
+        assertEquals(EstadoFicha.Cerrada.ordinal + 1, EstadoFicha.Alta.ordinal)
+        assertEquals(0xFF0F766E, EstadoFicha.Alta.color)
         // Un estado que la app no conoce no rompe la lista: cae en "Otro estado".
         assertEquals(EstadoFicha.Otro, EstadoFicha.de("archivada"))
     }
@@ -95,5 +99,16 @@ class PacientesTest {
         assertEquals(listOf("p2"), modelo.filtradas("  angel ").map { it.id })
         assertEquals(listOf("p2"), modelo.filtradas("171").map { it.id })
         assertEquals(2, modelo.filtradas("").size)
+    }
+
+    /** `altaVencida` de `estadoFicha.js`: solo el alta de un día anterior a hoy. */
+    @Test
+    fun altaVencida() {
+        val hoy = "2026-11-09"
+        assertTrue(Asignacion(estado = "alta", dischargedOn = "2026-11-08").dischargeExpired(hoy))
+        assertTrue(!Asignacion(estado = "alta", dischargedOn = "2026-11-09").dischargeExpired(hoy))
+        assertTrue(!Asignacion(estado = "alta").dischargeExpired(hoy))
+        // Una consulta nueva lo devuelve a la lista aunque quede un alta_at viejo.
+        assertTrue(!Asignacion(estado = "en_curso", dischargedOn = "2026-11-01").dischargeExpired(hoy))
     }
 }

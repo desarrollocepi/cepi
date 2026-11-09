@@ -51,9 +51,11 @@ import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.ficha.ConsultationAnswer
 import ec.cepi.telemedicina.ficha.ConsultationAnswerSheet
 import ec.cepi.telemedicina.ficha.DerivarPantalla
+import ec.cepi.telemedicina.ficha.DischargeDialog
 import ec.cepi.telemedicina.ficha.EpisodeRequest
 import ec.cepi.telemedicina.ficha.EvolutionPage
 import ec.cepi.telemedicina.ficha.FormularioHoja
+import ec.cepi.telemedicina.ficha.PatientDischarge
 import ec.cepi.telemedicina.ficha.SeccionesHoja
 import ec.cepi.telemedicina.ficha.VisorFicha
 import ec.cepi.telemedicina.galeria.ConsentModel
@@ -86,7 +88,10 @@ fun PacienteAbierto(
     fila: FilaPaciente?,
     /** La sección en la que abre (`PAGE_*`): la elige el menú de la lista. */
     seccionInicial: Int = 0,
-    /** Se respondió la interconsulta: la lista de pacientes se recarga (sale de "revisar"). */
+    /**
+     * Se respondió la interconsulta o se dio el alta: la lista de pacientes se recarga (sale de
+     * "revisar", o pasa a «Alta»).
+     */
     onConsultationAnswered: () -> Unit = {},
     alVolver: () -> Unit,
 ) {
@@ -118,6 +123,7 @@ fun PacienteAbierto(
     var activeEpisode by remember { mutableStateOf<Registro?>(null) }
     var episodeReload by remember { mutableIntStateOf(0) }
     var answering by remember { mutableStateOf(false) }
+    var discharging by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     // Abierto sin pasar por la lista (CEPI_DEV_PACIENTE, una notificación): el nombre se pide.
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
@@ -135,6 +141,7 @@ fun PacienteAbierto(
         }
     }
     val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
+    val dischargeReason = PatientDischarge.disabledReason(modelo.episodioActivo, activeEpisode)
     LaunchedEffect(pacienteId) {
         if (cabecera == null) {
             cabecera = try {
@@ -185,6 +192,8 @@ fun PacienteAbierto(
                             alEvolucion = { showEvolution() },
                             answerReason = answerReason,
                             onAnswer = { answering = true },
+                            dischargeReason = dischargeReason,
+                            onDischarge = { discharging = true },
                         )
                     }
                 },
@@ -297,6 +306,21 @@ fun PacienteAbierto(
             onClose = { answering = false },
         )
     }
+    val episodeToDischarge = modelo.episodioActivo
+    if (discharging && episodeToDischarge != null) {
+        DischargeDialog(
+            api = api,
+            episodeId = episodeToDischarge,
+            patientName = cabecera?.nombre,
+            onDischarged = {
+                discharging = false
+                episodeReload++
+                onConsultationAnswered()
+                alcance.launch { snackbar.showSnackbar(PatientDischarge.CONFIRMATION) }
+            },
+            onClose = { discharging = false },
+        )
+    }
     if (derivar) {
         DerivarPantalla(
             api = api,
@@ -334,6 +358,9 @@ private fun Acciones(
     /** Por qué no se puede responder la interconsulta; `null` si se puede. */
     answerReason: String?,
     onAnswer: () -> Unit,
+    /** Por qué no se puede dar el alta; `null` si se puede (PAPER §35). */
+    dischargeReason: String?,
+    onDischarge: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -403,6 +430,14 @@ private fun Acciones(
             onClick = {
                 alCerrar()
                 onAnswer()
+            },
+        )
+        DropdownMenuItem(
+            text = { Explicado("🏁 Dar de alta", dischargeReason) },
+            enabled = libre && dischargeReason == null,
+            onClick = {
+                alCerrar()
+                onDischarge()
             },
         )
         DropdownMenuItem(

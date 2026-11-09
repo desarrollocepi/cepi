@@ -10,7 +10,8 @@ struct PacienteView: View {
     let fila: FilaPaciente
     /// Cierra el paciente (tras derivar, el médico pasa al siguiente).
     let alTerminar: () -> Void
-    /// Vuelve a pedir la lista: tras responder, el paciente sale de "revisar".
+    /// Vuelve a pedir la lista: tras responder, el paciente sale de "revisar"; tras el alta,
+    /// pasa a «Alta».
     let onListChanged: () async -> Void
 
     @Environment(Sesion.self) private var sesion
@@ -29,6 +30,8 @@ struct PacienteView: View {
     @State private var episodeRecord: Registro?
     @State private var showAnswer = false
     @State private var answerConfirmation: String?
+    @State private var showDischarge = false
+    @State private var dischargeDone = false
 
     enum Seccion: String, CaseIterable, Identifiable {
         case chat, ficha, evolucion, imagenes
@@ -166,6 +169,22 @@ struct PacienteView: View {
                 .environment(sesion)
             }
         }
+        .sheet(isPresented: $showDischarge) {
+            if let episodio = modelo.episodioActivo {
+                DarDeAltaView(episodio: episodio, paciente: fila.nombre) {
+                    dischargeDone = true
+                    await loadEpisodeRecord()
+                    await onListChanged()
+                }
+                .presentationDetents([.medium, .large])
+                .environment(sesion)
+            }
+        }
+        .alert("Alta registrada", isPresented: $dischargeDone) {
+            Button("Aceptar", role: .cancel) {}
+        } message: {
+            Text(PatientDischarge.confirmation)
+        }
         .alert("Interconsulta respondida", isPresented: Binding(
             get: { answerConfirmation != nil },
             set: { if !$0 { answerConfirmation = nil } }
@@ -213,6 +232,10 @@ struct PacienteView: View {
         )
     }
 
+    private var dischargeBlockReason: String? {
+        PatientDischarge.blockReason(episode: modelo.episodioActivo, episodeData: episodeRecord)
+    }
+
     /// Lo que todavía no está se ve, gris y con la razón (CLAUDE.md: nunca ocultes un botón).
     private var enLaActual: Bool {
         let episodios = modelo.episodios
@@ -256,6 +279,13 @@ struct PacienteView: View {
                 Text(answerBlockReason ?? "Queda en la ficha y le llega al médico que envió el caso")
             }
             .disabled(modelo.ocupado || answerBlockReason != nil)
+            Button {
+                showDischarge = true
+            } label: {
+                Label("🏁 Dar de alta", systemImage: "flag.checkered")
+                Text(dischargeBlockReason ?? "Cierra el caso; si vuelve, es una consulta nueva")
+            }
+            .disabled(modelo.ocupado || dischargeBlockReason != nil)
             Button("Derivar", systemImage: "arrowshape.turn.up.right") { mostrarDerivar = true }
                 .disabled(modelo.ocupado)
         } label: {

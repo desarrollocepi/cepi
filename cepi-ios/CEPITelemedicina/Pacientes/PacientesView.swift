@@ -131,6 +131,13 @@ struct PacientesView: View {
                         systemImage: "line.3.horizontal.decrease.circle",
                         description: Text("Elige otro estado o «Todos».")
                     )
+                } else if busqueda.isEmpty, !modelo.filas.isEmpty {
+                    // Todos los que hay están de alta desde antes de hoy (PAPER §35).
+                    ContentUnavailableView(
+                        "Ningún paciente activo",
+                        systemImage: "person.2",
+                        description: Text("Los dados de alta están en el filtro «Alta» o buscándolos.")
+                    )
                 } else if busqueda.isEmpty {
                     ContentUnavailableView(
                         "No hay pacientes",

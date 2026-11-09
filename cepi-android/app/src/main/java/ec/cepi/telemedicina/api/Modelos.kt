@@ -105,7 +105,17 @@ data class Asignacion(
     val derivados: List<DerivadoBreve> = emptyList(),
     /** Prioridad clínica de la consulta (PAPER §34): `Urgente` | `Preferente` | `Programada`. */
     val prioridad: String? = null,
+    /** Fecha del alta (`2026-11-09`, PAPER §35); `null` si la consulta no está de alta. */
+    @SerialName("alta_at") val dischargedOn: String? = null,
 ) {
+    /**
+     * De alta desde ANTES de `today` (`YYYY-MM-DD`, fecha local del dispositivo): ya no sale en
+     * la lista. El día del alta todavía se ve, para que quien la dio no lo pierda de golpe.
+     * Igual que `altaVencida` de `estadoFicha.js`.
+     */
+    fun dischargeExpired(today: String): Boolean =
+        estado == "alta" && !dischargedOn.isNullOrEmpty() && dischargedOn < today
+
     /** Cómo se resume "a cargo" en la fila: con varios derivados, sus nombres. */
     val aCargo: String?
         get() = when {

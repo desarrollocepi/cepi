@@ -15,6 +15,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.text.Normalizer
 import java.time.Instant
+import java.time.LocalDate
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -130,11 +131,21 @@ class PacientesModelo {
 
     fun estado(id: String): EstadoFicha = EstadoFicha.de(asignaciones[id]?.estado)
 
-    /** Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. */
-    fun filtradas(busqueda: String, estado: EstadoFicha? = null): List<FilaPaciente> {
+    /**
+     * Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. Quien
+     * está de alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
+     */
+    fun filtradas(
+        busqueda: String,
+        estado: EstadoFicha? = null,
+        today: String = LocalDate.now().toString(),
+    ): List<FilaPaciente> {
         val consulta = FilaPaciente.normalizar(busqueda.trim())
         return filas.filter { fila ->
-            (consulta.isEmpty() || consulta in fila.claveBusqueda) && (estado == null || estado(fila.id) == estado)
+            (consulta.isEmpty() || consulta in fila.claveBusqueda) &&
+                (estado == null || estado(fila.id) == estado) &&
+                (consulta.isNotEmpty() || estado == EstadoFicha.Alta ||
+                    asignaciones[fila.id]?.dischargeExpired(today) != true)
         }
     }
 

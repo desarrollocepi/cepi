@@ -84,4 +84,29 @@ struct PacientesCargaTests {
         #expect(modelo.filtradas(por: "").count == 3)
         #expect(modelo.conteoPorEstado() == [.derivada: 2, .cerrada: 1])
     }
+
+    /// PAPER §35: de alta desde antes de hoy no sale, salvo buscándolo o en el filtro «Alta».
+    @Test func deAltaDesdeAyerNoSaleSalvoBuscandoloOEnElFiltro() async {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("GET /api/review-queue", .http(200, #"{"ok":true,"by_patient":{}}"#))
+        servidor.fijar("GET /api/entities", .http(200, Self.lista(["Ana", "Beto", "Caro"])))
+        servidor.fijar("GET /api/patient-assignments", .http(200, """
+        {"ok":true,"assignments":{"p0-Ana":{"estado":"alta","alta_at":"2026-11-08"},
+         "p1-Beto":{"estado":"alta","alta_at":"2026-11-09"},"p2-Caro":{"estado":"en_curso","alta_at":null}}}
+        """))
+        let modelo = PacientesModelo()
+        await modelo.cargar(api: api(servidor))
+        let hoy = "2026-11-09"
+
+        #expect(modelo.estado("p0-Ana") == .alta)
+        // Alta de ayer: oculta. Alta de hoy: todavía se ve.
+        #expect(modelo.filtradas(por: "", today: hoy).map(\.id) == ["p2-Caro", "p1-Beto"])
+        // Buscándola por nombre sí sale.
+        #expect(modelo.filtradas(por: "ana", today: hoy).map(\.id) == ["p0-Ana"])
+        // En el filtro «Alta» salen las dos.
+        #expect(modelo.filtradas(por: "", estado: .alta, today: hoy).map(\.id) == ["p0-Ana", "p1-Beto"])
+        // Al día siguiente, la de hoy también se oculta.
+        #expect(modelo.filtradas(por: "", today: "2026-11-10").map(\.id) == ["p2-Caro"])
+    }
 }

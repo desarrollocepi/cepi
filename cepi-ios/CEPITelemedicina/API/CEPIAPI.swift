@@ -116,6 +116,12 @@ struct CEPIAPI: Sendable {
         try await cliente.post("/api/bot/interconsulta/responder", json: respuesta)
     }
 
+    /// «Dar de alta» (PAPER §35.2). Acción explícita: sin gate. Un 409 (ya estaba de alta)
+    /// llega como `APIError` con el motivo del bot en español.
+    func dischargePatient(_ alta: PatientDischargeRequest) async throws {
+        let _: Confirmacion = try await cliente.post("/api/bot/episodio/alta", json: alta)
+    }
+
     // MARK: Consentimientos
 
     /// Las fotos firmadas del consentimiento informado y del de privacidad (PAPER §31.2).

@@ -133,4 +133,32 @@ class PacientesCargaTest {
             modelo.conteoPorEstado(),
         )
     }
+
+    /** PAPER §35: de alta desde antes de hoy no sale, salvo buscándolo o en el filtro «Alta». */
+    @Test
+    fun deAltaDesdeAyerNoSaleSalvoBuscandoloOEnElFiltro() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("GET /api/entities", Respuesta.Http(200, lista("Ana", "Beto", "Caro")))
+        servidor.fijar(
+            "GET /api/patient-assignments",
+            Respuesta.Http(
+                200,
+                """{"ok":true,"assignments":{"p0-Ana":{"estado":"alta","alta_at":"2026-11-08"},
+                   "p1-Beto":{"estado":"alta","alta_at":"2026-11-09"},"p2-Caro":{"estado":"en_curso","alta_at":null}}}""",
+            ),
+        )
+        val modelo = PacientesModelo()
+        modelo.cargar(servidor.api())
+        val hoy = "2026-11-09"
+
+        assertEquals(EstadoFicha.Alta, modelo.estado("p0-Ana"))
+        // Alta de ayer: oculta. Alta de hoy: todavía se ve.
+        assertEquals(listOf("p2-Caro", "p1-Beto"), modelo.filtradas("", null, hoy).map { it.id })
+        // Buscándola por nombre sí sale.
+        assertEquals(listOf("p0-Ana"), modelo.filtradas("ana", null, hoy).map { it.id })
+        // En el filtro «Alta» salen las dos.
+        assertEquals(listOf("p0-Ana", "p1-Beto"), modelo.filtradas("", EstadoFicha.Alta, hoy).map { it.id })
+        // Al día siguiente, la de hoy también se oculta.
+        assertEquals(listOf("p2-Caro"), modelo.filtradas("", null, "2026-11-10").map { it.id })
+    }
 }

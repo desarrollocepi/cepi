@@ -213,6 +213,16 @@ struct Asignacion: Decodable, Sendable, Hashable {
     let derivados: [DerivadoBreve]
     /// Prioridad clínica de la consulta (PAPER §34): `Urgente` | `Preferente` | `Programada`.
     let prioridad: String?
+    /// Fecha del alta (`2026-11-09`, PAPER §35); `nil` si la consulta no está de alta.
+    let dischargedOn: String?
+
+    /// De alta desde ANTES de `today` (`YYYY-MM-DD`, fecha local del dispositivo): ya no sale
+    /// en la lista. El día del alta todavía se ve, para que quien la dio no lo pierda de golpe.
+    /// Igual que `altaVencida` de `estadoFicha.js`.
+    func dischargeExpired(today: String) -> Bool {
+        guard estado == "alta", let dischargedOn, !dischargedOn.isEmpty else { return false }
+        return dischargedOn < today
+    }
 
     /// La prioridad si es una de las tres conocidas; `nil` si no hay o no se reconoce.
     var prioridadClinica: ClinicalPriority? { prioridad.flatMap(ClinicalPriority.init(rawValue:)) }
@@ -228,6 +238,7 @@ struct Asignacion: Decodable, Sendable, Hashable {
         case nombre = "assignee_name"
         case origen = "source"
         case estado, derivados, prioridad
+        case dischargedOn = "alta_at"
     }
 
     init(from decoder: any Decoder) throws {
@@ -237,17 +248,19 @@ struct Asignacion: Decodable, Sendable, Hashable {
         estado = try c.decodeIfPresent(String.self, forKey: .estado)
         derivados = try c.decodeIfPresent([DerivadoBreve].self, forKey: .derivados) ?? []
         prioridad = try c.decodeIfPresent(String.self, forKey: .prioridad)
+        dischargedOn = try c.decodeIfPresent(String.self, forKey: .dischargedOn)
     }
 
     init(
         nombre: String? = nil, origen: String? = nil, estado: String? = nil, derivados: [DerivadoBreve] = [],
-        prioridad: String? = nil,
+        prioridad: String? = nil, dischargedOn: String? = nil,
     ) {
         self.nombre = nombre
         self.origen = origen
         self.estado = estado
         self.derivados = derivados
         self.prioridad = prioridad
+        self.dischargedOn = dischargedOn
     }
 }
 

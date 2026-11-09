@@ -13,6 +13,8 @@ enum EstadoFicha: Int, CaseIterable, Identifiable, Sendable {
     case enCurso
     case agendada
     case cerrada
+    /// Fin del caso (PAPER §35). Desde el día siguiente no sale en la lista salvo buscándolo.
+    case alta
     /// Un valor que la app no conoce: se muestra, al final de los abiertos, sin inventarle sentido.
     case otro
     /// El paciente no tiene consulta en la org activa: el LED va hueco.
@@ -39,6 +41,7 @@ enum EstadoFicha: Int, CaseIterable, Identifiable, Sendable {
         case .enCurso: "en_curso"
         case .agendada: "agendado"
         case .cerrada: "cerrado"
+        case .alta: "alta"
         case .otro, .sinConsulta: nil
         }
     }
@@ -53,6 +56,7 @@ enum EstadoFicha: Int, CaseIterable, Identifiable, Sendable {
         case .enCurso: "En curso"
         case .agendada: "Agendada"
         case .cerrada: "Cerrada"
+        case .alta: "Alta"
         case .otro: "Otro estado"
         case .sinConsulta: "Sin consulta"
         }
@@ -68,6 +72,7 @@ enum EstadoFicha: Int, CaseIterable, Identifiable, Sendable {
         case .enCurso: Self.rgb(0x2563EB)
         case .agendada: Self.rgb(0x64748B)
         case .cerrada, .sinConsulta: Self.rgb(0x9CA3AF)
+        case .alta: Self.rgb(0x0F766E)
         case .otro: Self.rgb(0x6B7280)
         }
     }

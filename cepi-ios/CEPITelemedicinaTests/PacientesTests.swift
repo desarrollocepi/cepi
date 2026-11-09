@@ -46,6 +46,10 @@ struct PacientesTests {
         #expect(EstadoFicha("derivada") == .derivada)
         #expect(EstadoFicha("en_revisión_solicitada") == .revisionSolicitada)
         #expect(EstadoFicha("agendado") == .agendada)
+        #expect(EstadoFicha("alta") == .alta)
+        // «Alta» va después de «Cerrada» (PAPER §35, estadoFicha.js).
+        #expect(EstadoFicha.alta.rawValue == EstadoFicha.cerrada.rawValue + 1)
+        #expect(EstadoFicha.alta.etiqueta == "Alta")
         // Un estado que la app no conoce no rompe la lista: cae en "Otro estado".
         #expect(EstadoFicha("archivada") == .otro)
     }
@@ -61,5 +65,23 @@ struct PacientesTests {
         let fila = FilaPaciente(try registro("p", title: "Paciente importado"))
         #expect(fila.nombre == "Paciente importado")
         #expect(fila.cedula == nil)
+    }
+
+    /// `altaVencida` de `estadoFicha.js`: solo el alta de un día anterior a hoy.
+    @Test func altaVencida() {
+        let hoy = "2026-11-09"
+        #expect(Asignacion(estado: "alta", dischargedOn: "2026-11-08").dischargeExpired(today: hoy))
+        #expect(!Asignacion(estado: "alta", dischargedOn: "2026-11-09").dischargeExpired(today: hoy))
+        #expect(!Asignacion(estado: "alta").dischargeExpired(today: hoy))
+        // Una consulta nueva lo devuelve a la lista aunque quede un alta_at viejo.
+        #expect(!Asignacion(estado: "en_curso", dischargedOn: "2026-11-01").dischargeExpired(today: hoy))
+    }
+
+    /// La fecha local, no la UTC: a las 22:00 en Ecuador sigue siendo hoy.
+    @Test func hoyEsLaFechaLocal() throws {
+        var calendario = Calendar(identifier: .gregorian)
+        calendario.timeZone = try #require(TimeZone(identifier: "America/Guayaquil"))
+        let noche = try #require(ISO8601DateFormatter().date(from: "2026-11-10T03:00:00Z"))
+        #expect(PacientesModelo.localToday(noche, calendar: calendario) == "2026-11-09")
     }
 }

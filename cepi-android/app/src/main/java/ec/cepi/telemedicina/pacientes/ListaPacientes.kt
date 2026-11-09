@@ -177,6 +177,12 @@ fun ListaPacientes(
                     titulo = "Ningún paciente en «${estadoElegido?.etiqueta}»",
                     descripcion = "Elige otro estado o «Todos».",
                 )
+                // Todos los que hay están de alta desde antes de hoy (PAPER §35).
+                filas.isEmpty() && busqueda.isBlank() && modelo.filas.isNotEmpty() -> Aviso(
+                    icono = painterResource(R.drawable.ic_grupo),
+                    titulo = "Ningún paciente activo",
+                    descripcion = "Los dados de alta están en el filtro «Alta» o buscándolos.",
+                )
                 filas.isEmpty() && busqueda.isBlank() -> Aviso(
                     icono = painterResource(R.drawable.ic_grupo),
                     titulo = "No hay pacientes",

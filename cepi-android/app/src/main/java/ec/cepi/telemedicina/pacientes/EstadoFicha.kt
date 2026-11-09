@@ -15,6 +15,8 @@ enum class EstadoFicha(val valor: String?, val etiqueta: String, val color: Long
     EnCurso("en_curso", "En curso", 0xFF2563EB),
     Agendada("agendado", "Agendada", 0xFF64748B),
     Cerrada("cerrado", "Cerrada", 0xFF9CA3AF),
+    /** Fin del caso (PAPER §35). Desde el día siguiente no sale en la lista salvo buscándolo. */
+    Alta("alta", "Alta", 0xFF0F766E),
     /** Un valor que la app no conoce: se muestra, al final de los abiertos, sin inventarle sentido. */
     Otro(null, "Otro estado", 0xFF6B7280),
     /** El paciente no tiene consulta en la org activa: el LED va hueco. */

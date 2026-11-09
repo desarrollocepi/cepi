@@ -108,14 +108,24 @@ final class PacientesModelo {
 
     func estado(_ id: String) -> EstadoFicha { EstadoFicha(asignaciones[id]?.estado) }
 
-    /// Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha.
-    func filtradas(por busqueda: String, estado: EstadoFicha? = nil) -> [FilaPaciente] {
+    /// Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. Quien
+    /// está de alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
+    func filtradas(
+        por busqueda: String, estado: EstadoFicha? = nil, today: String = PacientesModelo.localToday()
+    ) -> [FilaPaciente] {
         let consulta = FilaPaciente.normalizar(busqueda.trimmingCharacters(in: .whitespaces))
-        guard !consulta.isEmpty || estado != nil else { return filas }
+        let showDischarged = !consulta.isEmpty || estado == .alta
         return filas.filter { fila in
             (consulta.isEmpty || fila.claveBusqueda.contains(consulta))
                 && (estado == nil || self.estado(fila.id) == estado)
+                && (showDischarged || asignaciones[fila.id]?.dischargeExpired(today: today) != true)
         }
+    }
+
+    /// Fecha local del dispositivo (`YYYY-MM-DD`). En UTC, de noche en Ecuador ya es mañana.
+    nonisolated static func localToday(_ date: Date = .now, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
     /// Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos.

@@ -150,5 +150,30 @@ class IdiomasDictadoTest {
             assertNull(estado, logica.disabledReason("e1", episodio(estado), "u2"))
         }
         assertNull(logica.disabledReason("e1", episodio("derivada", primario = null), "u2"))
+        assertEquals(
+            "El paciente está de alta: si vuelve, abre una consulta nueva",
+            logica.disabledReason("e1", episodio("alta", responsable = "u3"), "u3"),
+        )
+    }
+
+    /** El mismo orden de motivos que `altaMotivo` de `IntakeChat.vue` (PAPER §35.2). */
+    @Test
+    fun dischargeReasons() {
+        fun episodio(estado: String) = ec.cepi.telemedicina.api.Registro(
+            id = "e1",
+            data = mapOf("estado" to JsonPrimitive(estado)),
+        )
+        val logica = ec.cepi.telemedicina.ficha.PatientDischarge
+        assertEquals("Elige un paciente con una consulta abierta", logica.disabledReason(null, null))
+        assertEquals("Cargando el estado de la consulta…", logica.disabledReason("e1", null))
+        assertEquals(
+            "Este paciente ya está de alta. Si vuelve, abre una consulta nueva",
+            logica.disabledReason("e1", episodio("alta")),
+        )
+        for (estado in listOf("en_curso", "enviada", "derivada", "respondida", "cerrado")) {
+            assertNull(estado, logica.disabledReason("e1", episodio(estado)))
+        }
+        assertTrue(logica.help("Ana Ruiz").contains("Desde mañana Ana Ruiz no sale en la lista"))
+        assertTrue(logica.help(null).contains("Desde mañana el paciente no sale en la lista"))
     }
 }

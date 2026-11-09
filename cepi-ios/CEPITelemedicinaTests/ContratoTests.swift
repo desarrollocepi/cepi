@@ -142,6 +142,15 @@ struct ContratoTests {
         """)
         #expect(varios.porPaciente["p1"]?.aCargo == "Dra. Ramon, Dr. Mora +1")
 
+        // PAPER §35: la fecha del alta; sin la clave (backend anterior) queda nil.
+        let conAlta = try decodificar(Asignaciones.self, """
+        {"ok":true,"assignments":{"p1":{"estado":"alta","alta_at":"2026-11-09","prioridad":null},
+         "p2":{"estado":"en_curso","alta_at":null}}}
+        """)
+        #expect(conAlta.porPaciente["p1"]?.dischargedOn == "2026-11-09")
+        #expect(conAlta.porPaciente["p2"]?.dischargedOn == nil)
+        #expect(asignaciones.porPaciente["p1"]?.dischargedOn == nil)
+
         let derivaciones = try decodificar(Derivaciones.self, """
         {"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}
         """)
@@ -298,9 +307,73 @@ struct ResponderInterconsultaTests {
         let respondida = try episodio(#"{"estado":"respondida","responsable_actual_id":"u1"}"#)
         #expect(Interconsulta.blockReason(episode: "e1", episodeData: respondida, userId: "u1")
                 == "Esta interconsulta ya fue respondida")
+        let deAlta = try episodio(#"{"estado":"alta","responsable_actual_id":"u1"}"#)
+        #expect(Interconsulta.blockReason(episode: "e1", episodeData: deAlta, userId: "u1")
+                == "El paciente está de alta: si vuelve, abre una consulta nueva")
         for estado in ["enviada", "en_triage", "derivada", "en_revisión_solicitada"] {
             let ajena = try episodio(#"{"estado":"\#(estado)","medico_primario_id":"u2"}"#)
             #expect(Interconsulta.blockReason(episode: "e1", episodeData: ajena, userId: "u1") == nil)
         }
+    }
+}
+
+/// «Dar de alta» (PAPER §35.2): el cuerpo, el 409 y cuándo se puede.
+struct DarDeAltaTests {
+    private func api(_ servidor: ServidorFalso) -> CEPIAPI {
+        let red = URLSessionConfiguration.ephemeral
+        red.protocolClasses = [ProtocoloFalso.self]
+        let base = URL(string: "https://\(servidor.host)")!
+        let credenciales = Credenciales(cuenta: "prueba-\(UUID().uuidString)")
+        return CEPIAPI(cliente: APIClient(base: base, baseBot: base, credenciales: credenciales, configuracion: red))
+    }
+
+    private func episodio(_ data: String) throws -> Registro {
+        try JSONDecoder().decode(Registro.self, from: Data(#"{"id":"e1","data":\#(data)}"#.utf8))
+    }
+
+    /// El mismo cuerpo que ContratoTest.kt.
+    @Test func cuerpoDelPedido() throws {
+        let cuerpo = try JSONEncoder().encode(PatientDischargeRequest(episodio: "e1", nota: "  Lesión resuelta\n"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == ["episode_id": "e1", "nota": "Lesión resuelta"])
+        let sinNota = try JSONEncoder().encode(PatientDischargeRequest(episodio: "e1"))
+        #expect(try JSONSerialization.jsonObject(with: sinNota) as? [String: String] == ["episode_id": "e1", "nota": ""])
+    }
+
+    @Test func daDeAlta() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/episodio/alta", .http(200, #"{"ok":true}"#))
+        try await api(servidor).dischargePatient(PatientDischargeRequest(episodio: "e1", nota: "Sin controles"))
+        let cuerpo = try #require(servidor.cuerpo(de: "POST /api/bot/episodio/alta"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == ["episode_id": "e1", "nota": "Sin controles"])
+    }
+
+    @Test func un409TraeElMotivoTalCual() async {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("POST /api/bot/episodio/alta", .http(409, #"{"ok":false,"error":"Este paciente ya está de alta"}"#))
+        do {
+            try await api(servidor).dischargePatient(PatientDischargeRequest(episodio: "e1"))
+            Issue.record("debía fallar")
+        } catch {
+            #expect((error as? APIError)?.status == 409)
+            #expect(error.localizedDescription == "Este paciente ya está de alta")
+        }
+    }
+
+    @Test func motivosDelBotonComoLaWeb() throws {
+        #expect(PatientDischarge.blockReason(episode: nil, episodeData: nil)
+                == "Elige un paciente con una consulta abierta")
+        #expect(PatientDischarge.blockReason(episode: "e1", episodeData: nil)
+                == "Cargando el estado de la consulta…")
+        #expect(PatientDischarge.blockReason(episode: "e1", episodeData: try episodio(#"{"estado":"alta"}"#))
+                == "Este paciente ya está de alta. Si vuelve, abre una consulta nueva")
+        for estado in ["en_curso", "enviada", "derivada", "respondida", "cerrado"] {
+            #expect(PatientDischarge.blockReason(episode: "e1", episodeData: try episodio(#"{"estado":"\#(estado)"}"#)) == nil)
+        }
+        #expect(PatientDischarge.help(patientName: "Ana Ruiz").contains("Desde mañana Ana Ruiz no sale en la lista"))
+        #expect(PatientDischarge.help(patientName: nil).contains("Desde mañana el paciente no sale en la lista"))
     }
 }
