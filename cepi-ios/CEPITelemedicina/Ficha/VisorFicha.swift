@@ -49,7 +49,8 @@ private struct WebFicha: UIViewRepresentable {
 }
 
 /// La ficha clínica como documento: la hoja imprimible de la web, editable, paginada por
-/// consulta y con lo que cambió respecto de la anterior en rojo (PAPER §24.2).
+/// consulta y con lo que cambió respecto de la anterior en rojo (PAPER §24.2). La sección
+/// Ficha del paciente es la editable (`PatientFichaView`); este visor se abre desde «Imprimir».
 struct VisorFicha: View {
     let pacienteId: String
     let nombre: String

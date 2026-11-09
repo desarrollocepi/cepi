@@ -101,6 +101,21 @@ struct CEPIAPI: Sendable {
         return try await cliente.post("/api/bot/chat", json: TurnoChat(message: "", sessionId: sesion, formulario: envio))
     }
 
+    /// La ficha editable (PAPER §24.2.1): los grupos en orden con su formulario prellenado.
+    /// Hace falta al menos uno de los dos ids; sin consulta salen solo los datos del paciente.
+    func fullFicha(episode: String?, patient: String?) async throws -> FullFicha {
+        var query: [URLQueryItem] = []
+        if let episode { query.append(URLQueryItem(name: "episode_id", value: episode)) }
+        if let patient { query.append(URLQueryItem(name: "patient_id", value: patient)) }
+        return try await cliente.get("/api/bot/ficha", query: query)
+    }
+
+    /// Guarda un grupo de la ficha desde la sección Ficha. Acción explícita: sin gate. Un 400
+    /// (campo desconocido, grupo de fotos) llega como `APIError` con el motivo del bot.
+    func saveFichaGroup(_ save: FichaGroupSave) async throws -> FichaGroupSaveResult {
+        try await cliente.post("/api/bot/ficha/grupo", json: save)
+    }
+
     /// Guarda las observaciones de una ficha desde la evolución (PAPER §28.3). Un fallo llega
     /// como `APIError` con el mensaje del bot.
     func saveObservations(episodio: String, paciente: String, texto: String) async throws {

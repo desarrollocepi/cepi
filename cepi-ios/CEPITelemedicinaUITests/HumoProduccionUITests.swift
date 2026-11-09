@@ -37,25 +37,23 @@ final class HumoProduccionUITests: XCTestCase {
         StackLocal.esperarHiloAbierto(app)
         captura(app, "2 chat")
 
-        // Evolución desde el menú del paciente: el documento evolucion.html.
+        // Evolución desde el menú del paciente: la sección nativa (PAPER §28.3).
         acciones.tap()
         let evolucionMenu = app.buttons["Evolución del paciente"]
         XCTAssertTrue(evolucionMenu.waitForExistence(timeout: 10), "No está «Evolución del paciente» en el menú")
         evolucionMenu.tap()
-        esperarDocumento(app, "Ficha de Evolución")
+        esperarTexto(app, "Evolución del paciente")
         captura(app, "3 evolucion desde el menu")
-        app.buttons["Cerrar"].firstMatch.tap()
 
-        // Ficha (ficha.html) y su botón Evolución.
+        // Ficha editable y su botón Evolución.
         app.buttons["Ficha"].firstMatch.tap()
-        esperarDocumento(app, "Historia Cl")
+        esperarTexto(app, "grupos con dato")
         captura(app, "4 ficha")
         let evolucionFicha = app.buttons["Evolución"].firstMatch
         XCTAssertTrue(evolucionFicha.waitForExistence(timeout: 20), "No está el botón Evolución en la ficha")
         evolucionFicha.tap()
-        esperarDocumento(app, "Ficha de Evolución")
+        esperarTexto(app, "Evolución del paciente")
         captura(app, "5 evolucion desde la ficha")
-        app.buttons["Cerrar"].firstMatch.tap()
 
         // Imágenes.
         app.buttons["Imágenes"].firstMatch.tap()
@@ -64,11 +62,9 @@ final class HumoProduccionUITests: XCTestCase {
     }
 
     @MainActor
-    private func esperarDocumento(_ app: XCUIApplication, _ titulo: String) {
-        let texto = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", titulo)).firstMatch
-        XCTAssertTrue(texto.waitForExistence(timeout: 60), "No cargó el documento «\(titulo)»")
-        // El llenado llega después de la carga.
-        RunLoop.current.run(until: .now.addingTimeInterval(3))
+    private func esperarTexto(_ app: XCUIApplication, _ texto: String) {
+        let elemento = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", texto)).firstMatch
+        XCTAssertTrue(elemento.waitForExistence(timeout: 60), "No apareció «\(texto)»")
     }
 
     @MainActor

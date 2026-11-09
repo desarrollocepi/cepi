@@ -21,7 +21,9 @@ struct PacienteView: View {
     @State private var mostrarSecciones = false
     @State private var mostrarDerivar = false
     /// La ficha que se eligió en la evolución: la sección Ficha va a esa.
-    @State private var fichaPedida: String?
+    @State private var fichaPedida: EpisodeRequest?
+    /// La consulta a la vista en la sección Ficha: la Evolución la resalta.
+    @State private var shownEpisode: String?
     /// Sube cada vez que la Evolución vuelve a la vista: entre una vez y otra se pudo guardar
     /// un diagnóstico, así que se vuelve a pedir (PAPER §28.3).
     @State private var evolutionReload = 0
@@ -93,24 +95,26 @@ struct PacienteView: View {
                 HiloView(fila: fila, modelo: modelo)
                     .tag(Seccion.chat)
 
-                VisorFicha(
-                    pacienteId: fila.id,
-                    nombre: fila.nombre,
-                    episodioActivo: modelo.episodioActivo,
-                    embebido: true,
-                    episodioPedido: fichaPedida,
-                    onShowEvolution: { seccion = .evolucion }
+                // La ficha editable y adaptable, como la pestaña de la web (PAPER §24.2.1);
+                // el documento imprimible queda detrás de «Imprimir».
+                PatientFichaView(
+                    patientId: fila.id,
+                    name: fila.nombre,
+                    activeEpisode: modelo.episodioActivo,
+                    request: fichaPedida,
+                    onShowEvolution: { seccion = .evolucion },
+                    onEpisodeShown: { shownEpisode = $0 }
                 ) { datos, episodio in
                     await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
                 }
                 .tag(Seccion.ficha)
 
-                EvolucionView(
-                    pacienteId: fila.id,
-                    actual: fichaPedida ?? modelo.episodioActivo,
-                    recarga: evolutionReload
+                PatientEvolutionView(
+                    patientId: fila.id,
+                    current: shownEpisode ?? modelo.episodioActivo,
+                    reload: evolutionReload
                 ) { episodio in
-                    fichaPedida = episodio
+                    fichaPedida = EpisodeRequest(episode: episodio)
                     seccion = .ficha
                 }
                 .tag(Seccion.evolucion)

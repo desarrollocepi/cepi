@@ -111,7 +111,11 @@ final class RevisorUITests: XCTestCase {
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Apple \(sufijo)")).firstMatch.tap()
         XCTAssertTrue(caja.waitForExistence(timeout: 60), "No se reabrió el hilo del paciente")
         app.buttons["Ficha"].tap()
-        XCTAssertTrue(app.buttons["Guardar"].waitForExistence(timeout: 60), "No se abrió la ficha del paciente")
+        XCTAssertTrue(
+            app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "grupos con dato")).firstMatch
+                .waitForExistence(timeout: 60),
+            "No se abrió la ficha del paciente"
+        )
 
         // Y a Imágenes, la tercera sección.
         app.buttons["Imágenes"].tap()

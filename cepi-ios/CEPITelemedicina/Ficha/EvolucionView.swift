@@ -7,9 +7,8 @@ import WebKit
 /// va resaltada; tocar otra la abre. Se pide cada vez que se abre: entre una vez y otra se pudo
 /// guardar un diagnóstico.
 ///
-/// Es la sección Evolución del paciente (PAPER §24.2.1 y §28.3): el menú del paciente y el
-/// botón de la barra de la ficha llevan a ella, no abren una hoja. Las observaciones se editan
-/// acá.
+/// Es el documento imprimible: la sección Evolución del paciente es nativa
+/// (`PatientEvolutionView`, PAPER §28.3) y abre este visor desde «Imprimir».
 struct EvolucionView: View {
     let pacienteId: String
     /// La ficha abierta en el visor.
