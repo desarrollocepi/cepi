@@ -2106,7 +2106,7 @@ varios client IDs y el borrado de cuenta, abajo), ya existía:
 | pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
 | "revisar", a cargo y estado de la ficha | `GET /api/review-queue`, `GET /api/patient-assignments` → `{assignments: {<patient_id>: {assignee_name, source, estado}}}` | TodoERP |
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
-| ficha de evolución (§28) | `GET /api/patient-evolution?patient_id=[&episode_id=]` → `{ok, data:[{episode_id, evolution_id, motivo, estado, es_inicial, fecha, medico, especialista, diagnostico, histopatologico, tratamiento, observaciones, hallazgos, proximo_control_fecha, proximo_control_motivo}]}` (§28.4) | TodoERP |
+| ficha de evolución (§28) | `GET /api/patient-evolution?patient_id=[&episode_id=]` → `{ok, data:[{episode_id, evolution_id, motivo, estado, es_inicial, fecha, medico, especialista, diagnostico, diagnostico_histopatologico, tratamiento, observaciones, hallazgos, proximo_control_fecha, proximo_control_motivo}]}` (§28.4) | TodoERP |
 | agregar evolución (§28.4) | `POST /api/bot/episodio/evolucion` · `POST /api/bot/evolucion/editar` | cepi-bot |
 | turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
 | sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |
@@ -3065,7 +3065,7 @@ a la misma ficha y se le agrega una evolución; una ficha tiene varias citas.
 
 **Leer** (TodoERP): `GET /api/patient-evolution?patient_id=[&episode_id=]` sigue con la misma
 forma de fila y suma campos: `{episode_id, evolution_id|null, motivo, estado, es_inicial,
-fecha, medico, especialista, diagnostico, histopatologico, tratamiento, observaciones,
+fecha, medico, especialista, diagnostico, diagnostico_histopatologico, tratamiento, observaciones,
 hallazgos, proximo_control_fecha, proximo_control_motivo}`. Una fila por evolución registrada;
 la ficha sin evoluciones da una fila armada con `evolution_id = null`. Orden: fichas de la más
 nueva a la más vieja y, dentro de cada una, evoluciones de la más nueva a la más vieja. Con
