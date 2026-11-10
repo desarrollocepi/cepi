@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Alta mínima: nombre, apellidos y cédula, igual que ChatList.vue. El resto de la ficha lo
-/// pide el asistente después.
+/// Alta mínima: nombre, apellidos, cédula y celular (email opcional), igual que ChatList.vue
+/// (PAPER §36.1). El celular es para avisarle de sus citas. El resto de la ficha lo pide el
+/// asistente después.
 struct NuevoPacienteView: View {
     let alCrear: @MainActor (Registro) async -> Void
 
@@ -10,11 +11,13 @@ struct NuevoPacienteView: View {
     @State private var nombre = ""
     @State private var apellidos = ""
     @State private var cedula = ""
+    @State private var celular = ""
+    @State private var email = ""
     @State private var creando = false
     @State private var error: String?
 
-    private var completo: Bool {
-        [nombre, apellidos, cedula].allSatisfy { !limpio($0).isEmpty }
+    private var motivo: String? {
+        Contacto.blocker(nombre: nombre, apellidos: apellidos, cedula: cedula, celular: celular, email: email)
     }
 
     var body: some View {
@@ -28,8 +31,16 @@ struct NuevoPacienteView: View {
                     TextField("Cédula", text: $cedula)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
+                    TextField("Celular (09…)", text: $celular)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                    TextField("Email (opcional)", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 } footer: {
-                    Text("Los tres son obligatorios. El resto de la ficha lo completa el asistente.")
+                    Text(motivo ?? "El celular es para avisarle de sus citas. El resto de la ficha lo completa el asistente.")
                 }
                 if let error {
                     Section {
@@ -47,7 +58,7 @@ struct NuevoPacienteView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Crear") { Task { await crear() } }
-                        .disabled(!completo || creando)
+                        .disabled(motivo != nil || creando)
                 }
             }
             .interactiveDismissDisabled(creando)
@@ -62,7 +73,9 @@ struct NuevoPacienteView: View {
             let registro = try await sesion.api.crearPaciente(
                 nombre: limpio(nombre),
                 apellidos: limpio(apellidos),
-                cedula: limpio(cedula)
+                cedula: limpio(cedula),
+                celular: Contacto.normalizeMobile(celular) ?? limpio(celular),
+                email: limpio(email)
             )
             await alCrear(registro)
             cerrar()

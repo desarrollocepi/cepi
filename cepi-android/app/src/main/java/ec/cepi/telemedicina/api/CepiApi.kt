@@ -50,8 +50,11 @@ class CepiApi(val cliente: ApiClient) {
             "limit" to limite.toString(),
         ).data
 
-    /** Alta mínima; `title` = "Nombre Apellidos" para que sea ubicable por nombre en el ERP. */
-    suspend fun crearPaciente(nombre: String, apellidos: String, cedula: String): Registro =
+    /**
+     * Alta mínima; `title` = "Nombre Apellidos" para que sea ubicable por nombre en el ERP. El
+     * celular va en `telefono` (PAPER §36.1); el email solo si se escribió.
+     */
+    suspend fun crearPaciente(nombre: String, apellidos: String, cedula: String, celular: String, email: String = ""): Registro =
         cliente.post<Uno<Registro>>("/api/entities", buildJsonObject {
             put("record_type", "business")
             put("entity_id", DEFINICION_PACIENTE)
@@ -60,6 +63,8 @@ class CepiApi(val cliente: ApiClient) {
                 put("nombre", nombre)
                 put("apellidos", apellidos)
                 put("cedula", cedula)
+                put("telefono", celular)
+                if (email.isNotBlank()) put("email", email)
             }
             put("active", true)
         }).data

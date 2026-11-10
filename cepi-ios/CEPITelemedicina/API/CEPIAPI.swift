@@ -46,11 +46,14 @@ struct CEPIAPI: Sendable {
     }
 
     /// Alta mínima; `title` = "Nombre Apellidos" para que sea ubicable por nombre en el ERP.
-    func crearPaciente(nombre: String, apellidos: String, cedula: String) async throws -> Registro {
+    /// El celular va en `telefono` (PAPER §36.1); el email solo si se escribió.
+    func crearPaciente(nombre: String, apellidos: String, cedula: String, celular: String, email: String = "") async throws -> Registro {
+        var data = ["nombre": nombre, "apellidos": apellidos, "cedula": cedula, "telefono": celular]
+        if !email.isEmpty { data["email"] = email }
         let alta = AltaRegistro(
             definicion: Self.definicionPaciente,
             title: "\(nombre) \(apellidos)".trimmingCharacters(in: .whitespaces),
-            data: ["nombre": nombre, "apellidos": apellidos, "cedula": cedula]
+            data: data
         )
         let creado: Uno<Registro> = try await cliente.post("/api/entities", json: alta)
         return creado.data
