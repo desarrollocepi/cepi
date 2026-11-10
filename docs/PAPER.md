@@ -3384,3 +3384,54 @@ confirmación y nota opcional; gris con el motivo cuando no aplica.
 `/api/patient-assignments` devuelve `alta_at` de la consulta más reciente. La lista no
 muestra a quien está de alta desde antes de hoy; sí aparece si se lo busca por nombre o
 cédula, y en el filtro «Alta». Una consulta nueva lo devuelve a la lista.
+
+## 36. Celular del paciente y aviso de cita (pedido del dueño, 2026-11-10)
+
+**Pedido.** En el registro del paciente, el celular es obligatorio y el email opcional,
+para poder avisarle. Cuando se le agenda una cita nueva, se le avisa.
+
+### 36.1 Registro
+
+- Campo `telefono` del paciente: la etiqueta pasa a **«Celular»**. La clave no cambia (el
+  espejo DrPro, la ficha y el MSP-053 ya la usan). `email` sigue igual.
+- **Obligatorio en el alta**, no en la entidad: los formularios de «Nuevo paciente» del bot
+  (web, Telegram, WhatsApp), de la lista de la web, de iOS y de Android piden Celular
+  (obligatorio) y Email (opcional). La entidad lo deja `optional` porque el espejo DrPro y
+  los informes de patología crean pacientes sin celular, y un `required` los rompería, y
+  rompería editar a los pacientes viejos.
+- Validación: celular de Ecuador `09XXXXXXXX` (10 dígitos), o internacional con `+` y 8 a
+  15 dígitos. Se aceptan espacios y guiones. Email: el formato de siempre.
+- Para enviar, el número se convierte a E.164 sin `+`: `0991234567` → `593991234567`.
+
+### 36.2 Qué es «agendar una cita»
+
+En CEPI una cita nueva es el **próximo control** de la ficha (`proximo_control_fecha`,
+§33): lo fija el médico al llenar la ficha, al agregar una evolución (§28.4) o al editarla.
+El aviso sale cuando esa fecha **cambia a una fecha de hoy o futura** (Ecuador). No sale:
+
+- si la fecha no cambió (guardar la ficha otra vez no repite el aviso);
+- si la fecha es pasada (cargar historia vieja);
+- si quien escribe es una cuenta de servicio (espejo DrPro, importadores): DrPro avisa por
+  su cuenta y el espejo traería avisos de citas viejas.
+
+### 36.3 Cómo sale (TodoERP, genérico + hook médico)
+
+- **Destinatario externo en los recordatorios.** `reminders.recipient JSONB` (migración
+  030): `{name, phone, email, whatsapp: {template, language, params[]}}`, para avisar a
+  alguien que no es usuario. Los drivers `email` y `whatsapp` usan `recipient` cuando está;
+  si no, al dueño (`owner_user_id`) como siempre.
+- **Driver `whatsapp`** (nuevo): mensaje de **plantilla** por WhatsApp Cloud API
+  (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, los mismos del bot). Meta solo deja que la
+  empresa escriba primero con una plantilla aprobada: `cita_agendada` (UTILITY, `es`):
+  «Hola {{1}}, tu próxima cita en CEPI quedó agendada para el {{2}} con {{3}}. Motivo:
+  {{4}}. Si necesitas cambiarla, responde a este mensaje.» Sin token o sin celular, el
+  canal se omite (no falla).
+- **Hook `episode_appointment_notice`** (`hooks/medical.ts`), en `on_create` y
+  `on_update` del episodio. Un evento admite ahora una lista de hooks
+  (`"on_update": ["episode_close_followup", "episode_appointment_notice"]`). Inserta un
+  recordatorio con vencimiento inmediato, canales `["whatsapp","email"]` y el
+  `recipient` del paciente; el planificador lo manda en ≤ 30 s, con sus reintentos. Deja
+  una nota en el chatter del episodio: a qué celular/email se avisó, o que el paciente no
+  tiene ninguno.
+- El email sale por Brevo desde `desarrollo@cepi.ec` (asunto «Tu próxima cita en CEPI:
+  <fecha>»), con el mismo texto que la plantilla.
