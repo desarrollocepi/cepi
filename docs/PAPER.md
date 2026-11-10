@@ -1373,7 +1373,7 @@ Todas las decisiones estratégicas v1 han sido resueltas. Las **D-Aux** son nuev
 | **D-Aux-25** | Consola de administración | La administración (usuarios, roles, permisos, organizaciones) sale de la PWA médica a `console.cepi.ec`: app propia, dominio propio y **repositorio propio** (`desarrollocepi/cepi-console`), con su propio CI. Backend compartido (TodoERP), despliegue independiente. La consola **no muestra datos clínicos**, lo que alinea D-1 por construcción. En la PWA queda el botón Admin, que abre la consola en otra pestaña. Ver §26. |
 | **D-Aux-26** | Identidades de chat | Quien escribe por WhatsApp/Telegram es una **cuenta hijo**: fila de `users` que **no inicia sesión** y cuelga de una cuenta padre por `parent_user_id`. Vincular es apuntar, no fusionar — se descartó el merge destructivo al medir las **34 FKs** que apuntan a `users(id)` (reescribir `created_by` de la historia clínica, sin vuelta atrás). Un desconocido que escribe crea una identidad sin padre en rol `pendiente`, sin acceso clínico. El token de chat pasa a llevar `org_id` y el bot queda acotado a una organización, con cuenta de servicio propia y permiso granular `auth:external:resolve` en vez del comodín. Ver §27. |
 | **D-Aux-27** | Roles por organización | El rol clínico vive en la membresía (`user_organizations.role_id`, NULL = hereda el general): la misma persona puede tener roles distintos en cada org, y cada org acota cuáles ofrece (`organizations.data.roles`). Los roles de **sistema** (`roles.global_scope`: superadmin, gestión de orgs, cuentas de servicio) no pertenecen a ninguna org: viven en `users.role_id`, se suman en todas y no se asignan por org. Ver §13.8. |
-| **D-Aux-28** | Ficha de evolución | Cada paciente tiene una ficha de evolución: una fila por ficha (episodio) con **fecha, médico, diagnóstico y tratamiento**, la más nueva primero. Se consulta desde cualquier ficha, plegada encima de la barra de episodios, y tocar una fila abre esa ficha. No es una entidad nueva: se arma al leer los episodios. La sirve TodoERP (`GET /api/patient-evolution`) porque el nombre del médico no se puede resolver en el cliente. Ver §28. |
+| **D-Aux-28** | Ficha de evolución | **Corregido 2026-11-09 (§28.4): una ficha (episodio) tiene varias evoluciones (citas), entidad `evolution`; agregar una actualiza lo vigente del episodio.** Antes: cada paciente tiene una ficha de evolución: una fila por ficha (episodio) con **fecha, médico, diagnóstico y tratamiento**, la más nueva primero. Se consulta desde cualquier ficha, plegada encima de la barra de episodios, y tocar una fila abre esa ficha. No es una entidad nueva: se arma al leer los episodios. La sirve TodoERP (`GET /api/patient-evolution`) porque el nombre del médico no se puede resolver en el cliente. Ver §28. |
 | **D-Aux-29** | Calificación de la atención por QR | Un QR impreso en la clínica, el mismo para todos, abre `#/calificar` en el teléfono del paciente. Sin sesión: escribe su cédula y califica de 1 a 5. Vale si tiene un episodio creado en las últimas 24 horas y no calificó ninguno de ellos; una atención más vieja dice «caducado». La nota vive en `record_ratings` (genérica, una por registro). Ver §29. |
 
 ---
@@ -2106,7 +2106,8 @@ varios client IDs y el borrado de cuenta, abajo), ya existía:
 | pacientes | `GET/POST /api/entities` (`entity_id=11000000-…`) | TodoERP |
 | "revisar", a cargo y estado de la ficha | `GET /api/review-queue`, `GET /api/patient-assignments` → `{assignments: {<patient_id>: {assignee_name, source, estado}}}` | TodoERP |
 | hilo | `GET /api/patient-thread?patient_id=` | TodoERP |
-| ficha de evolución (§28) | `GET /api/patient-evolution?patient_id=` → `{ok, data:[{episode_id, fecha, estado, medico, diagnostico, tratamiento}]}` | TodoERP |
+| ficha de evolución (§28) | `GET /api/patient-evolution?patient_id=[&episode_id=]` → `{ok, data:[{episode_id, evolution_id, motivo, estado, es_inicial, fecha, medico, especialista, diagnostico, histopatologico, tratamiento, observaciones, hallazgos, proximo_control_fecha, proximo_control_motivo}]}` (§28.4) | TodoERP |
+| agregar evolución (§28.4) | `POST /api/bot/episodio/evolucion` · `POST /api/bot/evolucion/editar` | cepi-bot |
 | turno | `POST /api/bot/chat {message, session_id, form_submission}` | cepi-bot |
 | sesiones propias | `GET /api/bot/sessions?patient_id=` | cepi-bot |
 | galería e imágenes del paciente | `GET /api/bot/galeria?q=&patient_id=&limit=&offset=` → `{ok, data:[{id, attachment_id, patient_id, paciente, cedula, episode_id, fecha, diagnostico, codigo_cie10, body_region, privada}], total}` | cepi-bot |
@@ -3004,6 +3005,83 @@ resaltada, y tocar otra fila abre esa ficha.
 
 El botón no se esconde nunca. Sin paciente resuelto sale deshabilitado con el motivo; sin
 fichas dice "todavía no tiene fichas registradas".
+
+### 28.4 Una ficha, varias evoluciones (corrección del dueño, 2026-11-09)
+
+**Pedido.** La evolución estaba mal concebida: era una fila por episodio. La evolución es parte
+del episodio. **Una ficha (episodio) tiene muchas evoluciones**: con el tiempo el paciente vuelve
+a la misma ficha y se le agrega una evolución; una ficha tiene varias citas.
+
+**Modelo.**
+
+- **Episodio = ficha de un motivo de consulta.** Se abre una vez («＋ Nueva consulta») y termina
+  con el alta (§35). Si el paciente vuelve por **otro** motivo, ficha nueva; si vuelve a
+  control del mismo, **evolución** en la misma ficha.
+- **Evolución = una cita dentro de la ficha.** Entidad nueva `evolution` («Evolución»,
+  `1a000000-0000-0000-0000-000000000000`, seed `025_evoluciones.sql`, mismo patrón que el
+  informe de patología, seed 014), de la org activa:
+
+  | campo | tipo | qué es |
+  |---|---|---|
+  | `episode_id` | relación → episodio (requerido) | la ficha a la que pertenece |
+  | `patient_id` | relación → paciente | para listar sin pasar por el episodio |
+  | `fecha` | fecha (requerido) | día de la cita, Ecuador |
+  | `medico_id` | usuario | quién atendió (quien la registra) |
+  | `atendio_nombre` | texto | nombre libre (espejo, o la evolución inicial de DrPro) |
+  | `hallazgos` | texto largo | lo que se encontró en la cita |
+  | `diagnostico` | texto | `"L40.0 — Psoriasis"`, como el campo CIE-10 de la ficha |
+  | `tratamiento` | texto largo | indicado en la cita |
+  | `observaciones` | texto largo | resumen libre |
+  | `proximo_control_fecha`, `proximo_control_motivo` | fecha, texto | el siguiente control |
+  | `es_inicial` | booleano | la foto de la primera cita (abajo) |
+
+- **La primera cita es la ficha misma.** Mientras la ficha no tenga evoluciones registradas,
+  su evolución es una sola fila armada con los campos del episodio, como antes (§28.1).
+- **Al agregar la primera evolución**, antes se guarda la primera cita como evolución
+  `es_inicial = true` con lo que dice el episodio en ese momento (fecha, médico /
+  `examinador_nombre`, diagnóstico, tratamiento, observaciones, próximo control). Así no se
+  pierde cuando el episodio pasa a mostrar lo vigente.
+- **La cabecera de la ficha muestra lo vigente** (decisión del dueño): agregar una evolución
+  actualiza en el episodio `diagnostico`, `tratamiento_resumen`, `observaciones` y
+  `proximo_control_fecha/motivo` con lo que trae (solo lo que trae). Lista, portal, ficha
+  imprimible y Controles (§33) siguen leyendo el episodio y ven lo último sin cambios.
+- **Citas de DrPro** (decisión del dueño): cada cita espejada sigue siendo su propio episodio
+  con su evolución inicial. DrPro no dice si es control o motivo nuevo.
+- **Datos existentes**: cada episodio queda como ficha con una evolución (la armada). No se
+  juntan episodios viejos.
+
+**Escribir** (cepi-bot, acción explícita, sin gate):
+
+- `POST /api/bot/episodio/evolucion {episode_id, fecha?, hallazgos?, diagnostico?,
+  tratamiento?, observaciones?, proximo_control_fecha?, proximo_control_motivo?}` →
+  `201 {ok, evolution_id}`. `fecha` por defecto hoy en Ecuador. Pide al menos uno de
+  hallazgos, diagnóstico, tratamiento u observaciones (400). 409 si la ficha está de alta
+  («Esta ficha está de alta: abre una consulta nueva»). Pasos: evolución inicial si no había
+  ninguna → evolución nueva (`medico_id` = quien la registra) → episodio vigente → nota en el
+  chatter «📝 Evolución del <fecha> por X».
+- `POST /api/bot/evolucion/editar {evolution_id, observaciones}` → `{ok}`. El ✏️ de
+  observaciones en una fila registrada. En la fila armada (sin evoluciones) sigue guardando
+  `g_7` del episodio, como hoy.
+
+**Leer** (TodoERP): `GET /api/patient-evolution?patient_id=[&episode_id=]` sigue con la misma
+forma de fila y suma campos: `{episode_id, evolution_id|null, motivo, estado, es_inicial,
+fecha, medico, especialista, diagnostico, histopatologico, tratamiento, observaciones,
+hallazgos, proximo_control_fecha, proximo_control_motivo}`. Una fila por evolución registrada;
+la ficha sin evoluciones da una fila armada con `evolution_id = null`. Orden: fichas de la más
+nueva a la más vieja y, dentro de cada una, evoluciones de la más nueva a la más vieja. Con
+`episode_id`, solo esa ficha. `especialista` va en la fila inicial (la respuesta de la
+interconsulta es de la ficha). El histopatológico de un informe va en la evolución de fecha
+más reciente que no pase la del informe (o la inicial). Las apps viejas, que leen solo las
+seis columnas, siguen funcionando: ven una fila por cita.
+
+**Dónde se ve** (web, iOS y Android): la sección **Evolución** muestra las evoluciones de la
+**ficha abierta** (la de la barra de episodios), con su cabecera: motivo, fecha de apertura y
+estado. Arriba, **«＋ Agregar evolución»** abre el formulario: fecha (hoy), hallazgos,
+diagnóstico (buscador CIE-10 como en la ficha), tratamiento, observaciones y próximo control.
+Deshabilitado con el motivo si la ficha está de alta. Debajo, plegadas, «Otras fichas del
+paciente»: una línea por ficha (motivo, fecha, estado, cuántas evoluciones); tocarla abre esa
+ficha. «＋ Nueva consulta» dice en su `title` que es para otro motivo de consulta; para un
+control, «＋ Agregar evolución». `evolucion.html` (Imprimir) agrupa por ficha.
 
 ---
 
