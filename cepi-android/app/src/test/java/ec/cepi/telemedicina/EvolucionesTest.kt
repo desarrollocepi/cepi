@@ -10,6 +10,8 @@ import ec.cepi.telemedicina.api.jsonCepi
 import ec.cepi.telemedicina.ficha.EpisodeEvolutions
 import ec.cepi.telemedicina.ficha.EvolutionDraft
 import ec.cepi.telemedicina.ficha.EvolutionGrouping
+import ec.cepi.telemedicina.ficha.NextControl
+import ec.cepi.telemedicina.ficha.NextControlStatus
 import ec.cepi.telemedicina.ficha.ObservationEdit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -194,5 +196,37 @@ class EvolucionesTest {
         api.editEvolution("v2", " Mejoría clara ")
         assertEquals("""{"evolution_id":"v2","observaciones":"Mejoría clara"}""", s.cuerpo("POST /api/bot/evolucion/editar"))
         assertFalse(CepiApi.editEvolutionBody("v2", "").toString().contains("episode_id"))
+    }
+
+    private fun next(fecha: String?, estado: String? = "en_seguimiento", hoy: String = "2026-11-09") =
+        NextControl.of(
+            EpisodeEvolutions(
+                "e1",
+                listOf(
+                    FilaEvolucion(episodio = "e1", estado = estado, proximoControlFecha = fecha, proximoControlMotivo = "Revisar lesión"),
+                    FilaEvolucion(episodio = "e1", estado = estado, proximoControlFecha = "2020-01-01"),
+                ),
+            ),
+            LocalDate.parse(hoy),
+        )
+
+    @Test
+    fun proximoControlConFecha() {
+        assertEquals(NextControlStatus.Overdue, next("2026-11-08").status)
+        assertEquals(NextControlStatus.Today, next("2026-11-09").status)
+        val n = next("2026-11-20")
+        assertEquals(NextControlStatus.Upcoming, n.status)
+        assertEquals(LocalDate.parse("2026-11-20"), n.date)
+        assertEquals("Revisar lesión", n.motivo)
+        assertNull(n.emptyText)
+    }
+
+    @Test
+    fun proximoControlSinFechaYAlta() {
+        val sin = next(null)
+        assertNull(sin.date)
+        assertNull(sin.status)
+        assertEquals("Sin próximo control indicado", sin.emptyText)
+        assertEquals("Ficha de alta: sin controles pendientes", next("", estado = "alta").emptyText)
     }
 }

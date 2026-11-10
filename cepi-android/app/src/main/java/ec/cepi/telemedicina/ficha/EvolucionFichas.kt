@@ -111,3 +111,36 @@ data class EvolutionDraft(
         fun start(episodeId: String, today: LocalDate = LocalDate.now()) = EvolutionDraft(episodeId, today.toString())
     }
 }
+
+/** Estado del próximo control respecto de hoy en el dispositivo. */
+enum class NextControlStatus(val label: String) { Overdue("Atrasado"), Today("Hoy"), Upcoming("Próximo") }
+
+/**
+ * El bloque «Próximo control» al pie de la evolución (PAPER §28.4): lo vigente es la evolución
+ * más nueva de la ficha abierta.
+ */
+data class NextControl(
+    val date: LocalDate?,
+    val motivo: String?,
+    val status: NextControlStatus?,
+    /** El texto cuando no hay fecha; `null` si la hay. */
+    val emptyText: String?,
+) {
+    companion object {
+        fun of(open: EpisodeEvolutions, today: LocalDate = LocalDate.now()): NextControl {
+            val latest = open.rows.firstOrNull()
+            val motivo = latest?.proximoControlMotivo?.takeIf(String::isNotBlank)
+            val date = Fechas.dia(latest?.proximoControlFecha)
+            if (date == null) {
+                val text = if (open.discharged) "Ficha de alta: sin controles pendientes" else "Sin próximo control indicado"
+                return NextControl(null, motivo, null, text)
+            }
+            val status = when {
+                date < today -> NextControlStatus.Overdue
+                date == today -> NextControlStatus.Today
+                else -> NextControlStatus.Upcoming
+            }
+            return NextControl(date, motivo, status, null)
+        }
+    }
+}

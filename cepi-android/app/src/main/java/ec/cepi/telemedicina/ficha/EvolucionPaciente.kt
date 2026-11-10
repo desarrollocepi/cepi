@@ -291,6 +291,7 @@ fun EvolutionPage(
                         )
                     }
                 }
+                open?.let { o -> item(key = "next-control") { NextControlBlock(NextControl.of(o)) } }
                 item(key = "others") {
                     OtherEpisodes(
                         others = others,
@@ -582,6 +583,27 @@ private fun Dato(etiqueta: String, valor: String?, vacio: Boolean) {
         Text(etiqueta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         valor?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = if (vacio) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+@Composable
+private fun NextControlBlock(next: NextControl) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Próximo control", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (next.date == null) {
+                Text(next.emptyText.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                val status = next.status!!
+                Text(
+                    "${ec.cepi.telemedicina.controles.FollowUpSchedule.longDate(next.date)} · ${status.label}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (status == NextControlStatus.Overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (status == NextControlStatus.Overdue) FontWeight.Bold else null,
+                )
+            }
+            next.motivo?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
