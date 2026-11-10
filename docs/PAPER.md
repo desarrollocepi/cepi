@@ -3083,6 +3083,14 @@ paciente»: una línea por ficha (motivo, fecha, estado, cuántas evoluciones); 
 ficha. «＋ Nueva consulta» dice en su `title` que es para otro motivo de consulta; para un
 control, «＋ Agregar evolución». `evolucion.html` (Imprimir) agrupa por ficha.
 
+**Próximo control al pie de la evolución** (pedido del dueño, 2026-11-09). En la misma sección
+Evolución, después de la lista de evoluciones de la ficha abierta, un bloque «Próximo control»
+con la fecha y qué hacer (`proximo_control_fecha` y `proximo_control_motivo` de la evolución más
+nueva de esa ficha, que es lo vigente del episodio) y su estado con la fecha local: atrasado
+(rojo), hoy o próximo, como en Controles (§33). Sin fecha: «Sin próximo control indicado», y
+si la ficha está de alta, «Ficha de alta: sin controles pendientes». No hace falta endpoint
+nuevo. Web, iOS, Android y `evolucion.html` (al pie de cada ficha).
+
 ---
 
 **Fin del documento.**
