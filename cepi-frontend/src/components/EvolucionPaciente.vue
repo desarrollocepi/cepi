@@ -152,6 +152,17 @@
           </table>
         </div>
 
+        <!-- Próximo control de la ficha abierta (PAPER §28.4): el de su evolución más nueva. -->
+        <div v-if="actual" class="evo-control" :class="nextControl.status ? `evo-control--${nextControl.status}` : null">
+          <strong>Próximo control</strong>
+          <template v-if="nextControl.date">
+            <span class="evo-control-fecha">{{ nextControl.date }}</span>
+            <span class="evo-control-estado">{{ nextControl.label }}</span>
+            <span class="evo-control-motivo">{{ nextControl.reason || 'Sin indicación de qué hacer' }}</span>
+          </template>
+          <span v-else class="evo-control-vacio">{{ nextControl.empty }}</span>
+        </div>
+
         <!-- Las otras fichas del paciente, plegadas: una línea por ficha. Tocarla la abre. -->
         <div class="evo-otras">
           <button
@@ -252,6 +263,19 @@ const fichas = computed(() => {
 });
 
 const actual = computed(() => fichas.value.find((g) => g.episode_id === props.episodeId) || fichas.value[0] || null);
+/** Próximo control vigente de la ficha abierta: el de su evolución más nueva (llegan la más nueva primero). */
+const nextControl = computed(() => {
+  const g = actual.value;
+  const latest = g?.filas[0] || null;
+  const date = latest?.proximo_control_fecha || null;
+  if (!date) {
+    return { date: null, empty: g?.estado === 'alta' ? 'Ficha de alta: sin controles pendientes' : 'Sin próximo control indicado' };
+  }
+  const today = hoyLocal();
+  const status = date < today ? 'atrasado' : (date === today ? 'hoy' : 'proximo');
+  const label = { atrasado: 'Atrasado', hoy: 'Hoy', proximo: 'Próximo' }[status];
+  return { date, status, label, reason: latest.proximo_control_motivo || null };
+});
 const otras = computed(() => fichas.value.filter((g) => g !== actual.value));
 
 const motivoNoAgregar = computed(() => {
@@ -450,4 +474,10 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
   .evo-tabla td::before { content: attr(data-col); font-size: 12px; font-style: normal; color: #64748b; }
   .evo-tabla td > .evo-especialista, .evo-tabla td > .evo-extra, .evo-tabla td > .evo-inicial { grid-column: 2; }
 }
+.evo-control { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-top: 10px; padding: 8px 10px; border-left: 4px solid #9CA3AF; background: rgba(0,0,0,0.03); border-radius: 4px; }
+.evo-control--atrasado { border-left-color: #DC2626; }
+.evo-control--atrasado .evo-control-estado { color: #DC2626; font-weight: 600; }
+.evo-control--hoy { border-left-color: var(--accent, #2563EB); }
+.evo-control--proximo { border-left-color: #16A34A; }
+.evo-control-vacio { opacity: 0.7; }
 </style>

@@ -251,3 +251,38 @@ describe('EvolucionPaciente — observaciones editables', () => {
     expect(w.findAll('tbody tr')[0].text()).toContain('Sin cambios');
   });
 });
+
+describe('Próximo control al pie de la evolución (PAPER §28.4)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 10, 9, 23, 30)); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('muestra fecha, motivo y estado de la evolución más nueva de la ficha abierta', async () => {
+    const w = await montar();
+    const b = w.find('.evo-control');
+    expect(b.text()).toContain('2027-01-20');
+    expect(b.text()).toContain('Dermatoscopia');
+    expect(b.text()).toContain('Próximo');
+    expect(b.classes()).toContain('evo-control--proximo');
+  });
+
+  it('atrasado y hoy se calculan con la fecha local', async () => {
+    api.listarEvolucion.mockResolvedValue({ data: [{ ...FILAS[0], proximo_control_fecha: '2026-11-08' }] });
+    let w = await montar();
+    expect(w.find('.evo-control').classes()).toContain('evo-control--atrasado');
+    expect(w.find('.evo-control').text()).toContain('Atrasado');
+    api.listarEvolucion.mockResolvedValue({ data: [{ ...FILAS[0], proximo_control_fecha: '2026-11-09' }] });
+    w = await montar();
+    expect(w.find('.evo-control').classes()).toContain('evo-control--hoy');
+  });
+
+  it('sin fecha: «Sin próximo control indicado»', async () => {
+    const w = await montar({ episodeId: 'ep1' });
+    expect(w.find('.evo-control').text()).toContain('Sin próximo control indicado');
+  });
+
+  it('ficha de alta sin fecha: «Ficha de alta: sin controles pendientes»', async () => {
+    api.listarEvolucion.mockResolvedValue({ data: [{ ...FILAS[2], estado: 'alta' }] });
+    const w = await montar();
+    expect(w.find('.evo-control').text()).toContain('Ficha de alta: sin controles pendientes');
+  });
+});

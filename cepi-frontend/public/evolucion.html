@@ -85,6 +85,9 @@
   tr.ficha-cab .motivo { font-weight: 700; }
   tr.ficha-cab .meta { color: #555; font-style: italic; margin-left: 6px; }
   tr.ficha-cab.actual td { background: #fff3c4; }
+  tr.ficha-control td { padding: 4px 6px 8px; font-size: 8.5pt; color: #333; border-bottom: 1px solid #5b9097; }
+  tr.ficha-control .control-estado { font-weight: 700; }
+  tr.ficha-control.control-atrasado .control-estado { color: #DC2626; }
   .extra { display: block; margin-top: 2px; font-size: 8pt; color: #3b6e75; }
 
   @media (max-width: 820px) {
@@ -234,7 +237,42 @@ function fillEvolucion(data) {
       tr.addEventListener('click', () => abrir(f.episode_id));
       tbody.appendChild(tr);
     }
+    tbody.appendChild(nextControlRow(g));
   }
+}
+
+/** 'YYYY-MM-DD' de hoy en la zona del dispositivo (nunca toISOString: da el día UTC). */
+function localToday(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Al pie de cada ficha, su próximo control: el de la evolución más nueva (PAPER §28.4). */
+function nextControlRow(g) {
+  const latest = g.filas[0] || {};
+  const date = latest.proximo_control_fecha || null;
+  const tr = document.createElement('tr');
+  tr.className = 'ficha-control';
+  const td = document.createElement('td');
+  td.colSpan = 6;
+  const title = document.createElement('strong');
+  title.textContent = 'Próximo control: ';
+  td.appendChild(title);
+  if (!date) {
+    td.appendChild(document.createTextNode(g.estado === 'alta' ? 'Ficha de alta: sin controles pendientes' : 'Sin próximo control indicado'));
+  } else {
+    const today = localToday();
+    const status = date < today ? 'atrasado' : (date === today ? 'hoy' : 'proximo');
+    tr.classList.add('control-' + status);
+    const label = document.createElement('span');
+    label.className = 'control-estado';
+    label.textContent = { atrasado: 'Atrasado', hoy: 'Hoy', proximo: 'Próximo' }[status];
+    td.appendChild(document.createTextNode(date + ' '));
+    td.appendChild(label);
+    td.appendChild(document.createTextNode(' · ' + (latest.proximo_control_motivo || 'sin indicación de qué hacer')));
+  }
+  tr.appendChild(td);
+  return tr;
 }
 
 const ESTADOS = {
