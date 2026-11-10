@@ -35,7 +35,7 @@ import {
   TXT_CANCELAR, TXT_CANCELADO, TXT_TARDE,
   fetchConReintento,
 } from './canalAviso.js';
-import { cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
+import { cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, puedeSaltar, ultimoCampo, walkOptions, yaTieneValor, type FormWalk } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
 import { crearEco } from './canalEco.js';
@@ -802,7 +802,7 @@ async function procesarMensaje(invokeChat: InvokeChat, message: any, jwt: string
       }
       // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir restante»
       // termina la sección guardando lo contestado. Ninguno es el valor de un campo.
-      if (fichaWalk && /^\/?\s*(saltar|omitir)\s*$/i.test(answer)) {
+      if (puedeSaltar(activeWalk) && /^\/?\s*(saltar|omitir)\s*$/i.test(answer)) {
         activeWalk.idx++;
         await askWalkField(invokeChat, chatId);
         return;
@@ -1088,9 +1088,9 @@ async function askWalkField(invokeChat: InvokeChat, chatId: number): Promise<voi
   // contestado. Un «Omitir» a secas se leía como lo primero y hacía lo segundo,
   // perdiendo las respuestas. `fs:<campo>` lleva el índice, como `fw:`, para
   // ignorar el toque en un teclado viejo.
-  // (En el alta de paciente no hay «Saltar»: sus tres campos son obligatorios.)
+  // (En el alta de paciente solo el email, que es opcional, tiene «Saltar».)
   const actions = [
-    ...(w.form.submit_mode === 'structured' ? [{ text: 'Saltar', callback_data: `fs:${w.idx}` }] : []),
+    ...(puedeSaltar(w) ? [{ text: 'Saltar', callback_data: `fs:${w.idx}` }] : []),
     ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
       ? { text: 'Omitir restante', callback_data: 'omitir ficha' } : { text: a.label, callback_data: a.send }),
   ];

@@ -45,7 +45,7 @@ import {
   fetchConReintento,
 } from './canalAviso.js';
 import {
-  colaPorChat, cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
+  colaPorChat, cuerpoDeEnvio, esComando, esRelatoLibre, isWalkableForm, opcionEscrita, posicion, puedeSaltar, ultimoCampo, walkOptions, yaTieneValor, type FormWalk,
 } from './canalWalk.js';
 import { crearRegistroCrudo } from './canalRaw.js';
 import { extensionDe, marcadorAdjunto, nombreDeAdjunto, subirAdjunto } from './canalAdjuntos.js';
@@ -903,7 +903,7 @@ async function procesar(ctx: Turno, { texto, img, opcion }: Entrada): Promise<vo
     }
     // «saltar» / «omitir» dejan sin contestar ESTE campo; «omitir restante»
     // termina la sección. Ninguno es el valor de un campo.
-    if (walk.form.submit_mode === 'structured' && /^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
+    if (puedeSaltar(walk) && /^\/?\s*(saltar|omitir)\s*$/i.test(texto)) { walk.idx++; await askWalkField(ctx); return; }
     if (/^\/?\s*omitir\s+(restante|resto|ficha|secci[oó]n)\s*$/i.test(texto)) { await omitirSeccion(ctx, walk); return; }
     // Tampoco lo son los comandos que cambian o sueltan al paciente: tomarlos
     // como respuesta dejaría al médico atrapado en la sección («salir paciente»
@@ -1305,7 +1305,7 @@ async function askWalkField(ctx: Turno): Promise<void> {
   // lo segundo, perdiendo las respuestas.
   // (En el alta de paciente no hay «Saltar»: sus tres campos son obligatorios.)
   const acciones: Opcion[] = [
-    ...(w.form.submit_mode === 'structured' ? [{ label: 'Saltar', accion: 'saltar' as const }] : []),
+    ...(puedeSaltar(w) ? [{ label: 'Saltar', accion: 'saltar' as const }] : []),
     ...(w.form.actions || []).map(a => /^omitir/i.test(a.send || '')
       ? { label: 'Omitir restante', send: 'omitir ficha' } : { label: a.label, send: a.send }),
   ];

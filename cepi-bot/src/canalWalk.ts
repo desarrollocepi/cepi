@@ -98,6 +98,16 @@ export function posicion(w: FormWalk): { pos: number; n: number } {
   return { pos, n };
 }
 
+/**
+ * «Saltar» deja el campo actual sin contestar: vale en las secciones de la ficha
+ * y en un campo opcional de cualquier formulario (el email del alta de paciente).
+ */
+export function puedeSaltar(w: FormWalk): boolean {
+  if (w.form.submit_mode === 'structured') return true;
+  const f = w.form.fields[w.idx];
+  return !!f && f.type !== 'heading' && !f.required;
+}
+
 /** Índice del último campo que se pregunta: a él se vuelve si el envío no salió. */
 export function ultimoCampo(w: FormWalk): number {
   let i = w.form.fields.length - 1;

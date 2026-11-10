@@ -295,16 +295,20 @@ export async function listPatients({ limit = 500 } = {}) {
   return call(`/api/entities?${params.toString()}`, { method: 'GET' });
 }
 
-// Create a patient (contact). Schema requires only nombre; cédula is enforced
-// client-side. Returns the created record { id, data, ... }.
-export async function createPatient({ nombre, apellidos, cedula }) {
+// Create a patient (contact). Schema requires only nombre; cédula and celular
+// are enforced client-side (PAPER §36.1), email is optional. Returns the
+// created record { id, data, ... }.
+export async function createPatient({ nombre, apellidos, cedula, telefono, email }) {
+  const data = { nombre, apellidos, cedula };
+  if (telefono) data.telefono = telefono;
+  if (email) data.email = email;
   const res = await call('/api/entities', {
     method: 'POST',
     body: JSON.stringify({
       record_type: 'business',
       entity_id: '11000000-0000-0000-0000-000000000000',
       title: `${nombre} ${apellidos}`.trim(),
-      data: { nombre, apellidos, cedula },
+      data,
       active: true,
     }),
   });

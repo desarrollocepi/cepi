@@ -27,8 +27,10 @@
       <input v-model="cNombre" placeholder="Nombre *" autocomplete="off" />
       <input v-model="cApellido" placeholder="Apellido *" autocomplete="off" />
       <input v-model="cCedula" placeholder="Cédula *" autocomplete="off" />
+      <input v-model="cCelular" placeholder="Celular * (09…)" type="tel" inputmode="tel" autocomplete="off" />
+      <input v-model="cEmail" placeholder="Email (opcional)" type="email" inputmode="email" autocomplete="off" />
       <div class="cf-actions">
-        <button type="submit" :disabled="creating || !cNombre.trim() || !cApellido.trim() || !cCedula.trim()">{{ creating ? 'Creando…' : 'Crear' }}</button>
+        <button type="submit" :disabled="creating || !!createBlocker" :title="createBlocker || 'Crear el paciente'">{{ creating ? 'Creando…' : 'Crear' }}</button>
         <button type="button" class="cf-cancel" @click="showCreate = false">Cancelar</button>
       </div>
       <p v-if="createError" class="error">{{ createError }}</p>
@@ -143,6 +145,7 @@ import {
   listarPacientesArchivados, restaurarPaciente,
 } from '../api.js';
 import { ESTADOS_FICHA, estadoFicha, normalizar, altaVencida } from '../estadoFicha.js';
+import { normalizeMobile, isValidEmail, MOBILE_HINT } from '../contacto.js';
 
 const props = defineProps({
   activeId: { type: String, default: null },
@@ -310,18 +313,36 @@ const showCreate = ref(false);
 const cNombre = ref('');
 const cApellido = ref('');
 const cCedula = ref('');
+const cCelular = ref('');
+const cEmail = ref('');
 const creating = ref(false);
 const createError = ref('');
 
+// Por qué «Crear» está gris: lo obligatorio es nombre, apellido, cédula y celular
+// (PAPER §36.1); el email es opcional, pero si se escribe tiene que ser válido.
+const createBlocker = computed(() => {
+  if (!cNombre.value.trim() || !cApellido.value.trim() || !cCedula.value.trim() || !cCelular.value.trim()) {
+    return 'Faltan datos: nombre, apellido, cédula y celular son obligatorios';
+  }
+  if (!normalizeMobile(cCelular.value)) return `Celular no válido. ${MOBILE_HINT}`;
+  if (cEmail.value.trim() && !isValidEmail(cEmail.value)) return 'Email no válido (o déjalo vacío)';
+  return '';
+});
+
 async function create() {
-  if (!cNombre.value.trim() || !cApellido.value.trim() || !cCedula.value.trim()) return;
+  if (createBlocker.value) { createError.value = createBlocker.value; return; }
   creating.value = true;
   createError.value = '';
   try {
-    const p = await createPatient({ nombre: cNombre.value.trim(), apellidos: cApellido.value.trim(), cedula: cCedula.value.trim() });
+    const p = await createPatient({
+      nombre: cNombre.value.trim(), apellidos: cApellido.value.trim(), cedula: cCedula.value.trim(),
+      telefono: normalizeMobile(cCelular.value), email: cEmail.value.trim(),
+    });
     cNombre.value = '';
     cApellido.value = '';
     cCedula.value = '';
+    cCelular.value = '';
+    cEmail.value = '';
     showCreate.value = false;
     await load();
     if (p?.id) emit('select', p);

@@ -10,6 +10,7 @@ import { BotSession, saveSession } from './sessionStore.js';
 import { inspectAttachment } from './imageInspect.js';
 import { CONSENT_LABELS, createConsents, listConsents, type ConsentType } from './consentimientos.js';
 import { tipoEsperado, validarDeterminista } from './validarCampo.js';
+import { isValidEmail, MOBILE_HINT, normalizeMobile } from './contacto.js';
 
 const PATIENT_ENTITY_ID = '11000000-0000-0000-0000-000000000000';
 const EPISODE_ENTITY_ID = '12000000-0000-0000-0000-000000000000';
@@ -105,21 +106,39 @@ const PATIENT_SEARCH_FORM: BotForm = {
 };
 
 /**
- * New-patient form: two required fields submitted in a single turn.
- * The frontend interpolates the values into the `/nuevo-paciente` command
- * (the `||` separator keeps cédula and nombre unambiguous).
+ * New-patient form, submitted in a single turn. The frontend interpolates the
+ * values into the `/nuevo-paciente` command (the `||` separator keeps the
+ * fields unambiguous). Celular is required and email optional (PAPER §36.1):
+ * they are how the patient hears about appointments.
  */
-const PATIENT_NEW_FORM: BotForm = {
+export const PATIENT_NEW_FORM: BotForm = {
   id: 'patient_new',
   title: 'Nuevo paciente',
   fields: [
     { key: 'cedula', label: 'Cédula', placeholder: 'Ej: 12345678', required: true },
     { key: 'nombre', label: 'Nombres', placeholder: 'Ej: Juan', required: true },
     { key: 'apellidos', label: 'Apellidos', placeholder: 'Ej: Pérez', required: true },
+    { key: 'telefono', label: 'Celular', placeholder: 'Ej: 0991234567', required: true },
+    { key: 'email', label: 'Email (opcional)', placeholder: 'Ej: juan@correo.com', required: false },
   ],
   submit_label: 'Crear paciente',
-  submit_send: '/nuevo-paciente {cedula} || {nombre} || {apellidos}',
+  submit_send: '/nuevo-paciente {cedula} || {nombre} || {apellidos} || {telefono} || {email}',
 };
+
+/**
+ * Parses "/nuevo-paciente cédula || nombres || apellidos || celular || email".
+ * The last two parts may be missing (clients older than §36) or empty.
+ */
+export function parseNewPatientCommand(text: string): {
+  cedula: string; nombre: string; apellidos: string; telefono: string; email: string;
+} | null {
+  const m = text.match(/^\/?\s*nuevo-paciente\s+([\s\S]*)$/i);
+  if (!m) return null;
+  const parts = m[1].split('||').map((x) => x.trim());
+  if (parts.length < 3 || parts.length > 5) return null;
+  const [cedula, nombre, apellidos, telefono = '', email = ''] = parts;
+  return { cedula, nombre, apellidos, telefono, email };
+}
 
 // ── Ficha clínica (docs/ficha.html) — campos agrupados ─────────────────────
 // La ficha se recorre como grupos atómicos: un formulario por grupo, y cada
@@ -1219,18 +1238,27 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
 
   // ── patient / patient_info mode without active patient: search/new ───────
   if ((mode === 'patient' || mode === 'patient_info') && !session.active_patient_id) {
-    // New-patient form submission: "/nuevo-paciente <cedula> || <nombre> || <apellidos>".
-    const npm = trimmed.match(
-      /^\/?\s*nuevo-paciente\s+([\s\S]+?)\s*\|\|\s*([\s\S]+?)\s*\|\|\s*([\s\S]+)$/i,
-    );
-    if (npm) {
-      const cedula = npm[1].trim();
-      const nombre = npm[2].trim();
-      const apellidos = npm[3].trim();
-      if (!cedula || !nombre || !apellidos) {
-        const text = 'Faltan datos: cédula, nombres y apellidos son obligatorios.';
-        await appendAndSave(session, message, text, mcp);
-        return { text, form: PATIENT_NEW_FORM };
+    // New-patient form submission:
+    // "/nuevo-paciente <cedula> || <nombre> || <apellidos> || <celular> || <email>".
+    const np = parseNewPatientCommand(trimmed);
+    if (np) {
+      const { cedula, nombre, apellidos } = np;
+      const faltan = !cedula || !nombre || !apellidos || !np.telefono;
+      const telefono = normalizeMobile(np.telefono);
+      const email = np.email.trim();
+      const error = faltan
+        ? 'Faltan datos: cédula, nombres, apellidos y celular son obligatorios.'
+        : !telefono ? `El celular «${np.telefono}» no es válido. ${MOBILE_HINT}`
+        : email && !isValidEmail(email) ? `El email «${email}» no es válido. Corrígelo o déjalo vacío.`
+        : '';
+      if (error) {
+        await appendAndSave(session, message, error, mcp);
+        // Solo se rellena lo válido: Telegram y WhatsApp saltan los campos con valor,
+        // y un celular malo prellenado se reenviaría sin volver a preguntarlo.
+        const values: Record<string, string> = { cedula, nombre, apellidos };
+        if (telefono) values.telefono = np.telefono;
+        if (email && isValidEmail(email)) values.email = email;
+        return { text: error, form: { ...PATIENT_NEW_FORM, values } };
       }
       // On confirmation the server auto-activates the patient and, in
       // atención mode, opens a new episode + the ficha clínica (§3 form).
@@ -1242,7 +1270,7 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
           record_type: 'business',
           entity_id: PATIENT_ENTITY_ID,
           title: `${nombre} ${apellidos}`.trim(),
-          data: { cedula, nombre, apellidos },
+          data: { cedula, nombre, apellidos, telefono, ...(email ? { email } : {}) },
         },
         successMessage: isAttention
           ? `Listo, ${nombre} ${apellidos} quedó registrado. Abrimos la consulta — empecemos la ficha clínica:`
@@ -1252,7 +1280,8 @@ export async function handleV1Flow(ctx: Ctx): Promise<FlowResponse | null> {
       const userMsg = `Nuevo paciente: ${nombre} ${apellidos} · ${cedula}`;
       const text =
         `Crear paciente:\n  • Cédula: ${cedula}\n  • Nombres: ${nombre}\n` +
-        `  • Apellidos: ${apellidos}\n\n¿Confirmas?`;
+        `  • Apellidos: ${apellidos}\n  • Celular: ${telefono}\n` +
+        `  • Email: ${email || '—'}\n\n¿Confirmas?`;
       await appendAndSave(session, userMsg, text, mcp);
       // The confirmation card already carries ✓/✗ — no duplicate quick replies.
       // Clear the persisted patient_new form (form: null): we're now staging

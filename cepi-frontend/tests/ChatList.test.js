@@ -380,31 +380,58 @@ describe('ChatList — filas y acciones', () => {
     expect(w.findAll('.row.arch')).toHaveLength(1);
   });
 
-  it('alta: "Crear" deshabilitado hasta tener nombre, apellido y cédula; al crear lo selecciona', async () => {
+  it('alta: "Crear" deshabilitado hasta tener nombre, apellido, cédula y celular válido; al crear lo selecciona', async () => {
     api.createPatient.mockResolvedValue({ id: 'nuevo', data: { nombre: 'Nora', apellidos: 'Nueva', cedula: '0707' } });
     const w = await montar();
     await w.find('.newpat').trigger('click');
-    const [nombre, apellido, cedula] = w.findAll('.createform input');
+    const [nombre, apellido, cedula, celular, email] = w.findAll('.createform input');
     const crear = w.find('.createform button[type="submit"]');
     expect(crear.element.disabled).toBe(true);
     await nombre.setValue(' Nora ');
     await apellido.setValue('Nueva');
-    expect(crear.element.disabled).toBe(true);
     await cedula.setValue('0707');
+    expect(crear.element.disabled).toBe(true);
+    expect(crear.attributes('title')).toContain('celular son obligatorios');
+    await celular.setValue('12345');
+    expect(crear.element.disabled).toBe(true);
+    expect(crear.attributes('title')).toContain('Celular no válido');
+    await celular.setValue('099 123 4567');
+    expect(crear.element.disabled).toBe(false);
+    await email.setValue('nora@');
+    expect(crear.element.disabled).toBe(true);
+    expect(crear.attributes('title')).toContain('Email no válido');
+    await email.setValue('nora@correo.ec');
     expect(crear.element.disabled).toBe(false);
     await w.find('.createform').trigger('submit');
     await flushPromises();
-    expect(api.createPatient).toHaveBeenCalledWith({ nombre: 'Nora', apellidos: 'Nueva', cedula: '0707' });
+    expect(api.createPatient).toHaveBeenCalledWith({
+      nombre: 'Nora', apellidos: 'Nueva', cedula: '0707', telefono: '0991234567', email: 'nora@correo.ec',
+    });
     expect(w.emitted('select')[0][0].id).toBe('nuevo');
     expect(w.find('.createform').exists()).toBe(false);
+  });
+
+  it('alta: el email es opcional', async () => {
+    api.createPatient.mockResolvedValue({ id: 'nuevo2', data: {} });
+    const w = await montar();
+    await w.find('.newpat').trigger('click');
+    const [nombre, apellido, cedula, celular] = w.findAll('.createform input');
+    await nombre.setValue('Nora'); await apellido.setValue('Nueva'); await cedula.setValue('0707');
+    await celular.setValue('+593 99 123 4567');
+    await w.find('.createform').trigger('submit');
+    await flushPromises();
+    expect(api.createPatient).toHaveBeenCalledWith({
+      nombre: 'Nora', apellidos: 'Nueva', cedula: '0707', telefono: '0991234567', email: '',
+    });
   });
 
   it('alta: el error del backend se muestra en el formulario', async () => {
     api.createPatient.mockRejectedValue(new Error('cédula duplicada'));
     const w = await montar();
     await w.find('.newpat').trigger('click');
-    const campos = w.findAll('.createform input');
-    for (const c of campos) await c.setValue('x');
+    const [n, a, c, cel] = w.findAll('.createform input');
+    for (const x of [n, a, c]) await x.setValue('x');
+    await cel.setValue('0991234567');
     await w.find('.createform').trigger('submit');
     await flushPromises();
     expect(w.find('.createform .error').text()).toBe('cédula duplicada');
