@@ -125,6 +125,21 @@ struct CEPIAPI: Sendable {
         )
     }
 
+    /// Agrega una evolución (cita) a la ficha (PAPER §28.4). Acción explícita: sin gate. Un
+    /// 400 (sin contenido) o 409 (ficha de alta) llega como `APIError` con el motivo del bot.
+    func addEvolution(_ evolution: EvolutionCreate) async throws -> EvolutionCreateResult {
+        try await cliente.post("/api/bot/episodio/evolucion", json: evolution)
+    }
+
+    /// Edita las observaciones de una evolución registrada (PAPER §28.4). La fila armada (sin
+    /// `evolution_id`) sigue por `saveObservations` (`g_7`).
+    func editEvolution(id: String, observaciones: String) async throws {
+        let _: Confirmacion = try await cliente.post(
+            "/api/bot/evolucion/editar",
+            json: EvolutionEdit(evolutionId: id, observaciones: observaciones),
+        )
+    }
+
     /// El especialista responde la interconsulta (PAPER §30.2). Acción explícita: sin gate.
     /// Un 400/409 llega como `APIError` con el motivo del bot en español.
     func answerInterconsulta(_ respuesta: InterconsultaAnswer) async throws -> InterconsultaAnswerResult {
@@ -211,11 +226,13 @@ struct CEPIAPI: Sendable {
         return lista.data.sorted { ($0["fecha"] ?? "") > ($1["fecha"] ?? "") }
     }
 
-    /// Ficha de evolución: fecha, médico, diagnóstico y tratamiento de cada ficha (PAPER §28).
-    func evolucion(paciente: String) async throws -> [FilaEvolucion] {
-        let lista: Lista<FilaEvolucion> = try await cliente.get("/api/patient-evolution", query: [
-            URLQueryItem(name: "patient_id", value: paciente),
-        ])
+    /// Ficha de evolución (PAPER §28.4): una fila por evolución de cada ficha, fichas de la más
+    /// nueva a la más vieja y, dentro, evoluciones de la más nueva a la más vieja. Con
+    /// `episodio`, solo esa ficha.
+    func evolucion(paciente: String, episodio: String? = nil) async throws -> [FilaEvolucion] {
+        var query = [URLQueryItem(name: "patient_id", value: paciente)]
+        if let episodio { query.append(URLQueryItem(name: "episode_id", value: episodio)) }
+        let lista: Lista<FilaEvolucion> = try await cliente.get("/api/patient-evolution", query: query)
         return lista.data
     }
 

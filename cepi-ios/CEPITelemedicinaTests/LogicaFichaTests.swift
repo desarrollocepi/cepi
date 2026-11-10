@@ -127,12 +127,16 @@ struct LogicaFichaTests {
                 "episode_id": .texto("e2"), "fecha": .texto("2026-10-01"), "medico": .texto("Dra. Pérez"),
                 "especialista": .nulo, "diagnostico": .texto("L40.0"), "diagnostico_histopatologico": .nulo,
                 "tratamiento": .nulo, "observaciones": .nulo,
+                "evolution_id": .nulo, "motivo": .nulo, "estado": .nulo, "es_inicial": .booleano(false),
+                "hallazgos": .nulo, "proximo_control_fecha": .nulo, "proximo_control_motivo": .nulo,
             ]),
             .objeto([
                 "episode_id": .texto("e1"), "fecha": .texto("2026-08-15"), "medico": .texto("Dra. Pérez"),
                 "especialista": .texto("Dr. Mora"), "diagnostico": .texto("L43.9"),
                 "diagnostico_histopatologico": .texto("Dermatitis liquenoide"),
                 "tratamiento": .texto("Tacrolimus"), "observaciones": .texto("Control en 4 semanas"),
+                "evolution_id": .nulo, "motivo": .nulo, "estado": .nulo, "es_inicial": .booleano(false),
+                "hallazgos": .nulo, "proximo_control_fecha": .nulo, "proximo_control_motivo": .nulo,
             ]),
         ]))
     }

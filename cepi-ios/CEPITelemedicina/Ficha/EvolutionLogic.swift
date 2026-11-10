@@ -1,11 +1,119 @@
 import Foundation
 
-/// Las reglas de `EvolucionPaciente.vue` (la tabla adaptable de la web), sin UI, para poder
-/// probarlas (PAPER §28.1 y §28.3).
+/// Las reglas de `EvolucionPaciente.vue` (la sección Evolución de la web), sin UI, para poder
+/// probarlas (PAPER §28.1, §28.3 y §28.4: una ficha, varias evoluciones).
 enum EvolutionLogic {
-    static func summary(_ rows: [FilaEvolucion]) -> String {
-        rows.count == 1 ? "1 ficha" : "\(rows.count) fichas"
+    // MARK: Fichas y sus evoluciones
+
+    /// Una ficha (episodio) con sus evoluciones, de la más nueva a la más vieja.
+    struct EpisodeGroup: Equatable, Identifiable {
+        let episodeId: String
+        let rows: [FilaEvolucion]
+
+        var id: String { episodeId }
+
+        /// Motivo de consulta de la ficha: viene en cada fila; vale el primero con texto.
+        var motivo: String? { rows.lazy.compactMap { EvolutionLogic.nonEmpty($0.motivo) }.first }
+
+        var estado: String? { rows.lazy.compactMap { EvolutionLogic.nonEmpty($0.estado) }.first }
+
+        /// La fecha en que se abrió la ficha: la de la primera cita (la inicial o, si no está
+        /// marcada, la más vieja; en la ficha sin evoluciones, la de la fila armada).
+        var openedOn: String? {
+            if let initial = rows.first(where: \.esInicial) { return EvolutionLogic.nonEmpty(initial.fecha) }
+            return rows.reversed().lazy.compactMap { EvolutionLogic.nonEmpty($0.fecha) }.first
+        }
+
+        var isDischarged: Bool { estado == "alta" }
+
+        /// Cuántas citas tiene: la fila armada también es una (la ficha misma).
+        var count: Int { rows.count }
     }
+
+    /// Agrupa por ficha respetando el orden del servidor (fichas de la más nueva a la más vieja).
+    static func groups(_ rows: [FilaEvolucion]) -> [EpisodeGroup] {
+        var order: [String] = []
+        var byEpisode: [String: [FilaEvolucion]] = [:]
+        for row in rows {
+            if byEpisode[row.episodio] == nil { order.append(row.episodio) }
+            byEpisode[row.episodio, default: []].append(row)
+        }
+        return order.map { EpisodeGroup(episodeId: $0, rows: byEpisode[$0] ?? []) }
+    }
+
+    /// La ficha abierta: la de la barra de episodios; si no está entre las del paciente, la más
+    /// nueva.
+    static func openGroup(_ groups: [EpisodeGroup], current: String?) -> EpisodeGroup? {
+        groups.first { $0.episodeId == current } ?? groups.first
+    }
+
+    /// Las evoluciones de la ficha abierta.
+    static func openRows(_ rows: [FilaEvolucion], current: String?) -> [FilaEvolucion] {
+        openGroup(groups(rows), current: current)?.rows ?? []
+    }
+
+    /// «Otras fichas del paciente»: todas menos la abierta, en el mismo orden.
+    static func otherGroups(_ groups: [EpisodeGroup], current: String?) -> [EpisodeGroup] {
+        guard let open = openGroup(groups, current: current) else { return [] }
+        return groups.filter { $0.episodeId != open.episodeId }
+    }
+
+    static func countText(_ count: Int) -> String {
+        count == 1 ? "1 evolución" : "\(count) evoluciones"
+    }
+
+    static func summary(_ groups: [EpisodeGroup]) -> String {
+        groups.count == 1 ? "1 ficha" : "\(groups.count) fichas"
+    }
+
+    static func statusLabel(_ estado: String?) -> String {
+        guard let estado = nonEmpty(estado) else { return "Sin estado" }
+        let known = EstadoFicha(estado)
+        return known == .otro ? estado : known.etiqueta
+    }
+
+    /// Cabecera de la ficha abierta: motivo, fecha de apertura y estado.
+    static func headerTitle(_ group: EpisodeGroup) -> String {
+        group.motivo ?? "Sin motivo de consulta registrado"
+    }
+
+    static func headerDetail(_ group: EpisodeGroup) -> String {
+        "Abierta el \(group.openedOn ?? "—") · \(statusLabel(group.estado)) · \(countText(group.count))"
+    }
+
+    /// Una línea de «Otras fichas del paciente»: motivo, fecha, estado y cuántas evoluciones.
+    static func otherLine(_ group: EpisodeGroup) -> String {
+        [headerTitle(group), group.openedOn ?? "—", statusLabel(group.estado), countText(group.count)]
+            .joined(separator: " · ")
+    }
+
+    /// Etiqueta de la primera cita: la foto guardada al agregar la primera evolución, o la ficha
+    /// misma mientras no tenga evoluciones registradas.
+    static func rowBadge(_ row: FilaEvolucion) -> String? {
+        if row.isAssembled { return "Primera cita · datos de la ficha" }
+        if row.esInicial { return "Primera cita" }
+        return nil
+    }
+
+    // MARK: Agregar evolución
+
+    /// Por qué «＋ Agregar evolución» está deshabilitado, o `nil` si se puede. Nunca se esconde.
+    static func addBlockReason(group: EpisodeGroup?, loading: Bool = false) -> String? {
+        guard let group else {
+            return loading ? "Cargando la evolución…" : "Este paciente todavía no tiene fichas: abre una consulta nueva"
+        }
+        if group.isDischarged { return "Esta ficha está de alta: abre una consulta nueva" }
+        return nil
+    }
+
+    /// Por qué no se puede guardar el formulario, o `nil` si se puede.
+    static func submitBlockReason(_ evolution: EvolutionCreate, saving: Bool) -> String? {
+        if saving { return "Guardando…" }
+        if !evolution.hasContent { return "Escribe al menos hallazgos, diagnóstico, tratamiento u observaciones" }
+        return nil
+    }
+
+    // MARK: Celdas
 
     /// Una celda de la tarjeta: la etiqueta de su columna, el texto y si está vacía (gris).
     struct Cell: Equatable {
@@ -14,16 +122,23 @@ enum EvolutionLogic {
         let empty: Bool
     }
 
-    /// Las cinco primeras columnas de §28.1, con el texto de la web cuando no hay dato.
-    /// Observaciones va aparte: se edita en línea.
+    /// Las columnas de §28.1 más hallazgos y próximo control de §28.4, con el texto de la web
+    /// cuando no hay dato. Observaciones va aparte: se edita en línea.
     static func cells(_ row: FilaEvolucion) -> [Cell] {
         [
             cell("Fecha", row.fecha, empty: "—"),
             cell("Atendió", row.medico, empty: "—", blank: row.medico == nil && row.especialista == nil),
+            cell("Hallazgos", row.hallazgos, empty: "Sin hallazgos"),
             cell("Diagnóstico clínico", row.diagnostico, empty: "Sin diagnóstico"),
             cell("Diagnóstico histopatológico", row.diagnosticoHistopatologico, empty: "Sin biopsia"),
             cell("Tratamiento", row.tratamiento, empty: "Sin tratamiento"),
+            cell("Próximo control", nextControl(row), empty: "Sin próximo control"),
         ]
+    }
+
+    static func nextControl(_ row: FilaEvolucion) -> String? {
+        let parts = [nonEmpty(row.proximoControlFecha), nonEmpty(row.proximoControlMotivo)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " — ")
     }
 
     static func observationsText(_ row: FilaEvolucion) -> String {
@@ -41,6 +156,18 @@ enum EvolutionLogic {
     }
 
     // MARK: Observaciones en línea
+
+    /// Dónde guarda el ✏️ de una fila: la evolución registrada, o la sección 7 de la ficha si es
+    /// la fila armada (PAPER §28.4).
+    enum ObservationsTarget: Equatable {
+        case evolution(String)
+        case fichaGroup7(episode: String)
+    }
+
+    static func observationsTarget(_ row: FilaEvolucion) -> ObservationsTarget {
+        if let id = row.evolutionId { return .evolution(id) }
+        return .fichaGroup7(episode: row.episodio)
+    }
 
     /// Por qué el ✏️ de esa fila está deshabilitado: solo se edita una a la vez.
     static func editBlockReason(row: String, editing: String?) -> String? {
@@ -63,17 +190,11 @@ enum EvolutionLogic {
         return "Guardar en la ficha"
     }
 
-    /// Las filas con la observación guardada (recortada; vacía queda en `nil`).
-    static func applying(observations draft: String, to episode: String, in rows: [FilaEvolucion]) -> [FilaEvolucion] {
+    /// Las filas con la observación guardada en la fila `rowId` (recortada; vacía queda en `nil`).
+    static func applying(observations draft: String, to rowId: String, in rows: [FilaEvolucion]) -> [FilaEvolucion] {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         return rows.map { row in
-            guard row.episodio == episode else { return row }
-            return FilaEvolucion(
-                episodio: row.episodio, fecha: row.fecha, estado: row.estado, medico: row.medico,
-                especialista: row.especialista, diagnostico: row.diagnostico,
-                diagnosticoHistopatologico: row.diagnosticoHistopatologico, tratamiento: row.tratamiento,
-                observaciones: text.isEmpty ? nil : text
-            )
+            row.id == rowId ? row.with(observations: text.isEmpty ? nil : text) : row
         }
     }
 }

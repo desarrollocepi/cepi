@@ -112,7 +112,10 @@ struct PacienteView: View {
                 PatientEvolutionView(
                     patientId: fila.id,
                     current: shownEpisode ?? modelo.episodioActivo,
-                    reload: evolutionReload
+                    reload: evolutionReload,
+                    // Otra ficha elegida en la evolución: la barra de episodios la sigue sin
+                    // dejar la sección.
+                    onSelectEpisode: { fichaPedida = EpisodeRequest(episode: $0) }
                 ) { episodio in
                     fichaPedida = EpisodeRequest(episode: episodio)
                     seccion = .ficha
@@ -248,9 +251,14 @@ struct PacienteView: View {
 
     private var menuDeAcciones: some View {
         Menu {
-            Button("Nueva consulta", systemImage: "plus.bubble") {
+            // Una ficha por motivo de consulta (PAPER §28.4): un control del mismo motivo es
+            // «＋ Agregar evolución» en la sección Evolución.
+            Button {
                 seccion = .chat
                 Task { await modelo.enviar("nuevo episodio", api: sesion.api) }
+            } label: {
+                Label("＋ Nueva consulta", systemImage: "plus.bubble")
+                Text("Para otro motivo de consulta; para un control, «＋ Agregar evolución»")
             }
             .disabled(modelo.ocupado)
             Section("Ficha") {

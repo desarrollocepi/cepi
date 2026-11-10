@@ -223,28 +223,172 @@ struct BusquedaCIE: Decodable, Sendable {
 
 // MARK: Ficha de evolución (PAPER §28)
 
-/// Una fila de `GET /api/patient-evolution`: una ficha del paciente con lo que se lee para
-/// seguir el caso. El médico ya viene como nombre y cada campo ya cayó al que tenga dato según
-/// la fuente de la ficha (CEPI o espejo DrPro): la app solo lo pinta.
+/// Una fila de `GET /api/patient-evolution`: una evolución (cita) de una ficha del paciente
+/// (PAPER §28.4). Una ficha sin evoluciones registradas da una sola fila armada con los campos
+/// del episodio (`evolution_id = nil`). El médico ya viene como nombre y cada campo ya cayó al
+/// que tenga dato según la fuente de la ficha (CEPI o espejo DrPro): la app solo lo pinta.
+///
+/// Los campos de §28.4 son opcionales: un backend anterior manda solo una fila por ficha con
+/// las seis columnas de §28.1, y se lee como la fila armada de cada ficha.
 struct FilaEvolucion: Decodable, Sendable, Hashable, Identifiable {
     let episodio: String
     /// `YYYY-MM-DD`, como texto: no se convierte a fecha para no correrla de día.
     let fecha: String?
+    /// Estado de la ficha (episodio), no de la cita.
     let estado: String?
     let medico: String?
-    /// El especialista que respondió la derivación, si la hubo.
+    /// El especialista que respondió la derivación, si la hubo (va en la fila inicial).
     let especialista: String?
     let diagnostico: String?
     let diagnosticoHistopatologico: String?
     let tratamiento: String?
     let observaciones: String?
+    /// La evolución registrada; `nil` en la fila armada de una ficha sin evoluciones.
+    let evolutionId: String?
+    /// Motivo de consulta de la ficha.
+    let motivo: String?
+    /// La foto de la primera cita, guardada al agregar la primera evolución.
+    let esInicial: Bool
+    let hallazgos: String?
+    let proximoControlFecha: String?
+    let proximoControlMotivo: String?
 
-    var id: String { episodio }
+    /// Única aunque una ficha tenga varias filas: la armada es la única de su ficha.
+    var id: String { evolutionId ?? "episode:\(episodio)" }
+
+    /// Sin `evolution_id`: la primera cita sale de los campos del episodio y sus observaciones se
+    /// guardan en la sección 7 de la ficha (`g_7`).
+    var isAssembled: Bool { evolutionId == nil }
+
+    init(
+        episodio: String, fecha: String?, estado: String?, medico: String?, especialista: String?,
+        diagnostico: String?, diagnosticoHistopatologico: String?, tratamiento: String?, observaciones: String?,
+        evolutionId: String? = nil, motivo: String? = nil, esInicial: Bool = false, hallazgos: String? = nil,
+        proximoControlFecha: String? = nil, proximoControlMotivo: String? = nil
+    ) {
+        self.episodio = episodio
+        self.fecha = fecha
+        self.estado = estado
+        self.medico = medico
+        self.especialista = especialista
+        self.diagnostico = diagnostico
+        self.diagnosticoHistopatologico = diagnosticoHistopatologico
+        self.tratamiento = tratamiento
+        self.observaciones = observaciones
+        self.evolutionId = evolutionId
+        self.motivo = motivo
+        self.esInicial = esInicial
+        self.hallazgos = hallazgos
+        self.proximoControlFecha = proximoControlFecha
+        self.proximoControlMotivo = proximoControlMotivo
+    }
+
+    /// La misma fila con otras observaciones (recortadas; vacías quedan en `nil`).
+    func with(observations text: String?) -> FilaEvolucion {
+        FilaEvolucion(
+            episodio: episodio, fecha: fecha, estado: estado, medico: medico, especialista: especialista,
+            diagnostico: diagnostico, diagnosticoHistopatologico: diagnosticoHistopatologico,
+            tratamiento: tratamiento, observaciones: text, evolutionId: evolutionId, motivo: motivo,
+            esInicial: esInicial, hallazgos: hallazgos, proximoControlFecha: proximoControlFecha,
+            proximoControlMotivo: proximoControlMotivo
+        )
+    }
 
     enum CodingKeys: String, CodingKey {
         case episodio = "episode_id"
         case diagnosticoHistopatologico = "diagnostico_histopatologico"
-        case fecha, estado, medico, especialista, diagnostico, tratamiento, observaciones
+        /// §28.4 lo nombra `histopatologico`; el backend de §28.1 manda `diagnostico_histopatologico`.
+        case histopatologico
+        case evolutionId = "evolution_id"
+        case esInicial = "es_inicial"
+        case proximoControlFecha = "proximo_control_fecha"
+        case proximoControlMotivo = "proximo_control_motivo"
+        case fecha, estado, medico, especialista, diagnostico, tratamiento, observaciones, motivo, hallazgos
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        episodio = try c.decode(String.self, forKey: .episodio)
+        fecha = try c.decodeIfPresent(String.self, forKey: .fecha)
+        estado = try c.decodeIfPresent(String.self, forKey: .estado)
+        medico = try c.decodeIfPresent(String.self, forKey: .medico)
+        especialista = try c.decodeIfPresent(String.self, forKey: .especialista)
+        diagnostico = try c.decodeIfPresent(String.self, forKey: .diagnostico)
+        diagnosticoHistopatologico = try c.decodeIfPresent(String.self, forKey: .diagnosticoHistopatologico)
+            ?? c.decodeIfPresent(String.self, forKey: .histopatologico)
+        tratamiento = try c.decodeIfPresent(String.self, forKey: .tratamiento)
+        observaciones = try c.decodeIfPresent(String.self, forKey: .observaciones)
+        evolutionId = try c.decodeIfPresent(String.self, forKey: .evolutionId)
+        motivo = try c.decodeIfPresent(String.self, forKey: .motivo)
+        esInicial = try c.decodeIfPresent(Bool.self, forKey: .esInicial) ?? false
+        hallazgos = try c.decodeIfPresent(String.self, forKey: .hallazgos)
+        proximoControlFecha = try c.decodeIfPresent(String.self, forKey: .proximoControlFecha)
+        proximoControlMotivo = try c.decodeIfPresent(String.self, forKey: .proximoControlMotivo)
+    }
+}
+
+/// `POST /api/bot/episodio/evolucion` (PAPER §28.4): una evolución nueva en la ficha. Acción
+/// explícita: el bot guarda sin pedir sí/no. Lo vacío no viaja, porque la cabecera de la ficha
+/// se actualiza solo con lo que trae la evolución.
+struct EvolutionCreate: Encodable, Sendable, Equatable {
+    let episodeId: String
+    let fecha: String?
+    let hallazgos: String?
+    let diagnostico: String?
+    let tratamiento: String?
+    let observaciones: String?
+    let proximoControlFecha: String?
+    let proximoControlMotivo: String?
+
+    init(
+        episodeId: String, fecha: String?, hallazgos: String = "", diagnostico: String = "",
+        tratamiento: String = "", observaciones: String = "", proximoControlFecha: String? = nil,
+        proximoControlMotivo: String = ""
+    ) {
+        func clean(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        self.episodeId = episodeId
+        self.fecha = clean(fecha)
+        self.hallazgos = clean(hallazgos)
+        self.diagnostico = clean(diagnostico)
+        self.tratamiento = clean(tratamiento)
+        self.observaciones = clean(observaciones)
+        self.proximoControlFecha = clean(proximoControlFecha)
+        self.proximoControlMotivo = clean(proximoControlMotivo)
+    }
+
+    /// El bot pide al menos uno de estos cuatro (si no, 400).
+    var hasContent: Bool { [hallazgos, diagnostico, tratamiento, observaciones].contains { $0 != nil } }
+
+    enum CodingKeys: String, CodingKey {
+        case episodeId = "episode_id"
+        case proximoControlFecha = "proximo_control_fecha"
+        case proximoControlMotivo = "proximo_control_motivo"
+        case fecha, hallazgos, diagnostico, tratamiento, observaciones
+    }
+}
+
+/// Respuesta `201 {ok, evolution_id}` de `POST /api/bot/episodio/evolucion`.
+struct EvolutionCreateResult: Decodable, Sendable {
+    let ok: Bool
+    let evolutionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case evolutionId = "evolution_id"
+    }
+}
+
+/// `POST /api/bot/evolucion/editar`: el ✏️ de observaciones en una evolución registrada.
+struct EvolutionEdit: Encodable, Sendable, Equatable {
+    let evolutionId: String
+    let observaciones: String
+
+    enum CodingKeys: String, CodingKey {
+        case evolutionId = "evolution_id"
+        case observaciones
     }
 }
 

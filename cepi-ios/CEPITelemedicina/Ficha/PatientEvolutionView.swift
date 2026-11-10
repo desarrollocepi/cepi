@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// La sección Evolución del paciente (PAPER §28.3): nativa y adaptable, como
-/// `EvolucionPaciente.vue` con `plegable=false` en el teléfono. Una tarjeta por ficha, la más
-/// nueva primero, con las seis columnas de §28.1; las observaciones se editan en línea (✏️,
-/// grupo `g_7`). Tocar una tarjeta abre esa ficha en la sección Ficha. El documento
-/// imprimible (`evolucion.html`, `EvolucionView`) queda detrás de «Imprimir».
+/// La sección Evolución del paciente (PAPER §28.3 y §28.4): nativa y adaptable, como
+/// `EvolucionPaciente.vue` con `plegable=false` en el teléfono. Muestra las evoluciones (citas)
+/// de la **ficha abierta**, con su cabecera (motivo, fecha de apertura y estado), una tarjeta
+/// por evolución, la más nueva primero. Arriba, «＋ Agregar evolución»; debajo, plegadas, las
+/// otras fichas del paciente. Las observaciones se editan en línea (✏️): en una evolución
+/// registrada, `POST /api/bot/evolucion/editar`; en la fila armada, la sección 7 de la ficha
+/// (`g_7`). Tocar una tarjeta abre esa ficha en la sección Ficha. El documento imprimible
+/// (`evolucion.html`, `EvolucionView`) queda detrás de «Imprimir».
 struct PatientEvolutionView: View {
     let patientId: String
     /// La ficha a la vista en la sección Ficha: se resalta.
@@ -12,6 +15,8 @@ struct PatientEvolutionView: View {
     /// Quien la contiene la sube cada vez que la sección vuelve a la vista: se vuelve a pedir,
     /// porque entre una vez y otra se pudo guardar un diagnóstico.
     var reload = 0
+    /// Otra ficha elegida en «Otras fichas del paciente»: la barra de episodios la sigue.
+    var onSelectEpisode: (String) -> Void = { _ in }
     let onOpen: (String) -> Void
 
     @Environment(Sesion.self) private var sesion
@@ -25,6 +30,14 @@ struct PatientEvolutionView: View {
     @State private var saving = false
     @State private var saveError: String?
     @State private var printing = false
+    /// La ficha elegida aquí, mientras la barra de episodios no la confirma.
+    @State private var selected: String?
+    @State private var showOthers = false
+    @State private var adding = false
+
+    private var effectiveCurrent: String? { selected ?? current }
+    private var groups: [EvolutionLogic.EpisodeGroup] { EvolutionLogic.groups(rows) }
+    private var openGroup: EvolutionLogic.EpisodeGroup? { EvolutionLogic.openGroup(groups, current: effectiveCurrent) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,9 +46,16 @@ struct PatientEvolutionView: View {
             content
         }
         .task(id: "\(reload)|\(patientId)") { await load() }
+        .onChange(of: current) { _, _ in selected = nil }
+        .sheet(isPresented: $adding) {
+            if let group = openGroup {
+                AddEvolutionView(episodeId: group.episodeId, motivo: group.motivo) { await load() }
+                    .environment(sesion)
+            }
+        }
         .sheet(isPresented: $printing) {
             NavigationStack {
-                EvolucionView(pacienteId: patientId, actual: current) { episode in
+                EvolucionView(pacienteId: patientId, actual: effectiveCurrent) { episode in
                     printing = false
                     onOpen(episode)
                 }
@@ -57,7 +77,7 @@ struct PatientEvolutionView: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Evolución del paciente").font(.subheadline.weight(.semibold))
-                Text(loaded ? EvolutionLogic.summary(rows) : "Fecha, quién atendió, diagnósticos, tratamiento y observaciones")
+                Text(loaded ? EvolutionLogic.summary(groups) : "Las citas de cada ficha: hallazgos, diagnósticos y tratamiento")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -97,17 +117,34 @@ struct PatientEvolutionView: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if rows.isEmpty {
-            Text("Este paciente todavía no tiene fichas registradas.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // «＋ Agregar evolución» existe aunque no haya ficha: gris, con el motivo.
+            VStack(spacing: 10) {
+                Text("Este paciente todavía no tiene fichas registradas.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                let reason = EvolutionLogic.addBlockReason(group: nil, loading: loading)
+                Button("＋ Agregar evolución") {}
+                    .buttonStyle(.borderedProminent)
+                    .disabled(true)
+                    .accessibilityHint(reason ?? "")
+                    .accessibilityIdentifier("evolucion.agregar")
+                Text(reason ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(rows) { row in
-                        card(row)
+                    if let group = openGroup {
+                        groupHeader(group)
+                        ForEach(group.rows) { row in
+                            card(row)
+                        }
                     }
+                    othersSection
                 }
                 .padding(12)
             }
@@ -115,9 +152,81 @@ struct PatientEvolutionView: View {
         }
     }
 
-    private func card(_ row: FilaEvolucion) -> some View {
-        let isCurrent = row.episodio == current
+    /// Cabecera de la ficha abierta (motivo, fecha de apertura, estado) y «＋ Agregar evolución»,
+    /// que nunca se esconde: con la ficha de alta sale gris con el motivo.
+    private func groupHeader(_ group: EvolutionLogic.EpisodeGroup) -> some View {
+        let reason = EvolutionLogic.addBlockReason(group: group, loading: loading)
         return VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(EvolutionLogic.headerTitle(group))
+                    .font(.headline)
+                    .italic(group.motivo == nil)
+                Text(EvolutionLogic.headerDetail(group))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button { adding = true } label: {
+                Label("＋ Agregar evolución", systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(reason != nil)
+            .accessibilityHint(reason ?? "Una cita más en esta ficha: control del mismo motivo")
+            .accessibilityIdentifier("evolucion.agregar")
+            Text(reason ?? "Para un control del mismo motivo. Otro motivo de consulta es una consulta nueva.")
+                .font(.caption)
+                .foregroundStyle(reason == nil ? Color.secondary : Color.orange)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// «Otras fichas del paciente», plegadas: una línea por ficha; tocarla cambia a esa ficha.
+    private var othersSection: some View {
+        let others = EvolutionLogic.otherGroups(groups, current: effectiveCurrent)
+        return DisclosureGroup(isExpanded: $showOthers) {
+            if others.isEmpty {
+                Text("Es la única ficha de este paciente.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
+            }
+            ForEach(others) { group in
+                Button {
+                    selected = group.episodeId
+                    onSelectEpisode(group.episodeId)
+                } label: {
+                    HStack {
+                        Text(EvolutionLogic.otherLine(group))
+                            .font(.subheadline)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Ver las evoluciones de esta ficha")
+                .accessibilityIdentifier("evolucion.otra.\(group.episodeId)")
+            }
+        } label: {
+            Text("Otras fichas del paciente (\(others.count))")
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding(12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func card(_ row: FilaEvolucion) -> some View {
+        let isCurrent = row.episodio == effectiveCurrent
+        let isLatest = openGroup?.rows.first?.id == row.id
+        return VStack(alignment: .leading, spacing: 8) {
+            if let badge = EvolutionLogic.rowBadge(row) {
+                Text(badge)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Marca.acento)
+            }
             // La parte de arriba abre la ficha; las observaciones, abajo, no (se editan acá).
             Button { onOpen(row.episodio) } label: {
                 VStack(alignment: .leading, spacing: 5) {
@@ -130,19 +239,20 @@ struct PatientEvolutionView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint(isCurrent ? "Es la ficha que estás viendo; abre la sección Ficha" : "Abrir esta ficha")
-            .accessibilityIdentifier("evolucion.ficha.\(row.episodio)")
+            .accessibilityIdentifier("evolucion.ficha.\(row.id)")
 
             Divider()
             observations(row)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // La más nueva es la vigente: la que muestra la cabecera de la ficha (PAPER §28.4).
         .background(
-            isCurrent ? Marca.acento.opacity(0.12) : Color(uiColor: .secondarySystemBackground),
+            isLatest ? Marca.acento.opacity(0.12) : Color(uiColor: .secondarySystemBackground),
             in: RoundedRectangle(cornerRadius: 10)
         )
         .overlay(alignment: .leading) {
-            if isCurrent {
+            if isLatest {
                 Rectangle().fill(Marca.acento).frame(width: 3)
             }
         }
@@ -179,9 +289,9 @@ struct PatientEvolutionView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 110, alignment: .leading)
-            if editing == row.episodio {
+            if editing == row.id {
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Resumen de lo más importante de esta ficha", text: $draft, axis: .vertical)
+                    TextField(row.isAssembled ? "Resumen de lo más importante de esta ficha" : "Resumen de esta cita", text: $draft, axis: .vertical)
                         .lineLimit(3...8)
                         .textFieldStyle(.roundedBorder)
                         .disabled(saving)
@@ -206,7 +316,7 @@ struct PatientEvolutionView: View {
                 }
             } else {
                 let text = EvolutionLogic.observationsText(row)
-                let blockReason = EvolutionLogic.editBlockReason(row: row.episodio, editing: editing)
+                let blockReason = EvolutionLogic.editBlockReason(row: row.id, editing: editing)
                 Text(text)
                     .font(.subheadline)
                     .italic(row.observaciones == nil)
@@ -216,8 +326,8 @@ struct PatientEvolutionView: View {
                     .buttonStyle(.borderless)
                     .disabled(blockReason != nil)
                     .opacity(blockReason != nil ? 0.35 : 1)
-                    .accessibilityLabel(blockReason ?? "Editar las observaciones de esta ficha")
-                    .accessibilityIdentifier("evolucion.observaciones.editar.\(row.episodio)")
+                    .accessibilityLabel(blockReason ?? (row.isAssembled ? "Editar las observaciones de esta ficha" : "Editar las observaciones de esta evolución"))
+                    .accessibilityIdentifier("evolucion.observaciones.editar.\(row.id)")
             }
         }
     }
@@ -232,14 +342,14 @@ struct PatientEvolutionView: View {
             rows = try await sesion.api.evolucion(paciente: patientId)
             loaded = true
             // Si la fila que se editaba ya no está, se suelta la edición.
-            if let editing, !rows.contains(where: { $0.episodio == editing }) { cancel() }
+            if let editing, !rows.contains(where: { $0.id == editing }) { cancel() }
         } catch {
             self.error = "No se pudo cargar la evolución: \(error.localizedDescription)"
         }
     }
 
     private func edit(_ row: FilaEvolucion) {
-        editing = row.episodio
+        editing = row.id
         draft = row.observaciones ?? ""
         saveError = nil
     }
@@ -249,7 +359,8 @@ struct PatientEvolutionView: View {
         saveError = nil
     }
 
-    /// Va por el mismo camino que la sección 7 de la ficha (grupo `g_7`): solo viaja
+    /// Una evolución registrada guarda en ella (`/api/bot/evolucion/editar`). La fila armada va
+    /// por el mismo camino que la sección 7 de la ficha (grupo `g_7`): solo viaja
     /// `observaciones`; el resto de la sección no se toca.
     private func save(_ row: FilaEvolucion) async {
         saving = true
@@ -257,8 +368,13 @@ struct PatientEvolutionView: View {
         defer { saving = false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try await sesion.api.saveObservations(episodio: row.episodio, paciente: patientId, texto: text)
-            rows = EvolutionLogic.applying(observations: text, to: row.episodio, in: rows)
+            switch EvolutionLogic.observationsTarget(row) {
+            case .evolution(let id):
+                try await sesion.api.editEvolution(id: id, observaciones: text)
+            case .fichaGroup7(let episode):
+                try await sesion.api.saveObservations(episodio: episode, paciente: patientId, texto: text)
+            }
+            rows = EvolutionLogic.applying(observations: text, to: row.id, in: rows)
             editing = nil
         } catch {
             saveError = error.localizedDescription.isEmpty ? "No se pudo guardar" : error.localizedDescription

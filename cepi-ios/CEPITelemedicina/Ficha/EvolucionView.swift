@@ -68,7 +68,9 @@ struct EvolucionView: View {
                 paciente: (try? await registro)?.data ?? [:],
                 filas: try await filas,
                 actual: actual,
-                editable: true,
+                // Las observaciones se editan en la sección Evolución nativa, que sabe si la
+                // fila es una evolución registrada o la armada (PAPER §28.4). Aquí se imprime.
+                editable: false,
             )
         } catch {
             self.error = "No se pudo cargar la evolución: \(error.localizedDescription)"
@@ -206,6 +208,14 @@ enum DatosEvolucion {
                 "diagnostico_histopatologico": fila.diagnosticoHistopatologico.map(JSONValor.texto) ?? .nulo,
                 "tratamiento": fila.tratamiento.map(JSONValor.texto) ?? .nulo,
                 "observaciones": fila.observaciones.map(JSONValor.texto) ?? .nulo,
+                // §28.4: para que el documento agrupe por ficha.
+                "evolution_id": fila.evolutionId.map(JSONValor.texto) ?? .nulo,
+                "motivo": fila.motivo.map(JSONValor.texto) ?? .nulo,
+                "estado": fila.estado.map(JSONValor.texto) ?? .nulo,
+                "es_inicial": .booleano(fila.esInicial),
+                "hallazgos": fila.hallazgos.map(JSONValor.texto) ?? .nulo,
+                "proximo_control_fecha": fila.proximoControlFecha.map(JSONValor.texto) ?? .nulo,
+                "proximo_control_motivo": fila.proximoControlMotivo.map(JSONValor.texto) ?? .nulo,
             ])
         }
         return [

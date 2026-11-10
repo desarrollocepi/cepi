@@ -368,25 +368,111 @@ struct FichaModelTests {
 }
 
 struct EvolutionLogicTests {
-    private func fila(_ id: String, observaciones: String? = nil, medico: String? = nil, especialista: String? = nil) -> FilaEvolucion {
+    private func fila(
+        _ id: String, observaciones: String? = nil, medico: String? = nil, especialista: String? = nil,
+        evolution: String? = nil, estado: String? = "en_curso", fecha: String = "2026-11-08",
+        motivo: String? = nil, esInicial: Bool = false
+    ) -> FilaEvolucion {
         FilaEvolucion(
-            episodio: id, fecha: "2026-11-08", estado: "en_revision", medico: medico, especialista: especialista,
+            episodio: id, fecha: fecha, estado: estado, medico: medico, especialista: especialista,
             diagnostico: "L40.0 — Psoriasis", diagnosticoHistopatologico: nil, tratamiento: nil,
-            observaciones: observaciones
+            observaciones: observaciones, evolutionId: evolution, motivo: motivo, esInicial: esInicial
         )
+    }
+
+    /// e2 con dos evoluciones registradas más la inicial; e1, de alta, sin evoluciones (armada).
+    private var paciente: [FilaEvolucion] {
+        [
+            fila("e2", evolution: "v3", fecha: "2026-11-08", motivo: "Placas en codos"),
+            fila("e2", evolution: "v2", fecha: "2026-10-20", motivo: "Placas en codos"),
+            fila("e2", evolution: "v1", fecha: "2026-10-01", motivo: "Placas en codos", esInicial: true),
+            fila("e1", estado: "alta", fecha: "2026-06-10", motivo: "Lunar"),
+        ]
     }
 
     @Test func tarjetaConLasColumnasDeLaWeb() {
         let celdas = EvolutionLogic.cells(fila("e1", medico: "Dra. Pérez"))
-        #expect(celdas.map(\.label) == ["Fecha", "Atendió", "Diagnóstico clínico", "Diagnóstico histopatológico", "Tratamiento"])
-        #expect(celdas.map(\.text) == ["2026-11-08", "Dra. Pérez", "L40.0 — Psoriasis", "Sin biopsia", "Sin tratamiento"])
-        #expect(celdas.map(\.empty) == [false, false, false, true, true])
+        #expect(celdas.map(\.label) == [
+            "Fecha", "Atendió", "Hallazgos", "Diagnóstico clínico", "Diagnóstico histopatológico", "Tratamiento",
+            "Próximo control",
+        ])
+        #expect(celdas.map(\.text) == [
+            "2026-11-08", "Dra. Pérez", "Sin hallazgos", "L40.0 — Psoriasis", "Sin biopsia", "Sin tratamiento",
+            "Sin próximo control",
+        ])
+        #expect(celdas.map(\.empty) == [false, false, true, false, true, true, true])
         // Sin médico pero con especialista, Atendió no va en gris.
         #expect(EvolutionLogic.cells(fila("e1", especialista: "Dra. Derma"))[1].empty == false)
         #expect(EvolutionLogic.cells(fila("e1"))[1] == .init(label: "Atendió", text: "—", empty: true))
         #expect(EvolutionLogic.observationsText(fila("e1")) == "Sin observaciones")
-        #expect(EvolutionLogic.summary([fila("e1")]) == "1 ficha")
-        #expect(EvolutionLogic.summary([fila("e1"), fila("e2")]) == "2 fichas")
+        let control = FilaEvolucion(
+            episodio: "e1", fecha: nil, estado: nil, medico: nil, especialista: nil, diagnostico: nil,
+            diagnosticoHistopatologico: nil, tratamiento: nil, observaciones: nil,
+            hallazgos: "Placas menores", proximoControlFecha: "2026-12-08", proximoControlMotivo: "Ver respuesta"
+        )
+        #expect(EvolutionLogic.cells(control)[2].text == "Placas menores")
+        #expect(EvolutionLogic.cells(control)[6].text == "2026-12-08 — Ver respuesta")
+    }
+
+    @Test func agruparPorFicha() {
+        let grupos = EvolutionLogic.groups(paciente)
+        #expect(grupos.map(\.episodeId) == ["e2", "e1"])
+        #expect(grupos[0].rows.map(\.evolutionId) == ["v3", "v2", "v1"])
+        #expect(grupos[0].count == 3)
+        #expect(grupos[0].motivo == "Placas en codos")
+        // La fecha de apertura es la de la evolución inicial, no la de la más nueva.
+        #expect(grupos[0].openedOn == "2026-10-01")
+        #expect(grupos[1].openedOn == "2026-06-10")
+        #expect(grupos[1].isDischarged)
+        #expect(EvolutionLogic.summary(grupos) == "2 fichas")
+        #expect(EvolutionLogic.headerDetail(grupos[0]) == "Abierta el 2026-10-01 · En curso · 3 evoluciones")
+        // Un estado que la app no conoce se muestra tal cual.
+        #expect(EvolutionLogic.statusLabel("pendiente_x") == "pendiente_x")
+        #expect(EvolutionLogic.statusLabel(nil) == "Sin estado")
+        #expect(EvolutionLogic.otherLine(grupos[1]) == "Lunar · 2026-06-10 · Alta · 1 evolución")
+        // Sin ninguna marcada como inicial, vale la más vieja.
+        let sinInicial = EvolutionLogic.groups([fila("e9", evolution: "a", fecha: "2026-11-01"),
+                                                fila("e9", evolution: "b", fecha: "2026-09-01")])
+        #expect(sinInicial[0].openedOn == "2026-09-01")
+        #expect(EvolutionLogic.headerTitle(sinInicial[0]) == "Sin motivo de consulta registrado")
+    }
+
+    @Test func filasDeLaFichaAbierta() {
+        #expect(EvolutionLogic.openRows(paciente, current: "e1").map(\.id) == ["episode:e1"])
+        #expect(EvolutionLogic.openRows(paciente, current: "e2").map(\.id) == ["v3", "v2", "v1"])
+        // Sin ficha a la vista, o una que no es del paciente, abre la más nueva.
+        #expect(EvolutionLogic.openRows(paciente, current: nil).count == 3)
+        #expect(EvolutionLogic.openRows(paciente, current: "otra").count == 3)
+        let grupos = EvolutionLogic.groups(paciente)
+        #expect(EvolutionLogic.otherGroups(grupos, current: "e2").map(\.episodeId) == ["e1"])
+        #expect(EvolutionLogic.otherGroups(grupos, current: "e1").map(\.episodeId) == ["e2"])
+        #expect(EvolutionLogic.otherGroups([], current: nil).isEmpty)
+        #expect(EvolutionLogic.rowBadge(paciente[0]) == nil)
+        #expect(EvolutionLogic.rowBadge(paciente[2]) == "Primera cita")
+        #expect(EvolutionLogic.rowBadge(paciente[3]) == "Primera cita · datos de la ficha")
+    }
+
+    @Test func agregarSeBloqueaConLaFichaDeAlta() {
+        let grupos = EvolutionLogic.groups(paciente)
+        #expect(EvolutionLogic.addBlockReason(group: grupos[0]) == nil)
+        #expect(EvolutionLogic.addBlockReason(group: grupos[1]) == "Esta ficha está de alta: abre una consulta nueva")
+        #expect(EvolutionLogic.addBlockReason(group: nil) == "Este paciente todavía no tiene fichas: abre una consulta nueva")
+        #expect(EvolutionLogic.addBlockReason(group: nil, loading: true) == "Cargando la evolución…")
+    }
+
+    @Test func formularioPideAlgunContenido() {
+        let vacia = EvolutionCreate(episodeId: "e2", fecha: "2026-11-09", hallazgos: "  ", proximoControlMotivo: "x")
+        #expect(!vacia.hasContent)
+        #expect(EvolutionLogic.submitBlockReason(vacia, saving: false)
+            == "Escribe al menos hallazgos, diagnóstico, tratamiento u observaciones")
+        let llena = EvolutionCreate(episodeId: "e2", fecha: "2026-11-09", tratamiento: "Clobetasol")
+        #expect(EvolutionLogic.submitBlockReason(llena, saving: false) == nil)
+        #expect(EvolutionLogic.submitBlockReason(llena, saving: true) == "Guardando…")
+    }
+
+    @Test func elLapizGuardaSegunLaFila() {
+        #expect(EvolutionLogic.observationsTarget(paciente[0]) == .evolution("v3"))
+        #expect(EvolutionLogic.observationsTarget(paciente[3]) == .fichaGroup7(episode: "e1"))
     }
 
     @Test func soloUnaObservacionALaVez() {
@@ -408,11 +494,14 @@ struct EvolutionLogicTests {
     }
 
     @Test func loGuardadoQuedaEnSuFila() {
-        let filas = [fila("e2", observaciones: "Antes"), fila("e1", observaciones: "Otra")]
-        let guardadas = EvolutionLogic.applying(observations: "  Resumen nuevo ", to: "e2", in: filas)
-        #expect(guardadas.map(\.observaciones) == ["Resumen nuevo", "Otra"])
+        let filas = [fila("e2", observaciones: "Antes", evolution: "v2"), fila("e2", observaciones: "Otra", evolution: "v1"),
+                     fila("e1", observaciones: "Armada")]
+        let guardadas = EvolutionLogic.applying(observations: "  Resumen nuevo ", to: "v2", in: filas)
+        #expect(guardadas.map(\.observaciones) == ["Resumen nuevo", "Otra", "Armada"])
         #expect(guardadas[0].diagnostico == "L40.0 — Psoriasis")
-        let vacia = EvolutionLogic.applying(observations: "   ", to: "e1", in: filas)
-        #expect(vacia[1].observaciones == nil)
+        #expect(guardadas[0].evolutionId == "v2")
+        let vacia = EvolutionLogic.applying(observations: "   ", to: "episode:e1", in: filas)
+        #expect(vacia[2].observaciones == nil)
+        #expect(vacia[0].observaciones == "Antes")
     }
 }

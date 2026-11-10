@@ -43,6 +43,77 @@ struct ContratoTests {
         #expect(filas[1].medico == nil)
     }
 
+    @Test func evolucionesDeUnaFicha() throws {
+        // GET /api/patient-evolution con los campos de PAPER §28.4: una fila por evolución
+        // registrada; la ficha sin evoluciones da una fila armada con evolution_id null.
+        let filas = try decodificar(Lista<FilaEvolucion>.self, """
+        {"ok":true,"data":[
+           {"episode_id":"e2","evolution_id":"v2","motivo":"Placas en codos","estado":"en_curso",
+            "es_inicial":false,"fecha":"2026-11-09","medico":"Dra. Ana Pérez","especialista":null,
+            "diagnostico":"L40.0 — Psoriasis","histopatologico":"Psoriasis vulgar",
+            "tratamiento":"Calcipotriol","observaciones":"Mejor","hallazgos":"Placas más finas",
+            "proximo_control_fecha":"2026-12-09","proximo_control_motivo":"Control de respuesta"},
+           {"episode_id":"e2","evolution_id":"v1","motivo":"Placas en codos","estado":"en_curso",
+            "es_inicial":true,"fecha":"2026-10-01","medico":"Dra. Ana Pérez","especialista":"Dr. Luis Mora",
+            "diagnostico":"L40.0 — Psoriasis","histopatologico":null,"tratamiento":"Clobetasol 0,05 %",
+            "observaciones":null,"hallazgos":null,"proximo_control_fecha":null,"proximo_control_motivo":null},
+           {"episode_id":"e1","evolution_id":null,"motivo":"Lunar","estado":"alta","es_inicial":false,
+            "fecha":"2026-06-10","medico":"Dr. Ruiz","especialista":null,"diagnostico":null,
+            "histopatologico":null,"tratamiento":null,"observaciones":null,"hallazgos":null,
+            "proximo_control_fecha":null,"proximo_control_motivo":null}]}
+        """).data
+        #expect(filas.map(\.id) == ["v2", "v1", "episode:e1"])
+        #expect(filas[0].evolutionId == "v2")
+        #expect(filas[0].motivo == "Placas en codos")
+        #expect(filas[0].estado == "en_curso")
+        #expect(!filas[0].esInicial)
+        #expect(filas[0].hallazgos == "Placas más finas")
+        #expect(filas[0].diagnosticoHistopatologico == "Psoriasis vulgar")
+        #expect(filas[0].proximoControlFecha == "2026-12-09")
+        #expect(filas[0].proximoControlMotivo == "Control de respuesta")
+        #expect(filas[1].esInicial)
+        #expect(filas[1].especialista == "Dr. Luis Mora")
+        #expect(filas[2].evolutionId == nil)
+        #expect(filas[2].isAssembled)
+        #expect(filas[2].estado == "alta")
+        // El backend de §28.1 (sin los campos nuevos) se lee como la fila armada de cada ficha.
+        let vieja = try decodificar(FilaEvolucion.self, #"{"episode_id":"e3","fecha":"2026-01-01"}"#)
+        #expect(vieja.isAssembled)
+        #expect(!vieja.esInicial)
+        #expect(vieja.motivo == nil)
+    }
+
+    @Test func cuerpoDeAgregarEvolucion() throws {
+        // POST /api/bot/episodio/evolucion (PAPER §28.4): lo vacío no viaja.
+        let cuerpo = try JSONEncoder().encode(EvolutionCreate(
+            episodeId: "e2", fecha: "2026-11-09", hallazgos: " Placas más finas ", diagnostico: "L40.0 — Psoriasis",
+            tratamiento: "", observaciones: "Mejor", proximoControlFecha: "2026-12-09",
+            proximoControlMotivo: "Control de respuesta"
+        ))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: Any])
+        #expect(Set(json.keys) == ["episode_id", "fecha", "hallazgos", "diagnostico", "observaciones",
+                                   "proximo_control_fecha", "proximo_control_motivo"])
+        #expect(json["episode_id"] as? String == "e2")
+        #expect(json["fecha"] as? String == "2026-11-09")
+        #expect(json["hallazgos"] as? String == "Placas más finas")
+        #expect(json["proximo_control_fecha"] as? String == "2026-12-09")
+        #expect(json["proximo_control_motivo"] as? String == "Control de respuesta")
+        let minimo = try JSONEncoder().encode(EvolutionCreate(episodeId: "e2", fecha: nil, observaciones: "Solo esto"))
+        let jsonMinimo = try #require(try JSONSerialization.jsonObject(with: minimo) as? [String: Any])
+        #expect(Set(jsonMinimo.keys) == ["episode_id", "observaciones"])
+
+        let respuesta = try decodificar(EvolutionCreateResult.self, #"{"ok":true,"evolution_id":"v9"}"#)
+        #expect(respuesta.ok)
+        #expect(respuesta.evolutionId == "v9")
+    }
+
+    @Test func cuerpoDeEditarEvolucion() throws {
+        // POST /api/bot/evolucion/editar (PAPER §28.4).
+        let cuerpo = try JSONEncoder().encode(EvolutionEdit(evolutionId: "v2", observaciones: "Resumen"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == ["evolution_id": "v2", "observaciones": "Resumen"])
+    }
+
     @Test func cuerpoDeGuardarObservaciones() throws {
         // POST /api/bot/ficha/grupo desde la sección Evolución (PAPER §28.3).
         let cuerpo = try JSONEncoder().encode(ObservationsSave(episodio: "e2", paciente: "p1", texto: "Línea 1\n\"citada\""))

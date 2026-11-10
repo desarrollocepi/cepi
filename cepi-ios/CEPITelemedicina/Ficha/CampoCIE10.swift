@@ -3,7 +3,7 @@ import SwiftUI
 /// Diagnóstico con autocompletado contra el catálogo CIE-10 del ERP (IcdSearchField.vue). Lo que
 /// se escribe también vale: el médico puede dejar texto libre.
 struct CampoCIE10: View {
-    let campo: CampoFormulario
+    let placeholder: String?
     @Binding var texto: String
 
     @Environment(Sesion.self) private var sesion
@@ -12,9 +12,18 @@ struct CampoCIE10: View {
     /// El texto que puso una elección: no se vuelve a buscar por él.
     @State private var elegido = ""
 
+    init(campo: CampoFormulario, texto: Binding<String>) {
+        self.init(placeholder: campo.placeholder, texto: texto)
+    }
+
+    init(placeholder: String?, texto: Binding<String>) {
+        self.placeholder = placeholder
+        _texto = texto
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField(campo.placeholder ?? "Buscar diagnóstico en CIE-10…", text: $texto)
+            TextField(placeholder ?? "Buscar diagnóstico en CIE-10…", text: $texto)
                 .autocorrectionDisabled()
                 .estiloCampo()
             if buscando {
