@@ -504,4 +504,40 @@ struct EvolutionLogicTests {
         #expect(vacia[2].observaciones == nil)
         #expect(vacia[0].observaciones == "Antes")
     }
+
+    @Test func proximoControlAlPie() {
+        func grupo(_ fecha: String?, motivo: String? = "Ver respuesta", estado: String = "en_curso") -> EvolutionLogic.EpisodeGroup {
+            let nueva = FilaEvolucion(
+                episodio: "e2", fecha: "2026-11-08", estado: estado, medico: nil, especialista: nil, diagnostico: nil,
+                diagnosticoHistopatologico: nil, tratamiento: nil, observaciones: nil, evolutionId: "v2",
+                proximoControlFecha: fecha, proximoControlMotivo: motivo
+            )
+            let vieja = FilaEvolucion(
+                episodio: "e2", fecha: "2026-10-01", estado: estado, medico: nil, especialista: nil, diagnostico: nil,
+                diagnosticoHistopatologico: nil, tratamiento: nil, observaciones: nil, evolutionId: "v1",
+                proximoControlFecha: "2026-10-15", proximoControlMotivo: "Viejo"
+            )
+            return EvolutionLogic.groups([nueva, vieja])[0]
+        }
+        let hoy = "2026-11-09"
+        let atrasado = EvolutionLogic.nextControl(grupo("2026-11-01"), today: hoy)
+        #expect(atrasado == .scheduled(date: "2026-11-01", reason: "Ver respuesta", status: .overdue))
+        #expect(atrasado.statusLabel == "Atrasado")
+        #expect(atrasado.text == "2026-11-01 — Ver respuesta")
+        #expect(EvolutionLogic.nextControl(grupo("2026-11-09"), today: hoy).statusLabel == "Hoy")
+        let proximo = EvolutionLogic.nextControl(grupo("2026-12-08", motivo: nil), today: hoy)
+        #expect(proximo == .scheduled(date: "2026-12-08", reason: nil, status: .upcoming))
+        #expect(proximo.text == "2026-12-08")
+        let sinFecha = EvolutionLogic.nextControl(grupo(nil), today: hoy)
+        #expect(sinFecha == .none)
+        #expect(sinFecha.text == "Sin próximo control indicado")
+        #expect(sinFecha.statusLabel == nil)
+        let alta = EvolutionLogic.nextControl(grupo("2026-12-08", estado: "alta"), today: hoy)
+        #expect(alta.text == "Ficha de alta: sin controles pendientes")
+        #expect(alta.statusLabel == nil)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Guayaquil")!
+        #expect(EvolutionLogic.localToday(Date(timeIntervalSince1970: 1_762_660_800), calendar: cal) == "2025-11-08")
+    }
+
 }

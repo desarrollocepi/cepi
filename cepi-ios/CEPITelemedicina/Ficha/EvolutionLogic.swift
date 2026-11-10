@@ -155,6 +155,50 @@ enum EvolutionLogic {
         return value
     }
 
+    // MARK: Próximo control al pie (PAPER §28.4)
+
+    /// El bloque «Próximo control» al pie de la ficha abierta, con lo de su evolución más nueva.
+    enum NextControl: Equatable {
+        /// Ficha de alta: no quedan controles pendientes.
+        case discharged
+        /// La evolución más nueva no indica fecha de control.
+        case none
+        case scheduled(date: String, reason: String?, status: ControlStatus)
+
+        var text: String {
+            switch self {
+            case .discharged: "Ficha de alta: sin controles pendientes"
+            case .none: "Sin próximo control indicado"
+            case let .scheduled(date, reason, _):
+                [date, reason].compactMap { $0 }.joined(separator: " — ")
+            }
+        }
+
+        var statusLabel: String? {
+            guard case let .scheduled(_, _, status) = self else { return nil }
+            switch status {
+            case .overdue: return "Atrasado"
+            case .today: return "Hoy"
+            case .upcoming: return "Próximo"
+            }
+        }
+    }
+
+    /// `today` es la fecha local `YYYY-MM-DD`; las fechas se comparan como texto.
+    static func nextControl(_ group: EpisodeGroup, today: String) -> NextControl {
+        if group.isDischarged { return .discharged }
+        guard let latest = group.rows.first, let date = nonEmpty(latest.proximoControlFecha) else { return .none }
+        let day = String(date.prefix(10))
+        let status: ControlStatus = day < today ? .overdue : (day == today ? .today : .upcoming)
+        return .scheduled(date: day, reason: nonEmpty(latest.proximoControlMotivo), status: status)
+    }
+
+    /// Hoy en la zona horaria del teléfono, `YYYY-MM-DD`.
+    static func localToday(_ now: Date = Date(), calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: now)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
     // MARK: Observaciones en línea
 
     /// Dónde guarda el ✏️ de una fila: la evolución registrada, o la sección 7 de la ficha si es

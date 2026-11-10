@@ -143,6 +143,7 @@ struct PatientEvolutionView: View {
                         ForEach(group.rows) { row in
                             card(row)
                         }
+                        nextControlFooter(group)
                     }
                     othersSection
                 }
@@ -178,6 +179,39 @@ struct PatientEvolutionView: View {
                 .foregroundStyle(reason == nil ? Color.secondary : Color.orange)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// «Próximo control» al pie de la ficha abierta (PAPER §28.4): fecha, qué hacer y estado.
+    private func nextControlFooter(_ group: EvolutionLogic.EpisodeGroup) -> some View {
+        let control = EvolutionLogic.nextControl(group, today: EvolutionLogic.localToday())
+        let color: Color = switch control {
+        case .scheduled(_, _, .overdue): .red
+        case .scheduled(_, _, .today): .orange
+        case .scheduled: .blue
+        default: .secondary
+        }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Próximo control").font(.subheadline.weight(.semibold))
+                Spacer()
+                if let label = control.statusLabel {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .foregroundStyle(color)
+                        .background(color.opacity(0.15), in: Capsule())
+                }
+            }
+            Text(control.text)
+                .font(.footnote)
+                .foregroundStyle({ if case .scheduled = control { return Color.primary } else { return Color.secondary } }())
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("evolucion.proximoControl")
     }
 
     /// «Otras fichas del paciente», plegadas: una línea por ficha; tocarla cambia a esa ficha.
