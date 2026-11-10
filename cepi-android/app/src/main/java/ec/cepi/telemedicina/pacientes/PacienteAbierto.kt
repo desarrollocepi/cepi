@@ -267,6 +267,13 @@ fun PacienteAbierto(
                             fichaMostrada = true
                             alcance.launch { paginas.animateScrollToPage(PAGE_FICHA) }
                         },
+                        onSelectEpisode = { episodio ->
+                            // Otra ficha del paciente (PAPER §28.4): Evolución cambia ya y la
+                            // sección Ficha la sigue sin salir de aquí.
+                            shownEpisode = episodio
+                            fichaPedida = EpisodeRequest(episodio)
+                            fichaMostrada = true
+                        },
                     )
                     else -> ImagenesPaciente(imagenes, consents)
                 }
@@ -369,7 +376,8 @@ private fun Acciones(
 
     DropdownMenu(expanded = abierto, onDismissRequest = alCerrar) {
         DropdownMenuItem(
-            text = { Text("Nueva consulta") },
+            // PAPER §28.4: una consulta nueva es otro motivo; un control es una evolución.
+            text = { Explicado("＋ Nueva consulta", "Para otro motivo de consulta. Para un control, «＋ Agregar evolución» en Evolución") },
             enabled = libre,
             onClick = {
                 alCerrar()

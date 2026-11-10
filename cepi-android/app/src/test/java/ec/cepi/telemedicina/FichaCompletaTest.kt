@@ -344,11 +344,11 @@ class FichaCompletaTest {
 
     @Test
     fun loGuardadoSeVeSinRecargar() {
-        val nuevas = ObservationEdit.applySaved(filas, "e1", "Control en 3 meses")
+        val nuevas = ObservationEdit.applySaved(filas, filas[1].rowKey, "Control en 3 meses")
         assertEquals("Control en 3 meses", nuevas[1].observaciones)
         assertEquals("Mejoría parcial", nuevas[0].observaciones)
         // Vaciar borra.
-        assertNull(ObservationEdit.applySaved(filas, "e2", "")[0].observaciones)
+        assertNull(ObservationEdit.applySaved(filas, filas[0].rowKey, "")[0].observaciones)
     }
 
     @Test

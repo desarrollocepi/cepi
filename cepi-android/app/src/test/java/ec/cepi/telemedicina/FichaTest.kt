@@ -92,7 +92,7 @@ class IdiomasDictadoTest {
         ))
         val datos = ec.cepi.telemedicina.ficha.DatosEvolucion.objeto(paciente, filas, "e2", LocalDate.parse("2026-09-16"))
         assertEquals(
-            """{"actual":"e2","filas":[{"episode_id":"e2","fecha":"2026-10-01","medico":"Dra. Pérez","especialista":"Dr. Mora","diagnostico":"L40.0","diagnostico_histopatologico":"Psoriasis","tratamiento":null,"observaciones":"Control"}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
+            """{"actual":"e2","filas":[{"episode_id":"e2","evolution_id":null,"motivo":null,"estado":null,"es_inicial":null,"fecha":"2026-10-01","medico":"Dra. Pérez","especialista":"Dr. Mora","diagnostico":"L40.0","diagnostico_histopatologico":"Psoriasis","histopatologico":"Psoriasis","tratamiento":null,"observaciones":"Control","hallazgos":null,"proximo_control_fecha":null,"proximo_control_motivo":null}],"paciente":{"nombre":"Ana Ruiz","cedula":"0102","edad":26}}""",
             DatosFicha.javascript(datos),
         )
         // La sección Evolución la pide editable; el resto, de solo lectura.

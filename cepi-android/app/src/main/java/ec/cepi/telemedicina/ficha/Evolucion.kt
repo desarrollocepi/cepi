@@ -74,13 +74,22 @@ object DatosEvolucion {
             "filas" to JsonArray(filas.map { fila ->
                 JsonObject(mapOf(
                     "episode_id" to JsonPrimitive(fila.episodio),
+                    // §28.4: el documento agrupa por ficha.
+                    "evolution_id" to texto(fila.evolutionId),
+                    "motivo" to texto(fila.motivo),
+                    "estado" to texto(fila.estado),
+                    "es_inicial" to (fila.esInicial?.let(::JsonPrimitive) ?: JsonNull),
                     "fecha" to texto(fila.fecha),
                     "medico" to texto(fila.medico),
                     "especialista" to texto(fila.especialista),
                     "diagnostico" to texto(fila.diagnostico),
-                    "diagnostico_histopatologico" to texto(fila.diagnosticoHistopatologico),
+                    "diagnostico_histopatologico" to texto(fila.histopathology),
+                    "histopatologico" to texto(fila.histopathology),
                     "tratamiento" to texto(fila.tratamiento),
                     "observaciones" to texto(fila.observaciones),
+                    "hallazgos" to texto(fila.hallazgos),
+                    "proximo_control_fecha" to texto(fila.proximoControlFecha),
+                    "proximo_control_motivo" to texto(fila.proximoControlMotivo),
                 ))
             }),
             "actual" to texto(actual),

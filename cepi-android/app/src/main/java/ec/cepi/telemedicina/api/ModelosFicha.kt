@@ -218,23 +218,50 @@ data class BusquedaCIE(val results: List<ResultadoCIE> = emptyList())
 // Ficha de evolución (PAPER §28)
 
 /**
- * Una fila de `GET /api/patient-evolution`: una ficha del paciente con lo que se lee para seguir
- * el caso. El médico ya viene como nombre y cada campo ya cayó al que tenga dato según la fuente
- * de la ficha (CEPI o espejo DrPro): la app solo lo pinta.
+ * Una fila de `GET /api/patient-evolution`: una evolución (cita) de una ficha del paciente con lo
+ * que se lee para seguir el caso (PAPER §28.4). Una ficha sin evoluciones registradas da una fila
+ * armada con los campos del episodio (`evolution_id = null`). El médico ya viene como nombre y
+ * cada campo ya cayó al que tenga dato según la fuente de la ficha (CEPI o espejo DrPro): la app
+ * solo lo pinta. Los campos de §28.4 son opcionales: el backend viejo no los manda.
  */
 @Serializable
 data class FilaEvolucion(
     @SerialName("episode_id") val episodio: String,
+    /** La evolución registrada; `null` en la fila armada de una ficha sin evoluciones. */
+    @SerialName("evolution_id") val evolutionId: String? = null,
+    /** El motivo de consulta de la ficha. */
+    val motivo: String? = null,
     /** `YYYY-MM-DD`, como texto: no se convierte a fecha para no correrla de día. */
     val fecha: String? = null,
+    /** El estado de la ficha (episodio), no de la evolución. */
     val estado: String? = null,
+    /** La foto de la primera cita, guardada al agregar la primera evolución. */
+    @SerialName("es_inicial") val esInicial: Boolean? = null,
     val medico: String? = null,
     /** El especialista al que se derivó, si lo hubo. */
     val especialista: String? = null,
     val diagnostico: String? = null,
     @SerialName("diagnostico_histopatologico") val diagnosticoHistopatologico: String? = null,
+    /** El mismo dato con el nombre corto de §28.4; se acepta cualquiera de los dos. */
+    val histopatologico: String? = null,
     val tratamiento: String? = null,
     val observaciones: String? = null,
+    val hallazgos: String? = null,
+    @SerialName("proximo_control_fecha") val proximoControlFecha: String? = null,
+    @SerialName("proximo_control_motivo") val proximoControlMotivo: String? = null,
+) {
+    /** El histopatológico, venga con el nombre que venga. */
+    val histopathology: String? get() = diagnosticoHistopatologico ?: histopatologico
+
+    /** Identifica la fila: una ficha puede tener varias. */
+    val rowKey: String get() = evolutionId?.let { "evo:$it" } ?: "epi:$episodio"
+}
+
+/** `POST /api/bot/episodio/evolucion` → `201 {ok, evolution_id}` (PAPER §28.4). */
+@Serializable
+data class AddEvolutionResult(
+    val ok: Boolean = false,
+    @SerialName("evolution_id") val evolutionId: String? = null,
 )
 
 // Responder interconsulta (PAPER §30)

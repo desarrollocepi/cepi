@@ -167,6 +167,31 @@ class CepiApi(val cliente: ApiClient) {
         cliente.post<Confirmacion>("/api/bot/episodio/alta", dischargeBody(episodio, nota))
     }
 
+    /**
+     * «＋ Agregar evolución» a una ficha (PAPER §28.4). Acción explícita: cepi-bot la guarda sin
+     * pedir sí/no. 400 si no trae hallazgos, diagnóstico, tratamiento ni observaciones; 409 si la
+     * ficha está de alta. Ambos llegan como `ApiError` con el mensaje del servidor.
+     */
+    suspend fun addEvolution(
+        episodeId: String,
+        fecha: String?,
+        hallazgos: String?,
+        diagnostico: String?,
+        tratamiento: String?,
+        observaciones: String?,
+        proximoControlFecha: String?,
+        proximoControlMotivo: String?,
+    ): AddEvolutionResult =
+        cliente.post(
+            "/api/bot/episodio/evolucion",
+            addEvolutionBody(episodeId, fecha, hallazgos, diagnostico, tratamiento, observaciones, proximoControlFecha, proximoControlMotivo),
+        )
+
+    /** El ✏️ de observaciones de una evolución registrada (PAPER §28.4). */
+    suspend fun editEvolution(evolutionId: String, observaciones: String) {
+        cliente.post<Confirmacion>("/api/bot/evolucion/editar", editEvolutionBody(evolutionId, observaciones))
+    }
+
     // Registros
 
     suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
@@ -312,6 +337,39 @@ class CepiApi(val cliente: ApiClient) {
         fun dischargeBody(episodio: String, nota: String): JsonObject = buildJsonObject {
             put("episode_id", episodio)
             put("nota", nota.trim())
+        }
+
+        /**
+         * El cuerpo de `POST /api/bot/episodio/evolucion`. Lo vacío no se manda: el backend pone
+         * hoy en Ecuador si falta la fecha y solo vuelca al episodio lo que trae. Sin red, para
+         * probarlo.
+         */
+        fun addEvolutionBody(
+            episodeId: String,
+            fecha: String?,
+            hallazgos: String?,
+            diagnostico: String?,
+            tratamiento: String?,
+            observaciones: String?,
+            proximoControlFecha: String?,
+            proximoControlMotivo: String?,
+        ): JsonObject = buildJsonObject {
+            put("episode_id", episodeId)
+            listOf(
+                "fecha" to fecha,
+                "hallazgos" to hallazgos,
+                "diagnostico" to diagnostico,
+                "tratamiento" to tratamiento,
+                "observaciones" to observaciones,
+                "proximo_control_fecha" to proximoControlFecha,
+                "proximo_control_motivo" to proximoControlMotivo,
+            ).forEach { (key, value) -> value?.trim()?.takeIf { it.isNotEmpty() }?.let { put(key, it) } }
+        }
+
+        /** El cuerpo de `POST /api/bot/evolucion/editar`. Vacío borra las observaciones. */
+        fun editEvolutionBody(evolutionId: String, observaciones: String): JsonObject = buildJsonObject {
+            put("evolution_id", evolutionId)
+            put("observaciones", observaciones.trim())
         }
 
         /** El cuerpo de `POST /api/groups/:slug/shifts`. Sin red, para probarlo. */
