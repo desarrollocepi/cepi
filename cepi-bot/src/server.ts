@@ -39,6 +39,10 @@ import { erpClient } from './erp.js';
 import { listarGaleria } from './galeria.js';
 import { listarControles } from './controles.js';
 import { buildDischargeBatch, dischargeBlockReason } from './alta.js';
+import {
+  EVOLUTION_ENTITY_ID, buildAddEvolutionBatch, evolutionBlockReason, evolutionInputError,
+  isLatestEvolution, recordField,
+} from './evolucion.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
 import { buildAnswerBatch, canAnswer, ESTADOS_CON_INTERCONSULTA } from './interconsulta.js';
@@ -560,6 +564,110 @@ app.post('/api/bot/episodio/alta', async (req: Request, res: Response, next: Nex
       const r: any = await mcp.call(step.tool, step.args);
       if ((r?.ok === false || r?.isError) && step.tool === 'entities.update') {
         return res.status(502).json({ ok: false, error: `No se pudo dar el alta: ${r?.error || 'error'}` });
+      }
+    }
+    res.json({ ok: true });
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/episodio/evolucion — agrega una evolución (cita) a la ficha (PAPER §28.4).
+ * Body: {episode_id, fecha?, hallazgos?, diagnostico?, tratamiento?, observaciones?,
+ *        proximo_control_fecha?, proximo_control_motivo?} → 201 {ok, evolution_id}.
+ * Acción explícita: sin gate. 409 si la ficha está de alta.
+ * La evolución inicial y la nueva son obligatorias; si falla actualizar el episodio
+ * o la nota, la evolución ya quedó guardada y se responde igual.
+ */
+app.post('/api/bot/episodio/evolucion', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const body = req.body || {};
+    const episodeId = body.episode_id ? String(body.episode_id) : '';
+    if (!episodeId) return res.status(400).json({ ok: false, error: 'episode_id required' });
+    const invalido = evolutionInputError(body);
+    if (invalido) return res.status(400).json({ ok: false, error: invalido });
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const cur: any = await mcp.call('entities.get', { id: episodeId });
+    const ep = cur?.ok ? (cur.data?.data || {}) : null;
+    const motivo = evolutionBlockReason(ep);
+    if (motivo) return res.status(cur?.ok ? 409 : 404).json({ ok: false, error: motivo });
+    const prev: any = await mcp.call('entities.list', {
+      type: EVOLUTION_ENTITY_ID, filter: { episode_id: episodeId }, limit: 1,
+    });
+    if (prev?.ok === false) {
+      return res.status(502).json({ ok: false, error: `No se pudieron leer las evoluciones: ${prev?.error || 'error'}` });
+    }
+    const me: any = await mcp.call('auth.whoami', {});
+    const user = me?.data?.user || {};
+    const batch = buildAddEvolutionBatch({
+      episodeId,
+      patientId: recordField(cur.data, 'patient_id') || null,
+      ep,
+      episodeCreatedBy: cur.data?.created_by || null,
+      hasEvolutions: Array.isArray(prev?.data) && prev.data.length > 0,
+      input: body,
+      userId: user.id || null,
+      userName: user.name || null,
+    });
+    let evolutionId: string | null = null;
+    for (const step of batch) {
+      const r: any = await mcp.call(step.tool, step.args);
+      const fallo = r?.ok === false || r?.isError;
+      if (fallo && (step.role === 'initial' || step.role === 'evolution')) {
+        return res.status(502).json({ ok: false, error: `No se pudo guardar la evolución: ${r?.error || 'error'}` });
+      }
+      if (step.role === 'evolution') evolutionId = r?.data?.id || null;
+    }
+    res.status(201).json({ ok: true, evolution_id: evolutionId });
+  } catch (err: any) { next(err); }
+  finally { if (mcp) await mcp.close().catch(() => {}); }
+});
+
+/**
+ * /api/bot/evolucion/editar — observaciones de una evolución registrada (PAPER §28.4).
+ * Body: {evolution_id, observaciones} → {ok}. Acción explícita: sin gate. Si es la
+ * evolución más reciente de su ficha, el episodio (que muestra lo vigente) también.
+ * La fila armada (ficha sin evoluciones) sigue guardando `g_7` del episodio.
+ */
+app.post('/api/bot/evolucion/editar', async (req: Request, res: Response, next: NextFunction) => {
+  let mcp: TodoErpMcpClient | null = null;
+  try {
+    const auth = req.header('authorization') || '';
+    const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
+    if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
+    const { evolution_id, observaciones } = req.body || {};
+    if (!evolution_id) return res.status(400).json({ ok: false, error: 'evolution_id required' });
+    if (observaciones != null && typeof observaciones !== 'string') {
+      return res.status(400).json({ ok: false, error: 'observaciones debe ser texto' });
+    }
+    const texto = typeof observaciones === 'string' ? observaciones.trim() : '';
+    mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
+    await mcp.connect();
+    const cur: any = await mcp.call('entities.get', { id: String(evolution_id) });
+    if (!cur?.ok || String(cur.data?.entity_id || EVOLUTION_ENTITY_ID) !== EVOLUTION_ENTITY_ID) {
+      return res.status(404).json({ ok: false, error: 'No se encontró la evolución' });
+    }
+    const r: any = await mcp.call('entities.update', {
+      id: String(evolution_id), record_type: 'business', data: { observaciones: texto || null },
+    });
+    if (r?.ok === false || r?.isError) {
+      return res.status(502).json({ ok: false, error: `No se pudo guardar: ${r?.error || 'error'}` });
+    }
+    const episodeId = recordField(cur.data, 'episode_id');
+    if (episodeId) {
+      const hermanas: any = await mcp.call('entities.list', {
+        type: EVOLUTION_ENTITY_ID, filter: { episode_id: String(episodeId) }, limit: 500,
+      });
+      const rows = Array.isArray(hermanas?.data) ? hermanas.data : [];
+      if (isLatestEvolution(rows, String(evolution_id))) {
+        await mcp.call('entities.update', {
+          id: String(episodeId), record_type: 'business', data: { observaciones: texto || null },
+        });
       }
     }
     res.json({ ok: true });

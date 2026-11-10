@@ -2,24 +2,32 @@
 <!--
   Ficha de evolución del paciente (PAPER §28, D-Aux-28).
   Documento hermano de ficha.html: mismo papel A4, misma cabecera y mismas barras de
-  sección. Es de solo lectura y crece hacia abajo (una fila por ficha), así que al
-  imprimir sigue en las páginas que haga falta.
+  sección. Crece hacia abajo, así que al imprimir sigue en las páginas que haga falta.
+
+  Una ficha tiene varias evoluciones (PAPER §28.4): las filas se agrupan por ficha, cada
+  grupo con su cabecera (motivo, apertura, estado, cuántas evoluciones) y debajo una fila
+  por evolución (cita).
 
   fillEvolucion(data):
     data.paciente = { nombre, cedula, edad }
-    data.filas    = [{ episode_id, fecha, medico, especialista, diagnostico,
-                       diagnostico_histopatologico, tratamiento, observaciones }]  (la más nueva primero)
+    data.filas    = [{ episode_id, evolution_id, motivo, estado, es_inicial, fecha, medico,
+                       especialista, diagnostico, diagnostico_histopatologico, tratamiento,
+                       observaciones, hallazgos, proximo_control_fecha, proximo_control_motivo }]
+                    (tal como las da GET /api/patient-evolution: fichas de la más nueva a la
+                    más vieja y, dentro de cada una, evoluciones igual)
     data.actual   = episode_id de la ficha que se está viendo (se resalta), opcional
     data.editable = true para que cada fila tenga «Editar» en Observaciones, opcional
 
   Tocar una fila llama a window.onAbrirFicha(episode_id) si quien embebe el documento
   la definió.
 
-  Observaciones editables (data.editable, lo usan las apps): «Guardar» llama a
-  window.onGuardarObservaciones(episode_id, texto) —el texto ya recortado— y la fila queda
-  en «Guardando…». Quien embebe guarda (cepi-bot /api/bot/ficha/grupo, grupo g_7) y responde
-  con window.observacionesGuardadas(episode_id, texto) o
-  window.errorObservaciones(episode_id, mensaje). Sin onGuardarObservaciones definido, el
+  Observaciones editables (data.editable): «Guardar» llama a
+  window.onGuardarObservaciones(episode_id, texto, evolution_id) —el texto ya recortado— y
+  la fila queda en «Guardando…». Quien embebe guarda: una evolución registrada con
+  cepi-bot /api/bot/evolucion/editar; la fila armada (evolution_id null) con
+  /api/bot/ficha/grupo, grupo g_7. Responde con window.observacionesGuardadas(id, texto) o
+  window.errorObservaciones(id, mensaje), donde id es evolution_id o, en la fila armada,
+  episode_id. Sin onGuardarObservaciones definido, el
   botón sale deshabilitado con el motivo. Impreso no aparece nada de esto.
 -->
 <html lang="es">
@@ -72,6 +80,12 @@
   tr.actual td:first-child { box-shadow: inset 3px 0 0 #5b9097; }
   td.vacio { color: #999; font-style: italic; }
   .estado { color: #555; font-style: italic; padding: 10px 6px; }
+  /* Cabecera de cada ficha: agrupa sus evoluciones. */
+  tr.ficha-cab td { padding: 7px 6px 4px; color: #222; background: #eef4f5; border-bottom: 1px solid #5b9097; cursor: pointer; }
+  tr.ficha-cab .motivo { font-weight: 700; }
+  tr.ficha-cab .meta { color: #555; font-style: italic; margin-left: 6px; }
+  tr.ficha-cab.actual td { background: #fff3c4; }
+  .extra { display: block; margin-top: 2px; font-size: 8pt; color: #3b6e75; }
 
   @media (max-width: 820px) {
     body { padding: 0; }
@@ -88,8 +102,9 @@
     tbody tr { display: block; padding: 6px 0; border-bottom: 1px solid #999; }
     td { display: grid; grid-template-columns: 34% 1fr; gap: 6px; padding: 3px 4px; border: 0; }
     td::before { content: attr(data-col); font-weight: 700; color: #222; font-style: normal; }
-    td.estado { display: block; }
-    td.estado::before { content: none; }
+    td.estado, tr.ficha-cab td { display: block; }
+    td.estado::before, tr.ficha-cab td::before { content: none; }
+    .extra { grid-column: 2; }
     .especialista { grid-column: 2; }
   }
   /* Edición de observaciones (data.editable). */
@@ -111,6 +126,7 @@
     .hoja { box-shadow: none; margin: 0; min-height: 0; }
     td { color: #000; }
     tr.actual td { background: transparent; box-shadow: none; }
+    tr.ficha-cab td, tr.ficha-cab.actual td { background: #eef4f5; }
     tbody tr:hover td { background: transparent; }
   }
 </style>
@@ -159,7 +175,9 @@ function fillEvolucion(data) {
   document.getElementById('f-edad').textContent = p.edad != null && p.edad !== '' ? p.edad + ' años' : '';
 
   const filas = (data && data.filas) || [];
-  document.getElementById('f-cuenta').textContent = filas.length === 1 ? '· 1 ficha' : `· ${filas.length} fichas`;
+  const grupos = agrupar(filas);
+  const nF = grupos.length;
+  document.getElementById('f-cuenta').textContent = `· ${nF === 1 ? '1 ficha' : nF + ' fichas'} · ${filas.length === 1 ? '1 evolución' : filas.length + ' evoluciones'}`;
   const tbody = document.getElementById('f-filas');
   tbody.textContent = '';
   Object.keys(celdasObs).forEach((k) => delete celdasObs[k]);
@@ -171,33 +189,87 @@ function fillEvolucion(data) {
     tr.appendChild(td); tbody.appendChild(tr);
     return;
   }
-  for (const f of filas) {
-    const tr = document.createElement('tr');
-    const actual = data.actual && f.episode_id === data.actual;
-    if (actual) tr.className = 'actual';
-    tr.title = actual ? 'Es la ficha que estás viendo' : 'Abrir esta ficha';
-    tr.appendChild(celda(f.fecha, '—', 'Fecha'));
-    const atendio = celda(f.medico, '—', 'Atendió');
-    if (f.especialista) {
-      const esp = document.createElement('span');
-      esp.className = 'especialista';
-      esp.textContent = 'Especialista: ' + f.especialista;
-      atendio.appendChild(esp);
+  const abrir = (id) => { if (typeof window.onAbrirFicha === 'function') window.onAbrirFicha(id); };
+  for (const g of grupos) {
+    const actual = data.actual && g.episode_id === data.actual;
+    const cab = document.createElement('tr');
+    cab.className = 'ficha-cab' + (actual ? ' actual' : '');
+    cab.title = actual ? 'Es la ficha que estás viendo' : 'Abrir esta ficha';
+    const tdc = document.createElement('td');
+    tdc.colSpan = 6;
+    const motivo = document.createElement('span');
+    motivo.className = 'motivo';
+    motivo.textContent = 'Ficha: ' + (g.motivo || 'sin motivo registrado');
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = `abierta el ${g.apertura || '—'} · ${etiquetaEstado(g.estado)} · ${g.filas.length === 1 ? '1 evolución' : g.filas.length + ' evoluciones'}`;
+    tdc.appendChild(motivo); tdc.appendChild(meta);
+    cab.appendChild(tdc);
+    cab.addEventListener('click', () => abrir(g.episode_id));
+    tbody.appendChild(cab);
+    for (const f of g.filas) {
+      const tr = document.createElement('tr');
+      if (actual) tr.className = 'actual';
+      tr.title = actual ? 'Es la ficha que estás viendo' : 'Abrir esta ficha';
+      const fecha = celda(f.fecha, '—', 'Fecha');
+      if (f.es_inicial && f.evolution_id) fecha.appendChild(extra('Primera cita'));
+      tr.appendChild(fecha);
+      const atendio = celda(f.medico, '—', 'Atendió');
+      if (f.especialista) {
+        const esp = document.createElement('span');
+        esp.className = 'especialista';
+        esp.textContent = 'Especialista: ' + f.especialista;
+        atendio.appendChild(esp);
+      }
+      tr.appendChild(atendio);
+      const dx = celda(f.diagnostico, 'Sin diagnóstico', 'Dx clínico');
+      if (f.hallazgos) dx.appendChild(extra('Hallazgos: ' + f.hallazgos));
+      tr.appendChild(dx);
+      tr.appendChild(celda(f.diagnostico_histopatologico, 'Sin biopsia', 'Dx histopatológico'));
+      const tto = celda(f.tratamiento, 'Sin tratamiento', 'Tratamiento');
+      const control = [f.proximo_control_fecha, f.proximo_control_motivo].filter(Boolean).join(' · ');
+      if (control) tto.appendChild(extra('Próximo control: ' + control));
+      tr.appendChild(tto);
+      tr.appendChild(data.editable ? celdaObservaciones(f) : celda(f.observaciones, 'Sin observaciones', 'Observaciones'));
+      tr.addEventListener('click', () => abrir(f.episode_id));
+      tbody.appendChild(tr);
     }
-    tr.appendChild(atendio);
-    tr.appendChild(celda(f.diagnostico, 'Sin diagnóstico', 'Dx clínico'));
-    tr.appendChild(celda(f.diagnostico_histopatologico, 'Sin biopsia', 'Dx histopatológico'));
-    tr.appendChild(celda(f.tratamiento, 'Sin tratamiento', 'Tratamiento'));
-    tr.appendChild(data.editable ? celdaObservaciones(f) : celda(f.observaciones, 'Sin observaciones', 'Observaciones'));
-    tr.addEventListener('click', () => {
-      if (typeof window.onAbrirFicha === 'function') window.onAbrirFicha(f.episode_id);
-    });
-    tbody.appendChild(tr);
   }
 }
 
+const ESTADOS = {
+  agendado: 'Agendada', en_curso: 'En curso', enviada: 'Enviada', en_triage: 'En triage', derivada: 'Derivada',
+  'en_revisión_solicitada': 'Revisión solicitada', respondida: 'Respondida', cerrado: 'Cerrada', alta: 'Alta',
+};
+function etiquetaEstado(e) { return e ? (ESTADOS[e] || String(e).replace(/_/g, ' ')) : 'sin estado'; }
+
+function extra(texto) {
+  const s = document.createElement('span');
+  s.className = 'extra';
+  s.textContent = texto;
+  return s;
+}
+
+/** Filas agrupadas por ficha, en el orden en que llegan. La apertura es la cita más vieja. */
+function agrupar(filas) {
+  const out = [];
+  const porId = {};
+  for (const f of filas) {
+    let g = porId[f.episode_id];
+    if (!g) {
+      g = { episode_id: f.episode_id, motivo: f.motivo || null, estado: f.estado || null, filas: [] };
+      porId[f.episode_id] = g;
+      out.push(g);
+    }
+    g.filas.push(f);
+  }
+  for (const g of out) g.apertura = g.filas[g.filas.length - 1].fecha || null;
+  return out;
+}
+
 // ---------- Observaciones editables ----------
-const celdasObs = {};   // episode_id → { td, fila, editando }
+const celdasObs = {};   // evolution_id (o episode_id en la fila armada) → { td, fila, editando }
+const claveObs = (f) => f.evolution_id || f.episode_id;
 let obsEnEdicion = null;
 
 function celdaObservaciones(f) {
@@ -206,8 +278,8 @@ function celdaObservaciones(f) {
   td.className = 'obs';
   // El toque dentro de la celda no abre la ficha de la fila.
   td.addEventListener('click', (e) => e.stopPropagation());
-  celdasObs[f.episode_id] = { td, fila: f };
-  pintarObs(f.episode_id);
+  celdasObs[claveObs(f)] = { td, fila: f };
+  pintarObs(claveObs(f));
   return td;
 }
 
@@ -232,7 +304,7 @@ function pintarObs(id, error) {
     cuerpo.appendChild(span);
     const sinHost = typeof window.onGuardarObservaciones !== 'function';
     const otra = obsEnEdicion && obsEnEdicion !== id;
-    const motivo = sinHost ? 'Esta vista no puede guardar' : (otra ? 'Termina primero la otra observación' : 'Editar las observaciones de esta ficha');
+    const motivo = sinHost ? 'Esta vista no puede guardar' : (otra ? 'Termina primero la otra observación' : 'Editar las observaciones de esta cita');
     const b = boton('✏️', () => editarObs(id), sinHost || otra, motivo);
     b.className = 'obs-editar';
     b.setAttribute('aria-label', motivo);
@@ -242,7 +314,7 @@ function pintarObs(id, error) {
   }
   const area = document.createElement('textarea');
   area.className = 'obs-texto'; area.rows = 3;
-  area.placeholder = 'Resumen de lo más importante de esta ficha';
+  area.placeholder = 'Resumen de lo más importante de esta cita';
   area.value = c.borrador != null ? c.borrador : (fila.observaciones || '');
   area.disabled = !!c.guardando;
   cuerpo.appendChild(area);
@@ -255,7 +327,7 @@ function pintarObs(id, error) {
     const texto = area.value.trim();
     c.borrador = area.value; c.guardando = true;
     pintarObs(id);
-    window.onGuardarObservaciones(id, texto);
+    window.onGuardarObservaciones(fila.episode_id, texto, fila.evolution_id || null);
   }, c.guardando, c.guardando ? 'Guardando…' : 'Guardar en la ficha');
   const cancelar = boton('Cancelar', () => { obsEnEdicion = null; c.borrador = null; repintarObs(); }, c.guardando);
   // Sin cambios no hay nada que guardar.
@@ -282,16 +354,26 @@ function editarObs(id) {
 }
 
 // Respuestas de quien embebe.
-function observacionesGuardadas(id, texto) {
-  const c = celdasObs[id]; if (!c) return;
+// Quien embebe responde con evolution_id o, como antes, con episode_id: en ese caso es
+// la celda que se está editando de esa ficha.
+function celdaDe(id) {
+  if (celdasObs[id]) return { id, c: celdasObs[id] };
+  if (obsEnEdicion && celdasObs[obsEnEdicion] && celdasObs[obsEnEdicion].fila.episode_id === id) {
+    return { id: obsEnEdicion, c: celdasObs[obsEnEdicion] };
+  }
+  return { id, c: null };
+}
+
+function observacionesGuardadas(idRespuesta, texto) {
+  const { c } = celdaDe(idRespuesta); if (!c) return;
   c.fila.observaciones = texto || null;
   c.guardando = false; c.borrador = null;
   obsEnEdicion = null;
   repintarObs();
 }
 
-function errorObservaciones(id, mensaje) {
-  const c = celdasObs[id]; if (!c) return;
+function errorObservaciones(idRespuesta, mensaje) {
+  const { id, c } = celdaDe(idRespuesta); if (!c) return;
   c.guardando = false;
   pintarObs(id, mensaje || 'No se pudo guardar');
 }

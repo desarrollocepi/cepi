@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn(), getPatientEvolution: vi.fn(), obtenerEntidad: vi.fn() }));
+vi.mock('../src/api.js', () => ({ fichaCompleta: vi.fn(), guardarGrupoFicha: vi.fn(), uploadAttachment: vi.fn(), listarEvolucion: vi.fn(), agregarEvolucion: vi.fn(), editarEvolucion: vi.fn(), obtenerEntidad: vi.fn() }));
 import * as api from '../src/api.js';
 import BotForm from '../src/components/BotForm.vue';
 import BodyMapField from '../src/components/BodyMapField.vue';
@@ -500,33 +500,34 @@ describe('EvolucionPaciente — ficha de evolución (PAPER §28)', () => {
   ];
   const montar = (props = {}) => mount(EvolucionPaciente, { props: { patientId: 'p1', episodeId: 'ep2', ...props } });
   const boton = (w) => w.find('.evo-btn');
-  beforeEach(() => { api.getPatientEvolution.mockReset(); api.getPatientEvolution.mockResolvedValue({ ok: true, data: FILAS }); });
+  beforeEach(() => { api.listarEvolucion.mockReset(); api.listarEvolucion.mockResolvedValue({ ok: true, data: FILAS }); });
 
   it('plegada no pide nada; al abrirla trae la tabla del paciente', async () => {
     const w = montar();
-    expect(api.getPatientEvolution).not.toHaveBeenCalled();
+    expect(api.listarEvolucion).not.toHaveBeenCalled();
     expect(w.find('table').exists()).toBe(false);
     await boton(w).trigger('click');
     await flushPromises();
-    expect(api.getPatientEvolution).toHaveBeenCalledWith('p1');
+    expect(api.listarEvolucion).toHaveBeenCalledWith('p1');
     expect(w.findAll('th').map((t) => t.text())).toEqual(
       ['Fecha', 'Atendió', 'Diagnóstico clínico', 'Diagnóstico histopatológico', 'Tratamiento', 'Observaciones']);
     const celdas = w.findAll('tbody tr')[0].findAll('td').map((t) => t.text());
     expect(celdas).toEqual(['2026-10-01', 'Dra. Ana Pérez', 'L40.0 — Psoriasis', 'Sin biopsia', 'Clobetasol', 'Sin observaciones✏️']);
-    expect(w.findAll('tbody tr')[1].text()).toContain('Sin diagnóstico');
-    expect(w.find('.evo-cuenta').text()).toBe('2 fichas');
+    // Solo las evoluciones de la ficha abierta; la otra ficha va en «Otras fichas».
+    expect(w.findAll('tbody tr')).toHaveLength(1);
+    expect(w.find('.evo-cuenta').text()).toBe('1 evolución en esta ficha · 2 fichas');
     expect(boton(w).text()).toBe('Ocultar');
   });
 
-  it('resalta la ficha abierta y navega a otra al tocar su fila', async () => {
+  it('las otras fichas van plegadas y tocar una la abre', async () => {
     const w = montar();
     await boton(w).trigger('click');
     await flushPromises();
-    const filas = w.findAll('tbody tr');
-    expect(filas[0].classes()).toContain('evo-actual');
-    await filas[0].trigger('click');
+    await w.findAll('tbody tr')[0].trigger('click');
     expect(w.emitted('navegar')).toBeUndefined();
-    await filas[1].trigger('click');
+    expect(w.find('.evo-otra').exists()).toBe(false);
+    await w.find('.evo-otras-btn').trigger('click');
+    await w.find('.evo-otra').trigger('click');
     expect(w.emitted('navegar')[0]).toEqual(['ep1']);
   });
 
@@ -537,13 +538,13 @@ describe('EvolucionPaciente — ficha de evolución (PAPER §28)', () => {
   });
 
   it('sin fichas lo dice, y si falla ofrece reintentar', async () => {
-    api.getPatientEvolution.mockResolvedValueOnce({ ok: true, data: [] });
+    api.listarEvolucion.mockResolvedValueOnce({ ok: true, data: [] });
     const w = montar();
     await boton(w).trigger('click');
     await flushPromises();
-    expect(w.find('.evo-estado').text()).toContain('todavía no tiene fichas');
+    expect(w.find('.evo-ficha-meta').text()).toContain('todavía no tiene fichas');
 
-    api.getPatientEvolution.mockRejectedValueOnce(new Error('sin red'));
+    api.listarEvolucion.mockRejectedValueOnce(new Error('sin red'));
     const w2 = montar();
     await w2.find('.evo-btn').trigger('click');
     await flushPromises();

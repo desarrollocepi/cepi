@@ -35,7 +35,7 @@
           type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
           :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
         >🏁 Dar de alta</button>
-        <button type="button" :disabled="busy" @click="nuevaConsulta" title="Abrir una consulta nueva (el episodio anterior queda en el historial)">＋ Nueva consulta</button>
+        <button type="button" :disabled="busy" @click="nuevaConsulta" title="Abrir una ficha nueva para OTRO motivo de consulta (la anterior queda en el historial). Para un control del mismo motivo, usa «＋ Agregar evolución» en la sección Evolución">＋ Nueva consulta</button>
         <button type="button" @click="showDoctoPro = true" title="Consultar pacientes en DoctoPro">🔎 DoctoPro</button>
       </div>
     </div>

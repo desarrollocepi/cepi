@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
-vi.mock('../src/api.js', () => ({ getPatientEvolution: vi.fn(), obtenerEntidad: vi.fn() }));
+vi.mock('../src/api.js', () => ({ listarEvolucion: vi.fn(), obtenerEntidad: vi.fn() }));
 import * as api from '../src/api.js';
 import VisorEvolucion from '../src/components/VisorEvolucion.vue';
 
@@ -22,7 +22,7 @@ function documentoFalso(w) {
 
 describe('VisorEvolucion — ficha de evolución en modal', () => {
   beforeEach(() => {
-    api.getPatientEvolution.mockReset().mockResolvedValue({ ok: true, data: FILAS });
+    api.listarEvolucion.mockReset().mockResolvedValue({ ok: true, data: FILAS });
     api.obtenerEntidad.mockReset().mockResolvedValue({ data: { nombre: 'Test2', apellidos: 'Apellido', cedula: '1234567897', fecha_nac: '1990-01-01' } });
   });
 
@@ -32,7 +32,7 @@ describe('VisorEvolucion — ficha de evolución en modal', () => {
     const win = documentoFalso(w);
     await w.find('iframe').trigger('load');
     await flushPromises();
-    expect(api.getPatientEvolution).toHaveBeenCalledWith('p1');
+    expect(api.listarEvolucion).toHaveBeenCalledWith('p1');
     const datos = win.fillEvolucion.mock.calls.at(-1)[0];
     expect(datos.paciente).toMatchObject({ nombre: 'Test2 Apellido', cedula: '1234567897' });
     expect(datos.paciente.edad).toBeGreaterThan(30);
@@ -52,7 +52,7 @@ describe('VisorEvolucion — ficha de evolución en modal', () => {
   });
 
   it('si falla lo dice en el documento e Imprimir queda deshabilitado con su motivo', async () => {
-    api.getPatientEvolution.mockRejectedValueOnce(new Error('sin red'));
+    api.listarEvolucion.mockRejectedValueOnce(new Error('sin red'));
     const w = mount(VisorEvolucion, { props: { patientId: 'p1' } });
     const win = documentoFalso(w);
     await w.find('iframe').trigger('load');

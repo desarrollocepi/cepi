@@ -21,7 +21,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { getPatientEvolution, obtenerEntidad } from '../api.js';
+import { listarEvolucion, obtenerEntidad } from '../api.js';
 import { edadDesde } from '../edad.js';
 
 const props = defineProps({
@@ -59,7 +59,7 @@ function onLoad() { documentoListo = true; llenar(); }
 async function cargar() {
   try {
     const [evo, paciente] = await Promise.all([
-      getPatientEvolution(props.patientId),
+      listarEvolucion(props.patientId),
       obtenerEntidad(props.patientId).catch(() => null),
     ]);
     const p = paciente?.data || {};

@@ -161,3 +161,28 @@ describe('api — chat y cola sin conexión', () => {
     expect(api.loadSessionId()).toBe('s1');
   });
 });
+
+describe('api — evolución de la ficha (PAPER §28.4)', () => {
+  it('listarEvolucion: episode_id opcional', async () => {
+    await api.listarEvolucion('p1');
+    expect(ultima()[0]).toBe('/api/patient-evolution?patient_id=p1');
+    await api.listarEvolucion('p1', { episodeId: 'e 1' });
+    expect(ultima()[0]).toBe('/api/patient-evolution?patient_id=p1&episode_id=e%201');
+  });
+
+  it('agregarEvolucion y editarEvolucion mandan los nombres del contrato', async () => {
+    await api.agregarEvolucion({
+      episodeId: 'e1', fecha: '2026-11-09', hallazgos: 'h', diagnostico: 'L40.0 — Psoriasis', tratamiento: 't',
+      observaciones: 'o', proximoControlFecha: '2027-01-01', proximoControlMotivo: 'm',
+    });
+    expect(ultima()[0]).toBe('/api/bot/episodio/evolucion');
+    expect(ultima()[1].method).toBe('POST');
+    expect(cuerpo()).toEqual({
+      episode_id: 'e1', fecha: '2026-11-09', hallazgos: 'h', diagnostico: 'L40.0 — Psoriasis', tratamiento: 't',
+      observaciones: 'o', proximo_control_fecha: '2027-01-01', proximo_control_motivo: 'm',
+    });
+    await api.editarEvolucion({ evolutionId: 'ev1', observaciones: 'x' });
+    expect(ultima()[0]).toBe('/api/bot/evolucion/editar');
+    expect(cuerpo()).toEqual({ evolution_id: 'ev1', observaciones: 'x' });
+  });
+});

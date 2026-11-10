@@ -509,12 +509,40 @@ export async function listarCasosDePaciente(patientId) {
 }
 
 /**
- * Ficha de evolución (PAPER §28): fecha, médico, diagnóstico y tratamiento de cada ficha
- * del paciente, la más nueva primero. La arma TodoERP porque el nombre del médico no se
- * puede resolver desde acá.
+ * Ficha de evolución (PAPER §28, §28.4): una fila por evolución (cita) de cada ficha del
+ * paciente; la ficha sin evoluciones da una fila armada (`evolution_id` null). Fichas de
+ * la más nueva a la más vieja y, dentro, evoluciones igual. Con `episodeId`, solo esa
+ * ficha. La arma TodoERP porque el nombre del médico no se puede resolver desde acá.
  */
-export async function getPatientEvolution(patientId) {
-  return call(`/api/patient-evolution?patient_id=${encodeURIComponent(patientId)}`, { method: 'GET' });
+export async function listarEvolucion(patientId, { episodeId = null } = {}) {
+  const qs = `patient_id=${encodeURIComponent(patientId)}${episodeId ? `&episode_id=${encodeURIComponent(episodeId)}` : ''}`;
+  return call(`/api/patient-evolution?${qs}`, { method: 'GET' });
+}
+
+/**
+ * Agrega una evolución (cita) a la ficha (PAPER §28.4) → `{ok, evolution_id}`. Si la ficha
+ * no tenía evoluciones, cepi-bot guarda antes la primera cita como evolución inicial, y el
+ * episodio pasa a mostrar lo vigente. 409 si la ficha está de alta.
+ */
+export async function agregarEvolucion({
+  episodeId, fecha, hallazgos = '', diagnostico = '', tratamiento = '', observaciones = '',
+  proximoControlFecha = '', proximoControlMotivo = '',
+}) {
+  return call('/api/bot/episodio/evolucion', {
+    method: 'POST',
+    body: JSON.stringify({
+      episode_id: episodeId, fecha, hallazgos, diagnostico, tratamiento, observaciones,
+      proximo_control_fecha: proximoControlFecha, proximo_control_motivo: proximoControlMotivo,
+    }),
+  });
+}
+
+/** Observaciones de una evolución registrada (PAPER §28.4). La fila armada guarda `g_7`. */
+export async function editarEvolucion({ evolutionId, observaciones }) {
+  return call('/api/bot/evolucion/editar', {
+    method: 'POST',
+    body: JSON.stringify({ evolution_id: evolutionId, observaciones }),
+  });
 }
 
 /**
