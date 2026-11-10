@@ -5,7 +5,7 @@ import { h, defineComponent } from 'vue';
 
 vi.mock('../src/api.js', () => ({ whoami: vi.fn(), logout: vi.fn(), switchOrg: vi.fn(), obtenerEntidad: vi.fn() }));
 vi.mock('../src/pwa.js', () => ({ enableWebPush: vi.fn() }));
-vi.mock('../src/router.js', () => ({ inicioSegunHost: () => '/chat' }));
+vi.mock('../src/router.js', () => ({ inicioSegunHost: () => '/chat', casosAllowedHere: () => true }));
 import * as api from '../src/api.js';
 import { enableWebPush } from '../src/pwa.js';
 import App from '../src/App.vue';

@@ -1679,6 +1679,10 @@ usuarios, auth y componentes**; cambia el propósito.
 | conducción | chat que guía el llenado | navegación directa, **sin chat** |
 | unidad de trabajo | la visita | el corpus |
 
+**Plataformas separadas** (decisión del dueño, 2026-11-09): desde `telemedicina.cepi.ec`, su PWA y
+las apps no se entra al portal de casos. El menú no ofrece «Casos» y una ruta `/casos` en ese
+host lleva al chat (una PWA que quedó en casos vuelve sola). En local siguen las dos.
+
 No es un tercer frontend. `App.vue` conmuta por un string `view` (no hay `vue-router`),
 así que el portal es una rama más y reusa `BotForm`, `EntitySearchField`, `IcdSearchField`,
 `ImageGallery` y la sesión. D-Aux-4 queda intacta: los médicos siguen operando en el

@@ -23,6 +23,15 @@ import Turnos from './components/Turnos.vue';
 import Controles from './components/Controles.vue';
 import CalificarAtencion from './components/CalificarAtencion.vue';
 
+/**
+ * Telemedicina y casos son plataformas distintas (decisión del dueño, 2026-11-09): desde
+ * telemedicina.cepi.ec (y la app) no se entra al portal de casos. En local (localhost,
+ * 127.0.0.1) siguen las dos para poder probarlas.
+ */
+export function casosAllowedHere(host = typeof location !== 'undefined' ? location.hostname : '') {
+  return !/^telemedicina\./i.test(host);
+}
+
 /** Con qué arranca quien entra sin ruta: lo decide el dominio por el que llegó. */
 export function inicioSegunHost() {
   const enCasos = typeof location !== 'undefined' && /^casos\./i.test(location.hostname);
@@ -57,4 +66,8 @@ const routes = [
 ];
 
 export const router = createRouter({ history: createWebHashHistory(), routes });
+router.beforeEach((to) => {
+  if (String(to.path).startsWith('/casos') && !casosAllowedHere()) return '/chat';
+  return true;
+});
 export default router;

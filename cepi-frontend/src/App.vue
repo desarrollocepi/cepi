@@ -35,7 +35,7 @@
           <button v-if="canInstall" class="install-btn" @click="installApp" :title="storeUrl ? 'Descargar la app de la tienda' : 'Instalar la app en tu dispositivo'">📲 Instalar app</button>
           <button v-if="showNotifOptin && !isPending" class="notif-optin" @click="enableNotifs(); showTopMenu = false" title="Activar notificaciones push">🔔 Activar</button>
           <button v-if="!isPending && !showProfile" @click="openProfile">👤 Perfil</button>
-          <button v-if="!isPending && !showCases" @click="openCases">🗂️ Casos</button>
+          <button v-if="!isPending && !showCases && casosHere" @click="openCases">🗂️ Casos</button>
           <button v-if="!isPending && !showGallery" @click="openGallery">🖼️ Galería</button>
           <button v-if="!isPending && !showTurnos" @click="openTurnos" title="Quién está de turno cada semana">📅 Turnos</button>
           <button v-if="!isPending && !showControles" @click="openControles" title="Próximos controles de los pacientes y qué hacer en cada uno">🗓️ Controles</button>
@@ -97,7 +97,7 @@ import Register from './components/Register.vue';
 import VerifyEmail from './components/VerifyEmail.vue';
 import PendingApproval from './components/PendingApproval.vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
-import { inicioSegunHost } from './router.js';
+import { inicioSegunHost, casosAllowedHere } from './router.js';
 import Notifications from './components/Notifications.vue';
 import { whoami, logout, switchOrg, obtenerEntidad } from './api.js';
 import { enableWebPush } from './pwa.js';
@@ -121,6 +121,8 @@ const showControles = computed(() => route.name === 'controles');
 // casos.cepi.ec, así que el host decide con qué vista arranca; el menú deja saltar de
 // una a la otra sin volver a entrar.
 const brand = computed(() => route.meta?.marca || 'Telemedicina');
+// Desde telemedicina.cepi.ec no se salta a casos: son plataformas distintas (router.js).
+const casosHere = casosAllowedHere();
 function openCases() { showTopMenu.value = false; router.push('/casos'); }
 function openGallery() { showTopMenu.value = false; router.push('/galeria'); }
 function openTurnos() { showTopMenu.value = false; router.push('/turnos'); }
