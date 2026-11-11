@@ -15,6 +15,14 @@ final class GaleriaModelo {
     private(set) var cargando = false
     private(set) var cargado = false
     private(set) var error: String?
+    /// Solo las fotos de este episodio (sección Imágenes del paciente, PAPER §28.4.1); `nil` =
+    /// todas las pedidas. Filtra lo cargado: no cambia lo que se pide al servidor.
+    var episodeFilter: String?
+
+    /// Las que se muestran: las cargadas, filtradas por episodio si hay filtro.
+    var visibles: [ImagenGaleria] {
+        EpisodeImages.filter(imagenes, episode: episodeFilter, showAll: episodeFilter == nil)
+    }
 
     @ObservationIgnored private var pedido = 0
     @ObservationIgnored private var busquedaAplicada = ""

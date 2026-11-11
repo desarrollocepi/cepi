@@ -1,9 +1,10 @@
 import PhotosUI
 import SwiftUI
 
-/// El chat del paciente: sus consultas, los mensajes de todos y el composer. Es la primera
-/// sección de `PacienteView`, que es quien abre el hilo y tiene el menú de acciones.
-/// Equivale a IntakeChat.vue.
+/// El chat del paciente: los mensajes de todos en la consulta activa y el composer. Es la
+/// primera sección de `PacienteView`, que es quien abre el hilo, tiene el menú de acciones y el
+/// navegador de episodios (cambiar de episodio ahí activa ese episodio en el chat, PAPER
+/// §28.4.1). Equivale a IntakeChat.vue.
 struct HiloView: View {
     let fila: FilaPaciente
     /// El modelo lo crea `PacienteView`: la ficha y las acciones trabajan sobre el mismo.
@@ -23,10 +24,7 @@ struct HiloView: View {
         let visibles = episodios.visibles(modelo.mensajes, indice: indice)
         let enLaActual = episodios.esActiva(indice: indice, activo: modelo.episodioActivo)
 
-        VStack(spacing: 0) {
-            barraDeConsultas(episodios, indice: indice, enLaActual: enLaActual)
-            feed(visibles, enLaActual: enLaActual)
-        }
+        feed(visibles, enLaActual: enLaActual)
         .safeAreaInset(edge: .bottom) {
             if enLaActual {
                 Composer(
@@ -78,35 +76,6 @@ struct HiloView: View {
             VisorImagen(id: imagen.id)
                 .environment(sesion)
         }
-    }
-
-    private func barraDeConsultas(_ episodios: Episodios, indice: Int, enLaActual: Bool) -> some View {
-        HStack(spacing: 10) {
-            Button { modelo.irAnterior() } label: {
-                Image(systemName: "chevron.left")
-            }
-            .disabled(modelo.ocupado || indice <= 0)
-            .accessibilityLabel("Consulta anterior")
-
-            Text(modelo.cargado ? episodios.etiqueta(indice: indice, mensajes: modelo.mensajes) : "Cargando consultas…")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Button { modelo.irSiguiente() } label: {
-                Image(systemName: "chevron.right")
-            }
-            .disabled(modelo.ocupado || indice >= episodios.orden.count - 1)
-            .accessibilityLabel("Consulta siguiente")
-
-            Button("Actual", systemImage: "arrow.uturn.forward") { modelo.volverALaActual() }
-                .disabled(modelo.ocupado || enLaActual)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
     }
 
     private func feed(_ visibles: [MensajeHilo], enLaActual: Bool) -> some View {
@@ -206,9 +175,8 @@ struct HiloView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.yellow, lineWidth: 2))
     }
 
-    private func enviarBorrador() {
-        let texto = borrador
-        borrador = ""
+    /// El Composer ya vació su campo; acá solo se manda lo que tenía.
+    private func enviarBorrador(_ texto: String) {
         Task { await modelo.enviar(texto, api: sesion.api) }
     }
 

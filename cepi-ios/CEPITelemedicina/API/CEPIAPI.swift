@@ -137,10 +137,15 @@ struct CEPIAPI: Sendable {
     /// Edita las observaciones de una evolución registrada (PAPER §28.4). La fila armada (sin
     /// `evolution_id`) sigue por `saveObservations` (`g_7`).
     func editEvolution(id: String, observaciones: String) async throws {
-        let _: Confirmacion = try await cliente.post(
-            "/api/bot/evolucion/editar",
-            json: EvolutionEdit(evolutionId: id, observaciones: observaciones),
-        )
+        try await editEvolution(EvolutionEdit(evolutionId: id, observaciones: observaciones))
+    }
+
+    /// Guarda el formulario de una evolución (PAPER §28.4.1). Acción explícita: sin gate. Un 400
+    /// (ficha de alta con próximo control, fecha inválida) llega como `APIError` con el motivo
+    /// del bot en español.
+    @discardableResult
+    func editEvolution(_ edit: EvolutionEdit) async throws -> EvolutionCreateResult {
+        try await cliente.post("/api/bot/evolucion/editar", json: edit)
     }
 
     /// El especialista responde la interconsulta (PAPER §30.2). Acción explícita: sin gate.

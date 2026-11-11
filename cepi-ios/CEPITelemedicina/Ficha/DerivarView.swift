@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// Derivar el episodio a círculos y/o personas — varios a la vez — o al responsable del caso.
+/// Derivar el episodio a círculos y/o personas — varios a la vez — o al responsable de turno.
 /// Se marcan los destinos y un botón los manda en una sola derivación:
 /// `derivar a <slug>, <uuid>, … [motivo]`. A quien ya está derivado se le muestra la marca y
-/// no se lo puede volver a elegir.
+/// no se lo puede volver a elegir. «Al responsable de turno» manda `derivar a responsable
+/// [motivo]`: el bot lo deriva al círculo responsable y avisa solo a quien está de turno hoy
+/// (PAPER §32.2.1).
 struct DerivarView: View {
     /// A quién está derivado el caso ahora (para marcarlo y no duplicarlo).
     var yaDerivados: [Derivado] = []
     /// Envía el comando; devuelve el error, o `nil` si el bot lo procesó.
     let alDerivar: (String) async -> String?
-    let responsable: () async -> String?
 
     @Environment(Sesion.self) private var sesion
     @Environment(\.dismiss) private var cerrar
@@ -35,9 +36,11 @@ struct DerivarView: View {
                 }
 
                 Section {
-                    Button("Al responsable del caso", systemImage: "star") {
-                        Task { await alResponsable() }
+                    Button("Al responsable de turno", systemImage: "star") {
+                        Task { await toResponsibleOnDuty() }
                     }
+                } footer: {
+                    Text("Le llega a quien está de turno hoy en el círculo responsable; sin nadie de turno, a todo el círculo.")
                 }
 
                 Section("Círculos y especialidades") {
@@ -157,12 +160,9 @@ struct DerivarView: View {
         miembros[slug] = (try? await sesion.api.miembros(grupo: slug)) ?? []
     }
 
-    private func alResponsable() async {
-        guard let usuario = await responsable() else {
-            error = "El episodio no tiene responsable ni creador definido."
-            return
-        }
-        await derivar("escalar a \(usuario)")
+    /// El bot resuelve a quién le toca (PAPER §32.2.1): no hace falta buscar el responsable aquí.
+    private func toResponsibleOnDuty() async {
+        await derivar("derivar a responsable")
     }
 
     private func alternar(_ token: String) {

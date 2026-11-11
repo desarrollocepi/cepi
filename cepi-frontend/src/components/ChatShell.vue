@@ -136,14 +136,18 @@ watch([selectedId, seccion], ([id]) => { if (id) cargarVisitas(id); }, { immedia
 const todasLasFotos = ref(false);
 const cuentaFotos = ref({ todas: 0, visibles: 0 });
 
-/** Otro episodio en el navegador: Ficha, Evolución e Imágenes lo siguen; el chat también
- *  (`activar episodio`, acción explícita), para que lo que se escriba quede en él. */
+/** Otro episodio en el navegador: Ficha, Evolución e Imágenes lo siguen. El chat se mueve a
+ *  él (`activar episodio`, acción explícita) solo cuando el Chat está a la vista o al volver
+ *  a él, como en las apps: navegar por la Ficha no llena el hilo de «activar episodio». */
 function elegirEpisodio(id) {
   if (!id || id === episodioDeLaFicha.value) return;
   episodioElegido.value = id;
   todasLasFotos.value = false;
-  chatRef.value?.activarEpisodio?.(id);
+  if (seccion.value === 'chat') chatRef.value?.activarEpisodio?.(id);
 }
+watch(seccion, (s) => {
+  if (s === 'chat' && episodioElegido.value) chatRef.value?.activarEpisodio?.(episodioElegido.value);
+});
 /** El chat cambió de episodio por su cuenta (Nueva consulta, reclamar…): el navegador lo sigue. */
 function onEpisodioDelChat(id) {
   if (!id || id === episodioElegido.value) return;

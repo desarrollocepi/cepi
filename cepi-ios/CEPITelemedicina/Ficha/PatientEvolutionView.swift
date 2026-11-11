@@ -3,20 +3,23 @@ import SwiftUI
 /// La sección Evolución del paciente (PAPER §28.3 y §28.4): nativa y adaptable, como
 /// `EvolucionPaciente.vue` con `plegable=false` en el teléfono. Muestra las evoluciones (citas)
 /// de la **ficha abierta**, con su cabecera (motivo, fecha de apertura y estado), una tarjeta
-/// por evolución, la más nueva primero. Arriba, «＋ Agregar evolución»; debajo, plegadas, las
-/// otras fichas del paciente. Las observaciones se editan en línea (✏️): en una evolución
-/// registrada, `POST /api/bot/evolucion/editar`; en la fila armada, la sección 7 de la ficha
-/// (`g_7`). Tocar una tarjeta abre esa ficha en la sección Ficha. El documento imprimible
-/// (`evolucion.html`, `EvolucionView`) queda detrás de «Imprimir».
+/// por evolución en orden de cita: la más vieja arriba y la más nueva abajo, justo encima del
+/// bloque «Próximo control» (PAPER §28.4.1). Arriba, «＋ Agregar evolución»; debajo, plegadas,
+/// las otras fichas del paciente. Tocar una tarjeta abre el formulario de esa evolución; tocar
+/// «Próximo control», el de la más nueva con el foco ahí. Las observaciones también se editan
+/// en línea (✏️): en una evolución registrada, `POST /api/bot/evolucion/editar`; en la fila
+/// armada, la sección 7 de la ficha (`g_7`). El documento imprimible (`evolucion.html`,
+/// `EvolucionView`) queda detrás de «Imprimir».
 struct PatientEvolutionView: View {
     let patientId: String
-    /// La ficha a la vista en la sección Ficha: se resalta.
+    /// El episodio elegido en el navegador del paciente: es la ficha que se muestra.
     let current: String?
     /// Quien la contiene la sube cada vez que la sección vuelve a la vista: se vuelve a pedir,
     /// porque entre una vez y otra se pudo guardar un diagnóstico.
     var reload = 0
-    /// Otra ficha elegida en «Otras fichas del paciente»: la barra de episodios la sigue.
+    /// Otra ficha elegida en «Otras fichas del paciente»: el navegador de episodios la sigue.
     var onSelectEpisode: (String) -> Void = { _ in }
+    /// Una ficha elegida en el documento imprimible: abre la sección Ficha.
     let onOpen: (String) -> Void
 
     @Environment(Sesion.self) private var sesion
@@ -30,12 +33,19 @@ struct PatientEvolutionView: View {
     @State private var saving = false
     @State private var saveError: String?
     @State private var printing = false
-    /// La ficha elegida aquí, mientras la barra de episodios no la confirma.
-    @State private var selected: String?
     @State private var showOthers = false
     @State private var adding = false
+    /// La evolución cuyo formulario está abierto.
+    @State private var editingForm: EditRequest?
 
-    private var effectiveCurrent: String? { selected ?? current }
+    /// Abrir el formulario de una fila; desde «Próximo control», con el foco ahí.
+    struct EditRequest: Identifiable {
+        let row: FilaEvolucion
+        let focusNextControl: Bool
+        let id = UUID()
+    }
+
+    private var effectiveCurrent: String? { current }
     private var groups: [EvolutionLogic.EpisodeGroup] { EvolutionLogic.groups(rows) }
     private var openGroup: EvolutionLogic.EpisodeGroup? { EvolutionLogic.openGroup(groups, current: effectiveCurrent) }
 
@@ -46,7 +56,15 @@ struct PatientEvolutionView: View {
             content
         }
         .task(id: "\(reload)|\(patientId)") { await load() }
-        .onChange(of: current) { _, _ in selected = nil }
+        .sheet(item: $editingForm) { request in
+            AddEvolutionView(
+                editing: request.row,
+                motivo: openGroup?.motivo,
+                discharged: openGroup?.isDischarged ?? false,
+                focusNextControl: request.focusNextControl
+            ) { await load() }
+                .environment(sesion)
+        }
         .sheet(isPresented: $adding) {
             if let group = openGroup {
                 AddEvolutionView(episodeId: group.episodeId, motivo: group.motivo) { await load() }
@@ -140,7 +158,8 @@ struct PatientEvolutionView: View {
                 LazyVStack(spacing: 10) {
                     if let group = openGroup {
                         groupHeader(group)
-                        ForEach(group.rows) { row in
+                        // En orden de cita: la más nueva queda abajo, junto al próximo control.
+                        ForEach(group.chronological) { row in
                             card(row)
                         }
                         nextControlFooter(group)
@@ -182,7 +201,22 @@ struct PatientEvolutionView: View {
     }
 
     /// «Próximo control» al pie de la ficha abierta (PAPER §28.4): fecha, qué hacer y estado.
+    /// Tocarlo abre el formulario de la evolución más nueva con el foco ahí (§28.4.1). Con la
+    /// ficha de alta sigue a la vista, no se puede tocar y dice por qué.
     private func nextControlFooter(_ group: EvolutionLogic.EpisodeGroup) -> some View {
+        let blockReason = EvolutionLogic.nextControlTapBlockReason(group)
+        return Button {
+            if let latest = group.latest { editingForm = EditRequest(row: latest, focusNextControl: true) }
+        } label: {
+            nextControlContent(group, blockReason: blockReason)
+        }
+        .buttonStyle(.plain)
+        .disabled(blockReason != nil)
+        .accessibilityHint(blockReason ?? "Abre la evolución más reciente para fijar el próximo control")
+        .accessibilityIdentifier("evolucion.proximoControl")
+    }
+
+    private func nextControlContent(_ group: EvolutionLogic.EpisodeGroup, blockReason: String?) -> some View {
         let control = EvolutionLogic.nextControl(group, today: EvolutionLogic.localToday())
         let color: Color = switch control {
         case .scheduled(_, _, .overdue): .red
@@ -206,12 +240,15 @@ struct PatientEvolutionView: View {
             Text(control.text)
                 .font(.footnote)
                 .foregroundStyle({ if case .scheduled = control { return Color.primary } else { return Color.secondary } }())
+            Text(blockReason ?? "Toca para editar el próximo control")
+                .font(.caption)
+                .foregroundStyle(blockReason == nil ? Marca.acento : Color.secondary)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("evolucion.proximoControl")
     }
 
     /// «Otras fichas del paciente», plegadas: una línea por ficha; tocarla cambia a esa ficha.
@@ -227,7 +264,6 @@ struct PatientEvolutionView: View {
             }
             ForEach(others) { group in
                 Button {
-                    selected = group.episodeId
                     onSelectEpisode(group.episodeId)
                 } label: {
                     HStack {
@@ -253,16 +289,16 @@ struct PatientEvolutionView: View {
     }
 
     private func card(_ row: FilaEvolucion) -> some View {
-        let isCurrent = row.episodio == effectiveCurrent
-        let isLatest = openGroup?.rows.first?.id == row.id
+        let isLatest = openGroup?.latest?.id == row.id
         return VStack(alignment: .leading, spacing: 8) {
             if let badge = EvolutionLogic.rowBadge(row) {
                 Text(badge)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Marca.acento)
             }
-            // La parte de arriba abre la ficha; las observaciones, abajo, no (se editan acá).
-            Button { onOpen(row.episodio) } label: {
+            // La parte de arriba abre el formulario de esta evolución; las observaciones, abajo,
+            // se editan aquí mismo con el ✏️.
+            Button { editingForm = EditRequest(row: row, focusNextControl: false) } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array(EvolutionLogic.cells(row).enumerated()), id: \.offset) { index, cell in
                         cellView(cell, specialist: index == 1 ? row.especialista : nil)
@@ -272,7 +308,8 @@ struct PatientEvolutionView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint(isCurrent ? "Es la ficha que estás viendo; abre la sección Ficha" : "Abrir esta ficha")
+            .disabled(editing != nil)
+            .accessibilityHint(editing != nil ? "Termina primero la observación que estás escribiendo" : "Abre el formulario de esta evolución")
             .accessibilityIdentifier("evolucion.ficha.\(row.id)")
 
             Divider()

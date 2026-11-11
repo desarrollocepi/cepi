@@ -120,12 +120,6 @@ final class HiloModelo {
         }
     }
 
-    /// Quien tiene el caso: el responsable (lo reclamó o se le asignó) o, si no hay, quien lo creó.
-    func responsableDelCaso(api: CEPIAPI) async -> String? {
-        guard let episodio = episodioActivo, let registro = try? await api.entidad(episodio) else { return nil }
-        return registro["responsable_actual_id"] ?? registro["medico_id"]
-    }
-
     func subir(_ jpeg: Data, nombre: String, api: CEPIAPI) async {
         subiendo = true
         error = nil
@@ -158,10 +152,6 @@ final class HiloModelo {
         derivados = (try? await api.derivaciones(episodio: episodio)) ?? []
     }
 
-    func irAnterior() { mover(-1) }
-
-    func irSiguiente() { mover(1) }
-
     func volverALaActual() {
         pagina = .consulta(episodioActivo)
     }
@@ -190,13 +180,6 @@ final class HiloModelo {
         // quede un mensaje "enviado" al lado del error.
         await releer(api: api)
         return procesado
-    }
-
-    private func mover(_ paso: Int) {
-        let actuales = episodios
-        let destino = actuales.indice(de: pagina) + paso
-        guard actuales.orden.indices.contains(destino) else { return }
-        pagina = .consulta(actuales.orden[destino])
     }
 
     private func aplicar(_ respuesta: RespuestaChat, explicito: Bool = false) {

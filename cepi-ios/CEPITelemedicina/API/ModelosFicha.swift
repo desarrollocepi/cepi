@@ -381,14 +381,46 @@ struct EvolutionCreateResult: Decodable, Sendable {
     }
 }
 
-/// `POST /api/bot/evolucion/editar`: el ✏️ de observaciones en una evolución registrada.
+/// `POST /api/bot/evolucion/editar` (PAPER §28.4.1): el formulario de una evolución o el ✏️ de
+/// sus observaciones. Viaja solo lo que cambió: lo que no viene no se toca, y un texto vacío
+/// borra el campo (la `fecha` nunca va vacía). Con `episodeId` es la fila armada de una ficha
+/// sin evoluciones: el bot registra su evolución inicial y edita esa.
 struct EvolutionEdit: Encodable, Sendable, Equatable {
-    let evolutionId: String
-    let observaciones: String
+    let evolutionId: String?
+    let episodeId: String?
+    var fecha: String?
+    var hallazgos: String?
+    var diagnostico: String?
+    var tratamiento: String?
+    var observaciones: String?
+    var proximoControlFecha: String?
+    var proximoControlMotivo: String?
+
+    /// El ✏️ de observaciones en una evolución registrada.
+    init(evolutionId: String, observaciones: String) {
+        self.evolutionId = evolutionId
+        episodeId = nil
+        self.observaciones = observaciones
+    }
+
+    /// La evolución registrada (`evolution_id`) o, en la fila armada, su ficha (`episode_id`).
+    init(row: FilaEvolucion) {
+        evolutionId = row.evolutionId
+        episodeId = row.evolutionId == nil ? row.episodio : nil
+    }
+
+    /// Sin ningún campo el bot responde 400 («No hay nada que guardar»).
+    var isEmpty: Bool {
+        [fecha, hallazgos, diagnostico, tratamiento, observaciones, proximoControlFecha, proximoControlMotivo]
+            .allSatisfy { $0 == nil }
+    }
 
     enum CodingKeys: String, CodingKey {
         case evolutionId = "evolution_id"
-        case observaciones
+        case episodeId = "episode_id"
+        case proximoControlFecha = "proximo_control_fecha"
+        case proximoControlMotivo = "proximo_control_motivo"
+        case fecha, hallazgos, diagnostico, tratamiento, observaciones
     }
 }
 

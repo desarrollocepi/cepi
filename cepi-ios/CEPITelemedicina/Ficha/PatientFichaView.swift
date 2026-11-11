@@ -1,27 +1,17 @@
 import SwiftUI
 
-/// Un pedido de abrir una consulta en la Ficha (desde la Evolución). Lleva su propio id: tocar
-/// dos veces la misma tarjeta vuelve a llevar a ella aunque entre medio se haya navegado.
-struct EpisodeRequest: Equatable {
-    let episode: String
-    let token = UUID()
-}
-
 /// La sección Ficha del paciente: la ficha **editable y adaptable**, igual que la pestaña de la
 /// web (`FichaCompleta.vue`, PAPER §24.2.1). Los grupos de `GET /api/bot/ficha` por categoría,
 /// con lo cargado y «Completar» / «Editar», que abre el mismo formulario del chat. El documento
-/// imprimible (`ficha.html`, `VisorFicha`) queda detrás de «Imprimir».
+/// imprimible (`ficha.html`, `VisorFicha`) queda detrás de «Imprimir». La consulta la elige el
+/// navegador de episodios del paciente (`EpisodeNavigatorBar`, PAPER §28.4.1).
 struct PatientFichaView: View {
     let patientId: String
     let name: String
-    /// La consulta activa del hilo: es la que se abre si nadie pidió otra.
-    let activeEpisode: String?
-    /// Otra consulta que pidió abrir la Evolución.
-    var request: EpisodeRequest? = nil
+    /// El episodio elegido en el navegador del paciente; `nil` mientras no se sabe (la más nueva).
+    let episode: String?
     /// Lleva a la sección Evolución del paciente (PAPER §28.3).
     var onShowEvolution: () -> Void = {}
-    /// Avisa qué consulta está a la vista: la Evolución la resalta.
-    var onEpisodeShown: (String?) -> Void = { _ in }
     /// Guarda lo editado en el documento imprimible (`ficha_save` por el hilo).
     let onPrintSave: ([String: JSONValor], String?) async -> Bool
 
@@ -31,23 +21,20 @@ struct PatientFichaView: View {
     @State private var saveError: String?
 
     init(
-        patientId: String, name: String, activeEpisode: String?, request: EpisodeRequest? = nil,
-        onShowEvolution: @escaping () -> Void = {}, onEpisodeShown: @escaping (String?) -> Void = { _ in },
+        patientId: String, name: String, episode: String?, onShowEvolution: @escaping () -> Void = {},
         onPrintSave: @escaping ([String: JSONValor], String?) async -> Bool
     ) {
         self.patientId = patientId
         self.name = name
-        self.activeEpisode = activeEpisode
-        self.request = request
+        self.episode = episode
         self.onShowEvolution = onShowEvolution
-        self.onEpisodeShown = onEpisodeShown
         self.onPrintSave = onPrintSave
         _model = State(initialValue: FichaModel(patientId: patientId))
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            visitsBar
+            changesNote
             ScrollView {
                 content
                     .padding(.horizontal, 14)
@@ -64,15 +51,16 @@ struct PatientFichaView: View {
             }
         }
         .safeAreaInset(edge: .bottom) { bottomBar }
-        .task { await model.open(preferred: request?.episode ?? activeEpisode, api: sesion.api) }
-        .onChange(of: activeEpisode) { _, episode in
-            Task { await model.open(preferred: episode, api: sesion.api) }
+        .task { await model.open(preferred: episode, api: sesion.api) }
+        .onChange(of: episode) { _, episode in
+            // Una consulta que ya está en la lista solo se muestra; una nueva relee la lista
+            // (hace falta para comparar con la anterior).
+            if let episode, model.visits.contains(where: { $0.id == episode }) {
+                Task { await model.show(episode, api: sesion.api) }
+            } else {
+                Task { await model.open(preferred: episode, api: sesion.api) }
+            }
         }
-        .onChange(of: request) { _, request in
-            guard let request else { return }
-            Task { await model.show(request.episode, api: sesion.api) }
-        }
-        .onChange(of: model.episodeId) { _, episode in onEpisodeShown(episode) }
         .sheet(item: Binding(get: { model.editing }, set: { model.editing = $0 })) { group in
             editSheet(group)
         }
@@ -285,42 +273,20 @@ struct PatientFichaView: View {
 
     // MARK: Barras
 
-    /// Anterior / Siguiente entre las consultas del paciente. Sale siempre, aunque haya una
-    /// sola: escondida parecía que la navegación no existía (CLAUDE.md).
-    private var visitsBar: some View {
-        let nav = model.navigation
-        return HStack {
-            Button("Anterior", systemImage: "chevron.left") { Task { await model.goPrevious(api: sesion.api) } }
-                .disabled(model.loading || !nav.hasPrevious)
-                .accessibilityHint(nav.previousHint)
-            Spacer(minLength: 4)
-            VStack(spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(nav.title).font(.footnote.weight(.semibold))
-                    if let date = FichaLogic.date(of: model.currentVisit) {
-                        Text(date).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Text(model.navigationNote)
-                    .font(.caption2.weight(model.changeCount > 0 && nav.hasPrevious ? .bold : .regular))
-                    .foregroundStyle(model.changeCount > 0 && nav.hasPrevious ? Color.red : Color.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-            }
-            Spacer(minLength: 4)
-            Button { Task { await model.goNext(api: sesion.api) } } label: {
-                HStack(spacing: 4) {
-                    Text("Siguiente")
-                    Image(systemName: "chevron.right")
-                }
-            }
-            .disabled(model.loading || !nav.hasNext)
-            .accessibilityHint(nav.nextHint)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .padding(8)
-        .background(.bar)
+    /// Qué cambió respecto del episodio anterior. Anterior / Siguiente viven en el navegador
+    /// del paciente (`EpisodeNavigatorBar`); esto es lo propio de la ficha: lo cambiado va en rojo.
+    private var changesNote: some View {
+        let highlight = model.changeCount > 0 && model.navigation.hasPrevious
+        return Text(model.navigationNote)
+            .font(.caption2.weight(highlight ? .bold : .regular))
+            .foregroundStyle(highlight ? Color.red : Color.secondary)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(.bar)
+            .accessibilityIdentifier("ficha.cambios")
     }
 
     /// El documento imprimible y la evolución, donde se ven siempre.

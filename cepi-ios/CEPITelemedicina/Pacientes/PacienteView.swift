@@ -5,7 +5,9 @@ import SwiftUI
 ///   Chat · Ficha · Evolución · Imágenes
 ///
 /// El modelo del hilo vive acá y no en el chat: la ficha guarda con él (`ficha_save`) y las
-/// acciones (nueva consulta, secciones, derivar) valen desde cualquier sección.
+/// acciones (nueva consulta, secciones, derivar) valen desde cualquier sección. También el
+/// navegador de episodios (PAPER §28.4.1): la barra «Episodio N de M» va debajo del selector
+/// de secciones y el episodio elegido vale para las cuatro.
 struct PacienteView: View {
     let fila: FilaPaciente
     /// Cierra el paciente (tras derivar, el médico pasa al siguiente).
@@ -20,10 +22,11 @@ struct PacienteView: View {
     @Binding var seccion: Seccion
     @State private var mostrarSecciones = false
     @State private var mostrarDerivar = false
-    /// La ficha que se eligió en la evolución: la sección Ficha va a esa.
-    @State private var fichaPedida: EpisodeRequest?
-    /// La consulta a la vista en la sección Ficha: la Evolución la resalta.
-    @State private var shownEpisode: String?
+    /// El episodio elegido en la barra «Episodio N de M»: lo muestran las cuatro secciones.
+    @State private var navigator: EpisodeNavigatorModel
+    /// El último `activar episodio` que se mandó al chat: si el bot lo rechaza no se reintenta
+    /// en bucle; elegir otra vez en la barra lo vuelve a intentar.
+    @State private var lastChatActivation: String?
     /// Sube cada vez que la Evolución vuelve a la vista: entre una vez y otra se pudo guardar
     /// un diagnóstico, así que se vuelve a pedir (PAPER §28.3).
     @State private var evolutionReload = 0
@@ -58,6 +61,7 @@ struct PacienteView: View {
         self.onListChanged = onListChanged
         self.alTerminar = alTerminar
         _modelo = State(initialValue: HiloModelo(pacienteId: fila.id))
+        _navigator = State(initialValue: EpisodeNavigatorModel(patientId: fila.id))
     }
 
     var body: some View {
@@ -68,6 +72,13 @@ struct PacienteView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
+
+            EpisodeNavigatorBar(
+                model: navigator,
+                busy: seccion == .chat && modelo.ocupado,
+                onPrevious: { navigator.goPrevious(); lastChatActivation = nil },
+                onNext: { navigator.goNext(); lastChatActivation = nil }
+            )
 
             // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
             // abre Derivar para sumar o cambiar destinos.
@@ -100,10 +111,8 @@ struct PacienteView: View {
                 PatientFichaView(
                     patientId: fila.id,
                     name: fila.nombre,
-                    activeEpisode: modelo.episodioActivo,
-                    request: fichaPedida,
-                    onShowEvolution: { seccion = .evolucion },
-                    onEpisodeShown: { shownEpisode = $0 }
+                    episode: navigator.current,
+                    onShowEvolution: { seccion = .evolucion }
                 ) { datos, episodio in
                     await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
                 }
@@ -111,18 +120,18 @@ struct PacienteView: View {
 
                 PatientEvolutionView(
                     patientId: fila.id,
-                    current: shownEpisode ?? modelo.episodioActivo,
+                    current: navigator.current,
                     reload: evolutionReload,
-                    // Otra ficha elegida en la evolución: la barra de episodios la sigue sin
-                    // dejar la sección.
-                    onSelectEpisode: { fichaPedida = EpisodeRequest(episode: $0) }
+                    // Otra ficha elegida en la evolución: el navegador la sigue sin dejar la
+                    // sección.
+                    onSelectEpisode: { selectEpisode($0) }
                 ) { episodio in
-                    fichaPedida = EpisodeRequest(episode: episodio)
+                    selectEpisode(episodio)
                     seccion = .ficha
                 }
                 .tag(Seccion.evolucion)
 
-                ImagenesPacienteView(paciente: fila)
+                ImagenesPacienteView(paciente: fila, episode: navigator.current, episodeTitle: navigator.navigation.title)
                     .tag(Seccion.imagenes)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -135,7 +144,18 @@ struct PacienteView: View {
             }
         }
         .task { await modelo.abrir(api: sesion.api) }
+        .task { await navigator.load(api: sesion.api) }
         .task(id: modelo.episodioActivo) { await loadEpisodeRecord() }
+        // El chat cambió de episodio (abrir, nueva consulta, `activar episodio`): la barra lo sigue.
+        .onChange(of: modelo.episodioActivo) { _, active in
+            Task { await navigator.follow(active: active, api: sesion.api) }
+        }
+        // Con el chat a la vista, el episodio elegido en la barra se activa en el chat para que
+        // siga ahí (acción explícita). Corre al cambiar de episodio en el Chat y al volver al
+        // Chat con otro episodio elegido en otra sección.
+        .task(id: ChatSyncKey(
+            inChat: seccion == .chat, selected: navigator.selected, active: modelo.episodioActivo, busy: modelo.ocupado
+        )) { await syncChatEpisode() }
         .onChange(of: seccion) { _, nueva in
             if nueva == .evolucion { evolutionReload += 1 }
         }
@@ -217,11 +237,27 @@ struct PacienteView: View {
                     await modelo.releerDerivaciones(api: sesion.api)
                     alTerminar()
                     return nil
-                },
-                responsable: { await modelo.responsableDelCaso(api: sesion.api) }
+                }
             )
             .environment(sesion)
         }
+    }
+
+    private func selectEpisode(_ episode: String) {
+        navigator.select(episode)
+        lastChatActivation = nil
+    }
+
+    private func syncChatEpisode() async {
+        guard let episode = EpisodeNavigation.chatActivation(
+            selected: navigator.selected, active: modelo.episodioActivo, inChat: seccion == .chat,
+            busy: modelo.ocupado, lastAttempt: lastChatActivation
+        ) else { return }
+        lastChatActivation = episode
+        // En una tarea aparte: el turno cambia `ocupado`, eso relanza esta `.task(id:)` y la
+        // cancelación cortaría el pedido a mitad.
+        let api = sesion.api
+        Task { await modelo.enviar(EpisodeNavigation.activationCommand(episode), api: api, accionExplicita: true) }
     }
 
     private func loadEpisodeRecord() async {
@@ -255,7 +291,7 @@ struct PacienteView: View {
             // «＋ Agregar evolución» en la sección Evolución.
             Button {
                 seccion = .chat
-                Task { await modelo.enviar("nuevo episodio", api: sesion.api) }
+                Task { await modelo.enviar("nuevo episodio", api: sesion.api, accionExplicita: true) }
             } label: {
                 Label("＋ Nueva consulta", systemImage: "plus.bubble")
                 Text("Para otro motivo de consulta; para un control, «＋ Agregar evolución»")
@@ -304,4 +340,12 @@ struct PacienteView: View {
             Label("Acciones", systemImage: "ellipsis.circle")
         }
     }
+}
+
+/// Lo que decide si hay que llevar el chat al episodio elegido en la barra.
+private struct ChatSyncKey: Equatable {
+    let inChat: Bool
+    let selected: String?
+    let active: String?
+    let busy: Bool
 }

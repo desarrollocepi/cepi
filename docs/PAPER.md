@@ -3150,8 +3150,9 @@ Probado en iOS; vale igual en la PWA y en Android.
 **Navegador entre episodios en las cuatro secciones.** La barra «Episodio N de M» (anterior /
 siguiente) sale debajo de las pestañas del paciente en Chat, Ficha, Evolución e Imágenes,
 no solo en la Ficha. El episodio elegido vale para todas: la Ficha y la Evolución lo
-muestran, el Chat sigue en ese episodio (`activar episodio <id>`) e Imágenes muestra sus
-fotos, con un acceso a todas las del paciente.
+muestran, Imágenes muestra sus fotos (con un acceso a todas las del paciente) y el Chat pasa
+a ese episodio (`activar episodio <id>`) cuando está a la vista o al volver a él: navegar por
+la Ficha no llena el hilo de «activar episodio».
 
 **«＋ Nueva consulta» no pide confirmación:** es un botón, una acción explícita (`explicit`).
 Antes el bot preguntaba «¿Confirmas?» como si lo hubiera inferido de un texto libre.

@@ -37,18 +37,18 @@ struct RejillaImagenes<Header: View>: View {
                     .padding(.top, 8)
                 estado
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: modelo.cargado && !modelo.imagenes.isEmpty ? 0 : 220)
+                    .frame(minHeight: modelo.cargado && !modelo.visibles.isEmpty ? 0 : 220)
             }
 
             LazyVGrid(columns: columnas, spacing: 6) {
-                ForEach(modelo.imagenes) { imagen in
+                ForEach(modelo.visibles) { imagen in
                     Button { abierta = imagen } label: {
                         celda(imagen)
                     }
                     .buttonStyle(.plain)
                     .onAppear {
                         // Al llegar al final de lo cargado se pide la página siguiente.
-                        if imagen.id == modelo.imagenes.last?.id {
+                        if imagen.id == modelo.visibles.last?.id {
                             Task { await modelo.siguientePagina(api: sesion.api) }
                         }
                     }
@@ -83,7 +83,7 @@ struct RejillaImagenes<Header: View>: View {
             } else {
                 ProgressView("Cargando imágenes…")
             }
-        } else if modelo.imagenes.isEmpty {
+        } else if modelo.visibles.isEmpty {
             if modelo.busqueda.isEmpty {
                 ContentUnavailableView(vacio, systemImage: "photo.on.rectangle")
             } else {

@@ -5,12 +5,20 @@ import Foundation
 enum EvolutionLogic {
     // MARK: Fichas y sus evoluciones
 
-    /// Una ficha (episodio) con sus evoluciones, de la más nueva a la más vieja.
+    /// Una ficha (episodio) con sus evoluciones. `rows` va como lo manda el servidor, de la más
+    /// nueva a la más vieja; la pantalla las muestra en orden de cita (`chronological`).
     struct EpisodeGroup: Equatable, Identifiable {
         let episodeId: String
         let rows: [FilaEvolucion]
 
         var id: String { episodeId }
+
+        /// En orden de cita (PAPER §28.4.1): la más vieja arriba y la más nueva abajo, justo
+        /// encima del bloque «Próximo control», como se lee una historia clínica.
+        var chronological: [FilaEvolucion] { rows.reversed() }
+
+        /// La vigente: la más nueva. Es la que resalta la tarjeta y la del próximo control.
+        var latest: FilaEvolucion? { rows.first }
 
         /// Motivo de consulta de la ficha: viene en cada fila; vale el primero con texto.
         var motivo: String? { rows.lazy.compactMap { EvolutionLogic.nonEmpty($0.motivo) }.first }
@@ -187,7 +195,7 @@ enum EvolutionLogic {
     /// `today` es la fecha local `YYYY-MM-DD`; las fechas se comparan como texto.
     static func nextControl(_ group: EpisodeGroup, today: String) -> NextControl {
         if group.isDischarged { return .discharged }
-        guard let latest = group.rows.first, let date = nonEmpty(latest.proximoControlFecha) else { return .none }
+        guard let latest = group.latest, let date = nonEmpty(latest.proximoControlFecha) else { return .none }
         let day = String(date.prefix(10))
         let status: ControlStatus = day < today ? .overdue : (day == today ? .today : .upcoming)
         return .scheduled(date: day, reason: nonEmpty(latest.proximoControlMotivo), status: status)
@@ -197,6 +205,77 @@ enum EvolutionLogic {
     static func localToday(_ now: Date = Date(), calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: now)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    // MARK: Editar una evolución (PAPER §28.4.1)
+
+    /// Por qué el bloque «Próximo control» no abre el formulario, o `nil` si se puede tocar.
+    /// Nunca se esconde: con la ficha de alta queda a la vista y lo dice.
+    static func nextControlTapBlockReason(_ group: EpisodeGroup) -> String? {
+        if group.isDischarged { return dischargedNextControlReason }
+        if group.latest == nil { return "Esta ficha todavía no tiene evoluciones" }
+        return nil
+    }
+
+    static let dischargedNextControlReason = "Ficha de alta: abre una consulta nueva para otro control"
+
+    /// Lo que se escribe en el formulario de una evolución. Las fechas van como `YYYY-MM-DD`.
+    struct EvolutionDraft: Equatable {
+        var date: String
+        var findings: String
+        var diagnosis: String
+        var treatment: String
+        var observations: String
+        var hasNextControl: Bool
+        var nextControlDate: String
+        var nextControlReason: String
+
+        /// Prellenado con la fila. Sin fecha (fila armada sin fecha) queda `today`; sin próximo
+        /// control, la fecha sugerida es `suggestedNextControl`, apagada.
+        init(row: FilaEvolucion, today: String, suggestedNextControl: String) {
+            date = EvolutionLogic.day(row.fecha) ?? today
+            findings = row.hallazgos ?? ""
+            diagnosis = row.diagnostico ?? ""
+            treatment = row.tratamiento ?? ""
+            observations = row.observaciones ?? ""
+            let control = EvolutionLogic.day(row.proximoControlFecha)
+            hasNextControl = control != nil
+            nextControlDate = control ?? suggestedNextControl
+            nextControlReason = row.proximoControlMotivo ?? ""
+        }
+    }
+
+    /// El cuerpo de `POST /api/bot/evolucion/editar` con solo lo que cambió respecto de la fila.
+    /// Un texto borrado viaja vacío (el bot lo borra); apagar el próximo control borra su fecha
+    /// y su motivo. La fecha de la cita nunca viaja vacía.
+    static func edit(_ row: FilaEvolucion, draft: EvolutionDraft) -> EvolutionEdit {
+        var edit = EvolutionEdit(row: row)
+        func changed(_ value: String, _ original: String?) -> String? {
+            let new = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let old = (original ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return new == old ? nil : new
+        }
+        let date = draft.date.trimmingCharacters(in: .whitespaces)
+        if !date.isEmpty, date != day(row.fecha) { edit.fecha = date }
+        edit.hallazgos = changed(draft.findings, row.hallazgos)
+        edit.diagnostico = changed(draft.diagnosis, row.diagnostico)
+        edit.tratamiento = changed(draft.treatment, row.tratamiento)
+        edit.observaciones = changed(draft.observations, row.observaciones)
+        edit.proximoControlFecha = changed(draft.hasNextControl ? draft.nextControlDate : "", day(row.proximoControlFecha))
+        edit.proximoControlMotivo = changed(draft.hasNextControl ? draft.nextControlReason : "", row.proximoControlMotivo)
+        return edit
+    }
+
+    /// Por qué no se puede guardar el formulario en modo edición, o `nil` si se puede.
+    static func editSubmitBlockReason(_ edit: EvolutionEdit, saving: Bool) -> String? {
+        if saving { return "Guardando…" }
+        if edit.isEmpty { return "No hay cambios que guardar" }
+        return nil
+    }
+
+    /// `YYYY-MM-DD` de una fecha que puede venir con hora; `nil` si no hay.
+    static func day(_ value: String?) -> String? {
+        nonEmpty(value).map { String($0.prefix(10)) }
     }
 
     // MARK: Observaciones en línea

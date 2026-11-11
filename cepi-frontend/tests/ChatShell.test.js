@@ -211,6 +211,15 @@ describe('ChatShell — secciones del paciente', () => {
     expect(activados).toEqual(['ep1']);
   });
 
+  it('desde la Evolución el chat no se mueve hasta volver a él', async () => {
+    const { w } = await montar('/chat/p9/evolucion');
+    activados.length = 0;
+    await w.findAll('.epnav-btn')[0].trigger('click'); await flushPromises();
+    expect(activados).toEqual([]);
+    await pestana(w, 'Chat').trigger('click'); await flushPromises();
+    expect(activados).toEqual(['ep1']);
+  });
+
   it('el chat queda montado al cambiar de sección: no se pierde lo escrito', async () => {
     const { w } = await montar('/chat/p9/ficha');
     expect(w.find('.chat-doble').exists()).toBe(true);
