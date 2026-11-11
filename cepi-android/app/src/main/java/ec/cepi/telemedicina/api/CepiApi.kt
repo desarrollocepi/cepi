@@ -197,6 +197,15 @@ class CepiApi(val cliente: ApiClient) {
         cliente.post<Confirmacion>("/api/bot/evolucion/editar", editEvolutionBody(evolutionId, observaciones))
     }
 
+    /**
+     * Guarda el formulario de una evolución (PAPER §28.4.1): solo lo que cambió. Con
+     * `evolutionId` nulo es la fila armada de una ficha sin evoluciones y va por `episode_id`.
+     * Acción explícita: sin sí/no. Un 400 (fecha inválida, próximo control con la ficha de alta)
+     * llega como `ApiError` con el motivo del servidor.
+     */
+    suspend fun editEvolution(evolutionId: String?, episodeId: String, changes: Map<String, String>): AddEvolutionResult =
+        cliente.post("/api/bot/evolucion/editar", editEvolutionBody(evolutionId, episodeId, changes))
+
     // Registros
 
     suspend fun entidad(id: String): Registro = cliente.get<Uno<Registro>>("/api/entities/$id").data
@@ -376,6 +385,17 @@ class CepiApi(val cliente: ApiClient) {
             put("evolution_id", evolutionId)
             put("observaciones", observaciones.trim())
         }
+
+        /**
+         * El cuerpo de `POST /api/bot/evolucion/editar` desde el formulario: `evolution_id` si la
+         * evolución está registrada, si no `episode_id`. Cada cambio va recortado; vacío borra el
+         * campo. Sin red, para probarlo.
+         */
+        fun editEvolutionBody(evolutionId: String?, episodeId: String, changes: Map<String, String>): JsonObject =
+            buildJsonObject {
+                if (evolutionId != null) put("evolution_id", evolutionId) else put("episode_id", episodeId)
+                changes.forEach { (key, value) -> put(key, value.trim()) }
+            }
 
         /** El cuerpo de `POST /api/groups/:slug/shifts`. Sin red, para probarlo. */
         fun shiftBody(userId: String, startsOn: LocalDate, endsOn: LocalDate): JsonObject = buildJsonObject {

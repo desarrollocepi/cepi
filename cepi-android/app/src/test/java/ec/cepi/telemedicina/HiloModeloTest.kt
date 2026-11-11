@@ -4,6 +4,7 @@ import ec.cepi.telemedicina.ServidorFalso.Respuesta
 import ec.cepi.telemedicina.api.Credenciales
 import ec.cepi.telemedicina.api.jsonCepi
 import ec.cepi.telemedicina.chat.HiloModelo
+import ec.cepi.telemedicina.chat.PaginaHilo
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -192,18 +193,27 @@ class HiloModeloTest {
     }
 
     @Test
-    fun elResponsableDelCasoOQuienLoCreo() = runBlocking {
+    fun cambiarDeEpisodioEnElChatLoActivaSinPreguntar() = runBlocking {
         val servidor = servidor()
         val modelo = HiloModelo("p1", servidor.api(), this)
         modelo.abrir()
         servidor.fijar(
-            "GET /api/entities/e1",
-            Respuesta.Http(200, """{"ok":true,"data":{"id":"e1","data":{"medico_id":"u-creador"}}}"""),
-            Respuesta.Http(200, """{"ok":true,"data":{"id":"e1","data":{"medico_id":"u-creador","responsable_actual_id":"u-resp"}}}"""),
+            "POST /api/bot/chat",
+            Respuesta.Http(200, """{"ok":true,"session_id":"s1","text":"Episodio activo","active_episode_id":"e2"}"""),
         )
 
-        assertEquals("u-creador", modelo.responsableDelCaso())
-        assertEquals("u-resp", modelo.responsableDelCaso())
+        assertTrue(modelo.activarEpisodio("e2"))
+
+        val cuerpo = cuerpo(servidor, "POST /api/bot/chat")
+        assertEquals("activar episodio e2", cuerpo["message"]?.jsonPrimitive?.content)
+        assertEquals("true", cuerpo["explicit"]?.jsonPrimitive?.content)
+        assertEquals("e2", modelo.episodioActivo)
+        assertEquals(PaginaHilo.Consulta("e2"), modelo.pagina)
+        // Mirar otro episodio no le manda nada al bot.
+        val antes = servidor.pedidos.size
+        modelo.mirarConsulta("e1")
+        assertEquals(PaginaHilo.Consulta("e1"), modelo.pagina)
+        assertEquals(antes, servidor.pedidos.size)
     }
 
     @Test

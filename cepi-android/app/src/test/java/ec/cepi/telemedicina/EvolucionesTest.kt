@@ -229,4 +229,110 @@ class EvolucionesTest {
         assertEquals("Sin próximo control indicado", sin.emptyText)
         assertEquals("Ficha de alta: sin controles pendientes", next("", estado = "alta").emptyText)
     }
+
+    @Test
+    fun ordenDeCitaLaMasNuevaAbajoYEsLaVigente() {
+        val e2 = EvolutionGrouping.group(rows)[0]
+        // PAPER §28.4.1: la más vieja arriba, la más nueva abajo (encima de «Próximo control»).
+        assertEquals(listOf("v1", "v2"), e2.chronological.map { it.evolutionId })
+        assertEquals("v2", e2.latest?.evolutionId)
+        assertEquals(LocalDate.parse("2027-02-05"), NextControl.of(e2, LocalDate.parse("2026-11-09")).date)
+        // La fila armada sola: es la vigente.
+        val e1 = EvolutionGrouping.group(rows)[1]
+        assertEquals(e1.rows, e1.chronological)
+        assertNull(e1.latest?.evolutionId)
+    }
+
+    @Test
+    fun tocarUnaEvolucionAbreSuFormularioPrellenado() {
+        val draft = EvolutionDraft.edit(rows[0], discharged = false)
+        assertTrue(draft.isEdit)
+        assertEquals("v2", draft.evolutionId)
+        assertEquals("e2", draft.episodeId)
+        assertEquals("2026-11-05", draft.fecha)
+        assertEquals("Placas más delgadas", draft.hallazgos)
+        assertEquals("L40.0 — Psoriasis vulgar", draft.diagnostico)
+        assertEquals("Calcipotriol", draft.tratamiento)
+        assertEquals("Mejoría", draft.observaciones)
+        assertEquals("2027-02-05", draft.proximoControlFecha)
+        assertEquals("Control de placas", draft.proximoControlMotivo)
+        assertEquals(rows[0].rowKey, draft.rowKey)
+        assertFalse(draft.focusNextControl)
+        assertEquals(emptyMap<String, String>(), draft.changes)
+        assertEquals("No hay cambios que guardar", draft.saveDisabledReason)
+        // Solo viaja lo que cambió; vaciar un campo lo borra.
+        val changed = draft.copy(tratamiento = " Calcipotriol y emoliente ", observaciones = "")
+        assertEquals(mapOf("tratamiento" to "Calcipotriol y emoliente", "observaciones" to ""), changed.changes)
+        assertNull(changed.saveDisabledReason)
+        assertEquals("Elige la fecha de la cita", changed.copy(fecha = "").saveDisabledReason)
+        // «Agregar» sigue mandando todo lo escrito.
+        assertFalse(EvolutionDraft.start("e2").isEdit)
+    }
+
+    @Test
+    fun filaArmadaSinFechaProponeHoyYVaPorEpisodio() {
+        val draft = EvolutionDraft.edit(FilaEvolucion(episodio = "e9", diagnostico = "L70.0"), discharged = false, today = LocalDate.parse("2026-11-11"))
+        assertNull(draft.evolutionId)
+        assertEquals("2026-11-11", draft.fecha)
+        assertEquals(mapOf("fecha" to "2026-11-11"), draft.changes)
+        assertNull(draft.saveDisabledReason)
+    }
+
+    @Test
+    fun proximoControlConFichaDeAlta() {
+        val e1 = EvolutionGrouping.group(rows)[1]
+        assertEquals("Ficha de alta: abre una consulta nueva para otro control", NextControl.editDisabledReason(e1, busy = false))
+        val e2 = EvolutionGrouping.group(rows)[0]
+        assertNull(NextControl.editDisabledReason(e2, busy = false))
+        assertEquals("Termina primero lo que estás editando", NextControl.editDisabledReason(e2, busy = true))
+        assertEquals(
+            "Este paciente todavía no tiene fichas: abre una consulta primero",
+            NextControl.editDisabledReason(null, busy = false),
+        )
+        val draft = EvolutionDraft.edit(e1.latest!!, discharged = true, focusNextControl = true)
+        assertTrue(draft.focusNextControl)
+        assertEquals("Ficha de alta: no se puede fijar un próximo control", draft.copy(proximoControlFecha = "2027-01-01").saveDisabledReason)
+        // Lo demás sí se edita con la ficha de alta.
+        assertNull(draft.copy(proximoControlMotivo = "Nada").saveDisabledReason)
+        assertEquals("Termina primero el formulario abierto", EvolutionGrouping.editDisabledReason(draftOpen = true, observationOpen = false))
+        assertEquals("Termina primero la observación que estás editando", EvolutionGrouping.editDisabledReason(draftOpen = false, observationOpen = true))
+        assertNull(EvolutionGrouping.editDisabledReason(draftOpen = false, observationOpen = false))
+    }
+
+    @Test
+    fun editarDesdeElFormularioMandaSoloLoQueCambio() = runBlocking {
+        val s = ServidorFalso().apply {
+            fijar("POST /api/bot/evolucion/editar", Respuesta.Http(200, """{"ok":true,"evolution_id":"v2"}"""))
+        }
+        val api = s.api(Credenciales(AlmacenMemoria("t")))
+        val draft = EvolutionDraft.edit(rows[0], discharged = false).copy(fecha = "2026-11-06", observaciones = "", proximoControlMotivo = " Biopsia ")
+        val result = api.editEvolution(draft.evolutionId, draft.episodeId, draft.changes)
+        assertEquals("v2", result.evolutionId)
+        assertEquals(
+            """{"evolution_id":"v2","fecha":"2026-11-06","observaciones":"","proximo_control_motivo":"Biopsia"}""",
+            s.cuerpo("POST /api/bot/evolucion/editar"),
+        )
+        // La fila armada va por episode_id.
+        assertEquals(
+            """{"episode_id":"e1","tratamiento":"Crema"}""",
+            CepiApi.editEvolutionBody(null, "e1", mapOf("tratamiento" to "Crema")).toString(),
+        )
+    }
+
+    @Test
+    fun editarConFichaDeAltaFallaConElMotivo() = runBlocking {
+        val s = ServidorFalso().apply {
+            fijar(
+                "POST /api/bot/evolucion/editar",
+                Respuesta.Http(400, """{"ok":false,"error":"La ficha está de alta: no se puede fijar un próximo control"}"""),
+            )
+        }
+        val api = s.api(Credenciales(AlmacenMemoria("t")))
+        try {
+            api.editEvolution(null, "e1", mapOf("proximo_control_fecha" to "2027-01-01"))
+            fail("Debió fallar")
+        } catch (e: ApiError) {
+            assertEquals("La ficha está de alta: no se puede fijar un próximo control", e.mensaje)
+        }
+    }
 }

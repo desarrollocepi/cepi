@@ -28,8 +28,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
@@ -37,7 +35,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -96,8 +93,13 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
 
     val episodios = remember(modelo.mensajes, modelo.episodioActivo) { modelo.episodios }
     val indice = episodios.indice(modelo.pagina)
-    val visibles = remember(episodios, indice) { episodios.visibles(modelo.mensajes, indice) }
-    val enLaActual = episodios.esActiva(indice, modelo.episodioActivo)
+    // El navegador de episodios del paciente pudo elegir uno sin mensajes todavía.
+    val sinMensajes = episodios.sinMensajes(modelo.pagina)
+    val visibles = remember(episodios, indice, sinMensajes) {
+        if (sinMensajes) emptyList() else episodios.visibles(modelo.mensajes, indice)
+    }
+    val enLaActual = !sinMensajes && episodios.esActiva(indice, modelo.episodioActivo)
+    val mirado = (modelo.pagina as? PaginaHilo.Consulta)?.id
 
     // La foto se prepara fuera del hilo principal; la captura temporal se borra enseguida.
     fun subir(uri: Uri, temporal: File?) {
@@ -122,9 +124,8 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
         if (tomada) subir(Uri.fromFile(archivo), archivo) else archivo.delete()
     }
 
+    // La barra «Episodio N de M» vive arriba, a nivel paciente (PacienteAbierto, PAPER §28.4.1).
     Column(Modifier.fillMaxSize()) {
-        BarraDeConsultas(modelo, episodios, indice, enLaActual)
-
         PullToRefreshBox(
             isRefreshing = refrescando,
             onRefresh = {
@@ -136,7 +137,7 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
             },
             modifier = Modifier.weight(1f),
         ) {
-            Feed(modelo, visibles, alAbrirImagen)
+            Feed(modelo, visibles, alAbrirImagen, sinMensajes)
         }
 
         if (enLaActual) {
@@ -187,44 +188,29 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
                     .padding(12.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_ojo), contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(
-                    "Consulta anterior — solo lectura",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
+                Column(
+                    Modifier
                         .weight(1f)
                         .padding(start = 6.dp),
-                )
-                OutlinedButton(onClick = { modelo.volverALaActual() }) { Text("Volver a la actual") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BarraDeConsultas(modelo: HiloModelo, episodios: Episodios, indice: Int, enLaActual: Boolean) {
-    Surface(tonalElevation = 2.dp) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-        ) {
-            IconButton(onClick = { modelo.irAnterior() }, enabled = !modelo.ocupado && indice > 0) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Consulta anterior")
-            }
-            Text(
-                if (modelo.cargado) episodios.etiqueta(indice, modelo.mensajes) else "Cargando consultas…",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            IconButton(onClick = { modelo.irSiguiente() }, enabled = !modelo.ocupado && indice < episodios.orden.size - 1) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Consulta siguiente")
-            }
-            TextButton(onClick = { modelo.volverALaActual() }, enabled = !modelo.ocupado && !enLaActual) {
-                Text("Actual")
+                ) {
+                    Text(
+                        "Otro episodio — solo lectura",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (mirado == null) {
+                        Text(
+                            "Mensajes sin episodio: no se pueden activar",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = { mirado?.let { alcance.launch { modelo.activarEpisodio(it) } } },
+                    enabled = mirado != null && !modelo.ocupado,
+                ) { Text("Activar este") }
+                OutlinedButton(onClick = { modelo.volverALaActual() }, enabled = !modelo.ocupado) { Text("Volver a la actual") }
             }
         }
     }
@@ -235,7 +221,7 @@ private fun BarraDeConsultas(modelo: HiloModelo, episodios: Episodios, indice: I
  * final y ahí se queda cuando llega un mensaje o una imagen termina de cargar.
  */
 @Composable
-private fun Feed(modelo: HiloModelo, visibles: List<MensajeHilo>, alAbrirImagen: (String) -> Unit) {
+private fun Feed(modelo: HiloModelo, visibles: List<MensajeHilo>, alAbrirImagen: (String) -> Unit, sinMensajes: Boolean) {
     val alcance = rememberCoroutineScope()
     val lista = rememberLazyListState()
     LaunchedEffect(modelo.pagina) { lista.scrollToItem(0) }
@@ -295,6 +281,10 @@ private fun Feed(modelo: HiloModelo, visibles: List<MensajeHilo>, alAbrirImagen:
         if (!modelo.cargado && modelo.error == null) {
             item(key = "cargando") {
                 Texto("Cargando la información…")
+            }
+        } else if (sinMensajes) {
+            item(key = "vacio-episodio") {
+                Texto("Este episodio no tiene mensajes en el chat. «Activar este» lo deja activo para escribir.")
             }
         } else if (visibles.isEmpty() && !modelo.ocupado) {
             item(key = "vacio") {

@@ -84,14 +84,14 @@ fun RejillaImagenes(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(modelo.imagenes, key = { it.id }) { imagen ->
+                items(modelo.visibles, key = { it.id }) { imagen ->
                     Celda(imagen, mostrarPaciente) { abierta = imagen.adjunto }
                     // Al llegar al final de lo cargado se pide la página siguiente.
-                    if (imagen.id == modelo.imagenes.lastOrNull()?.id) {
+                    if (imagen.id == modelo.visibles.lastOrNull()?.id) {
                         LaunchedEffect(imagen.id) { modelo.siguientePagina() }
                     }
                 }
-                if (modelo.cargando && modelo.imagenes.isNotEmpty()) {
+                if (modelo.cargando && modelo.visibles.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
@@ -116,9 +116,9 @@ fun RejillaImagenes(
                 CircularProgressIndicator()
                 Text("Cargando imágenes…", style = MaterialTheme.typography.bodyMedium)
             }
-            modelo.imagenes.isEmpty() && modelo.busqueda.isEmpty() ->
+            modelo.visibles.isEmpty() && modelo.busqueda.isEmpty() ->
                 Aviso(icono = painterResource(R.drawable.ic_galeria), titulo = vacio)
-            modelo.imagenes.isEmpty() -> Aviso(
+            modelo.visibles.isEmpty() -> Aviso(
                 icono = rememberVectorPainter(Icons.Filled.Search),
                 titulo = "Sin resultados",
                 descripcion = "Ninguna imagen coincide con «${modelo.busqueda}».",

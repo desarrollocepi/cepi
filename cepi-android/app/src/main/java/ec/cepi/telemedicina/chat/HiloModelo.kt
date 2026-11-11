@@ -154,15 +154,15 @@ class HiloModelo(
         if (autoFormulario) marcadores.firstOrNull { !it.hecho }?.let { abrirSeccion(it) }
     }
 
-    /** Quien tiene el caso: el responsable (lo reclamó o se le asignó) o, si no hay, quien lo creó. */
-    suspend fun responsableDelCaso(): String? {
-        val episodio = episodioActivo ?: return null
-        val registro = try {
-            api.entidad(episodio)
-        } catch (_: ApiError) {
-            return null
-        }
-        return registro["responsable_actual_id"] ?: registro["medico_id"]
+    /**
+     * El navegador de episodios del paciente se movió estando en el Chat (PAPER §28.4.1): el bot
+     * activa ese episodio. Es un botón, una acción explícita: sin sí/no.
+     */
+    suspend fun activarEpisodio(id: String): Boolean = enviar("activar episodio $id", accionExplicita = true)
+
+    /** Mirar un episodio en el hilo sin activarlo (el navegador se movió en otra sección). */
+    fun mirarConsulta(id: String?) {
+        if (id != null) pagina = PaginaHilo.Consulta(id)
     }
 
     suspend fun subir(jpeg: ByteArray, nombre: String) {

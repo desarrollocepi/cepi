@@ -52,8 +52,9 @@ import ec.cepi.telemedicina.api.MiembroGrupo
 import kotlinx.coroutines.launch
 
 /**
- * Derivar el episodio a un círculo, a una persona o al responsable del caso. Elegir un destino
- * ejecuta la derivación al instante, igual que en la web: `derivar a <slug>` o
+ * Derivar el episodio a un círculo, a una persona o al responsable de turno. Elegir un destino
+ * ejecuta la derivación al instante, igual que en la web: `derivar a <slug>`,
+ * `derivar a responsable` (quien está de turno hoy en el círculo responsable, PAPER §32.2.1) o
  * `escalar a <uuid>`. `alDerivar` devuelve el error, o `null` si el bot lo procesó.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,7 +62,6 @@ import kotlinx.coroutines.launch
 fun DerivarPantalla(
     api: CepiApi,
     alDerivar: suspend (String) -> String?,
-    responsable: suspend () -> String?,
     alCerrar: () -> Unit,
     /** A quién está derivado el caso ahora: se marca y no se lo puede volver a elegir. */
     yaDerivados: List<Derivado> = emptyList(),
@@ -107,8 +107,7 @@ fun DerivarPantalla(
         alcance.launch {
             enviando = true
             try {
-                val detalle = motivo.trim()
-                error = alDerivar(if (detalle.isEmpty()) comando else "$comando $detalle")
+                error = alDerivar(referralCommand(comando, motivo))
             } finally {
                 enviando = false
             }
@@ -175,18 +174,10 @@ fun DerivarPantalla(
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Al responsable del caso") },
+                            headlineContent = { Text("Al responsable de turno") },
+                            supportingContent = { Text("Quien está de turno hoy; sin nadie de turno, todo el círculo") },
                             leadingContent = { Icon(Icons.Filled.Star, contentDescription = null) },
-                            modifier = Modifier.clickable(enabled = !enviando) {
-                                alcance.launch {
-                                    val usuario = responsable()
-                                    if (usuario == null) {
-                                        error = "El episodio no tiene responsable ni creador definido."
-                                    } else {
-                                        derivar("escalar a $usuario")
-                                    }
-                                }
-                            },
+                            modifier = Modifier.clickable(enabled = !enviando) { derivar(COMMAND_RESPONSIBLE) },
                         )
                         HorizontalDivider()
                         Text(
@@ -322,4 +313,13 @@ private fun tipoDeGrupo(tipo: String?): String = when (tipo) {
     "circle" -> "Círculo"
     "roster" -> "Turno"
     else -> tipo.orEmpty()
+}
+
+/** El comando de «Al responsable de turno» (PAPER §32.2.1); el motivo va detrás. */
+const val COMMAND_RESPONSIBLE = "derivar a responsable"
+
+/** El texto que se manda al bot: el comando y, si lo hay, el motivo. Sin UI, para probarlo. */
+fun referralCommand(command: String, reason: String): String {
+    val detail = reason.trim()
+    return if (detail.isEmpty()) command else "$command $detail"
 }

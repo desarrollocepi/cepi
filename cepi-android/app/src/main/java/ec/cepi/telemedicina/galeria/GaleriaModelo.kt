@@ -32,6 +32,19 @@ class GaleriaModelo(
     var busqueda: String by mutableStateOf("")
         private set
 
+    /**
+     * El episodio elegido en el navegador del paciente (PAPER §28.4.1): con él, solo sus fotos.
+     * `verTodas` lo ignora y muestra todas las del paciente.
+     */
+    var episodio: String? by mutableStateOf(null)
+    var verTodas: Boolean by mutableStateOf(false)
+
+    /** Se filtra por episodio: hace falta tener todas las páginas para no perder fotos. */
+    val filtrando: Boolean get() = !verTodas && episodio != null
+
+    /** Lo que se ve en la rejilla. */
+    val visibles: List<ImagenGaleria> get() = EpisodeImageFilter.visible(imagenes, episodio, verTodas)
+
     private var pedido = 0
 
     val hayMas: Boolean get() = total?.let { imagenes.size < it } ?: false
@@ -77,4 +90,14 @@ class GaleriaModelo(
     private companion object {
         const val POR_PAGINA = 60
     }
+}
+
+/** Las fotos de un episodio (cada imagen de la galería trae `episode_id`). Sin UI, para probarlo. */
+object EpisodeImageFilter {
+    fun visible(images: List<ImagenGaleria>, episodeId: String?, showAll: Boolean): List<ImagenGaleria> =
+        if (showAll || episodeId == null) images else images.filter { it.episodioId == episodeId }
+
+    /** Cuántas del paciente no son del episodio: lo dice el botón «Ver todas». */
+    fun hidden(images: List<ImagenGaleria>, episodeId: String?): Int =
+        if (episodeId == null) 0 else images.count { it.episodioId != episodeId }
 }

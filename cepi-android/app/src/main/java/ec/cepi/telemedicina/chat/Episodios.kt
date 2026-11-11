@@ -35,6 +35,13 @@ class Episodios(mensajes: List<MensajeHilo>, activo: String?) {
     }
 
     /**
+     * Se mira un episodio que todavía no tiene mensajes en el hilo (lo eligió el navegador de
+     * episodios del paciente): la página sale vacía y de solo lectura, no la de otro episodio.
+     */
+    fun sinMensajes(pagina: PaginaHilo): Boolean =
+        pagina is PaginaHilo.Consulta && pagina.id != null && pagina.id !in orden
+
+    /**
      * Los mensajes de una página. El aviso "Paciente activo: …" lo repite el bot en cada
      * activación; se deja solo el último para que no se acumule.
      */

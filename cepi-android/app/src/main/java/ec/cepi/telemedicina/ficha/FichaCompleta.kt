@@ -222,23 +222,23 @@ object FullFichaLogic {
 fun FichaPage(
     pacienteId: String,
     nombre: String,
-    episodioActivo: String?,
+    /**
+     * Los episodios del paciente, del más nuevo al más viejo, y el elegido en el navegador del
+     * paciente (PAPER §28.4.1): la barra «Episodio N de M» vive en `PacienteAbierto`.
+     */
+    episodes: List<Registro>,
+    loadingEpisodes: Boolean,
+    selectedEpisode: String?,
     api: CepiApi,
     web: HttpUrl,
     mostrada: Boolean,
     visible: Boolean,
     /** Guardar desde el documento imprimible (el visor de `ficha.html`). */
     alGuardarDocumento: suspend (JsonObject, String?) -> Boolean,
-    /** Otra ficha que se pidió abrir (una tarjeta de Evolución). */
-    episodioPedido: EpisodeRequest? = null,
     onShowEvolution: () -> Unit = {},
-    /** La ficha que queda a la vista, para que Evolución la resalte. */
-    onEpisodeShown: (String?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var episodes by remember { mutableStateOf(emptyList<Registro>()) }
-    var loadingEpisodes by remember { mutableStateOf(true) }
-    var index by remember { mutableIntStateOf(0) }
+    val index = episodes.indexOfFirst { it.id == selectedEpisode }.coerceAtLeast(0)
     var ficha by remember { mutableStateOf<FullFicha?>(null) }
     var episodeData by remember { mutableStateOf<Map<String, JsonElement>?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -251,24 +251,6 @@ fun FichaPage(
     var reloadTick by remember { mutableIntStateOf(0) }
 
     val episodeId = episodes.getOrNull(index)?.id
-
-    LaunchedEffect(mostrada, episodioActivo) {
-        if (!mostrada) return@LaunchedEffect
-        loadingEpisodes = true
-        episodes = try {
-            api.episodios(pacienteId)
-        } catch (e: ApiError) {
-            error = "No se pudieron listar las consultas: ${e.mensaje}"
-            emptyList()
-        }
-        index = episodes.indexOfFirst { it.id == episodioActivo }.coerceAtLeast(0)
-        loadingEpisodes = false
-    }
-    LaunchedEffect(episodioPedido, episodes) {
-        val target = episodes.indexOfFirst { it.id == episodioPedido?.episodeId }
-        if (target >= 0) index = target
-    }
-    LaunchedEffect(episodeId) { onEpisodeShown(episodeId) }
 
     // Recargar NO vacía la ficha (como la web): se queda lo que había y arriba sale la barra.
     LaunchedEffect(mostrada, loadingEpisodes, episodeId, visible, reloadTick) {
@@ -290,31 +272,19 @@ fun FichaPage(
     val changes = FullFichaLogic.changeCount(groups, previousEpisode)
 
     Column(Modifier.fillMaxSize()) {
-        // La barra de consultas sale siempre, aunque haya una sola (CLAUDE.md).
-        Surface(tonalElevation = 2.dp) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+        // Qué cambió desde el episodio anterior. Anterior / siguiente están en la barra del
+        // paciente, arriba (PAPER §28.4.1).
+        Surface(tonalElevation = 1.dp) {
+            Text(
+                FullFichaLogic.navDetail(episodes, index, loadingEpisodes, changes),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (changes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (changes > 0) FontWeight.Bold else null,
+                maxLines = 2,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                // Más nueva a más vieja: la anterior es la siguiente de la lista.
-                TextButton(onClick = { index++ }, enabled = !loading && index < episodes.size - 1) { Text("‹ Anterior") }
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                    Text(FullFichaLogic.navTitle(episodes, index), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    episodes.getOrNull(index)?.get("fecha")?.take(10)?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text(
-                        FullFichaLogic.navDetail(episodes, index, loadingEpisodes, changes),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (changes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (changes > 0) FontWeight.Bold else null,
-                        maxLines = 2,
-                    )
-                }
-                TextButton(onClick = { index-- }, enabled = !loading && index > 0) { Text("Siguiente ›") }
-            }
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
 
@@ -398,7 +368,7 @@ fun FichaPage(
             VisorFicha(
                 pacienteId = pacienteId,
                 nombre = nombre,
-                episodioActivo = episodeId ?: episodioActivo,
+                episodioActivo = episodeId ?: selectedEpisode,
                 api = api,
                 web = web,
                 mostrada = true,

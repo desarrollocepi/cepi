@@ -36,6 +36,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -104,9 +106,11 @@ data class ObservationEdit(
  * **Evolución** · Imágenes (§24.2.1, §28.3). Nativa y adaptable, como `EvolucionPaciente.vue`
  * con `plegable=false` en el teléfono. Muestra las evoluciones de la **ficha abierta** (la de la
  * barra de episodios) con su cabecera —motivo, fecha de apertura, estado— y «＋ Agregar
- * evolución» (§28.4); debajo, plegadas, las otras fichas del paciente. Cada evolución es una
- * tarjeta con las columnas de §28.1 y el ✏️ de observaciones en línea (sin sí/no: es una acción
- * explícita). «Imprimir» abre el documento A4 (`evolucion.html`). Se pide cada vez que la página
+ * evolución» (§28.4); debajo, plegadas, las otras fichas del paciente. Las evoluciones van en
+ * orden de cita, la más nueva abajo y resaltada (§28.4.1). Cada una es una tarjeta con las
+ * columnas de §28.1: tocarla abre su formulario (el de «＋ Agregar evolución», prellenado), y el
+ * ✏️ edita las observaciones en línea (sin sí/no: son acciones explícitas). Tocar «Próximo
+ * control» abre el formulario de la más nueva con el foco ahí. «Imprimir» abre el documento A4 (`evolucion.html`). Se pide cada vez que la página
  * queda a la vista: entre una vez y otra se pudo guardar un diagnóstico.
  */
 @Composable
@@ -177,7 +181,10 @@ fun EvolutionPage(
         draft = current.copy(saving = true, error = null)
         scope.launch {
             draft = try {
-                api.addEvolution(
+                if (current.isEdit) {
+                    // Solo lo que cambió (PAPER §28.4.1); la fila armada va por episode_id.
+                    api.editEvolution(current.evolutionId, current.episodeId, current.changes)
+                } else api.addEvolution(
                     episodeId = current.episodeId,
                     fecha = current.fecha,
                     hallazgos = current.hallazgos,
@@ -187,7 +194,8 @@ fun EvolutionPage(
                     proximoControlFecha = current.proximoControlFecha,
                     proximoControlMotivo = current.proximoControlMotivo,
                 )
-                // La primera evolución también guarda la cita inicial: se vuelve a pedir todo.
+                // La primera evolución también guarda la cita inicial, y editar la más nueva
+                // cambia lo vigente del episodio: se vuelve a pedir todo.
                 reloadCount++
                 null
             } catch (e: ApiError) {
@@ -259,7 +267,7 @@ fun EvolutionPage(
                         )
                     }
                 }
-                draft?.let { current ->
+                draft?.takeIf { !it.isEdit }?.let { current ->
                     item(key = "draft") {
                         EvolutionForm(
                             draft = current,
@@ -279,19 +287,46 @@ fun EvolutionPage(
                         )
                     }
                 } else {
-                    items(open.rows, key = { it.rowKey }) { row ->
-                        EvolutionCard(
-                            row = row,
-                            edit = edit?.takeIf { it.rowKey == row.rowKey },
-                            editDisabledReason = ObservationEdit.editDisabledReason(edit, row, addingEvolution = draft != null),
-                            onStartEdit = { edit = ObservationEdit.start(row) },
-                            onDraft = { text -> edit = edit?.copy(draft = text) },
-                            onSave = { edit?.let(::saveObservations) },
-                            onCancel = { edit = null },
+                    // De la más vieja a la más nueva, que queda justo encima de «Próximo control».
+                    val latestKey = open.latest?.rowKey
+                    items(open.chronological, key = { it.rowKey }) { row ->
+                        val editing = draft?.takeIf { it.isEdit && it.rowKey == row.rowKey }
+                        if (editing != null) {
+                            EvolutionForm(
+                                draft = editing,
+                                motivo = open.motivo,
+                                api = api,
+                                onChange = { draft = it },
+                                onSave = { saveEvolution(editing) },
+                                onCancel = { draft = null },
+                            )
+                        } else {
+                            EvolutionCard(
+                                row = row,
+                                current = row.rowKey == latestKey,
+                                formDisabledReason = EvolutionGrouping.editDisabledReason(draft != null, edit != null),
+                                onOpenForm = { draft = EvolutionDraft.edit(row, discharged = open.discharged) },
+                                edit = edit?.takeIf { it.rowKey == row.rowKey },
+                                editDisabledReason = ObservationEdit.editDisabledReason(edit, row, addingEvolution = draft != null),
+                                onStartEdit = { edit = ObservationEdit.start(row) },
+                                onDraft = { text -> edit = edit?.copy(draft = text) },
+                                onSave = { edit?.let(::saveObservations) },
+                                onCancel = { edit = null },
+                            )
+                        }
+                    }
+                }
+                open?.let { o ->
+                    item(key = "next-control") {
+                        NextControlBlock(
+                            next = NextControl.of(o),
+                            disabledReason = NextControl.editDisabledReason(o, busy),
+                            onOpen = {
+                                o.latest?.let { draft = EvolutionDraft.edit(it, discharged = o.discharged, focusNextControl = true) }
+                            },
                         )
                     }
                 }
-                open?.let { o -> item(key = "next-control") { NextControlBlock(NextControl.of(o)) } }
                 item(key = "others") {
                     OtherEpisodes(
                         others = others,
@@ -372,12 +407,21 @@ private fun EvolutionForm(
     onCancel: () -> Unit,
 ) {
     val enabled = !draft.saving
+    val nextControlFocus = remember { FocusRequester() }
+    LaunchedEffect(draft.focusNextControl) {
+        // Abierto desde «Próximo control»: el foco (y el desplazamiento) va a ese campo.
+        if (draft.focusNextControl) runCatching { nextControlFocus.requestFocus() }
+    }
     Card(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Nueva evolución", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                if (draft.isEdit) "Editar evolución" else "Nueva evolución",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
             motivo?.let { Text("Ficha: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
             Etiqueta("Fecha de la cita")
@@ -394,17 +438,26 @@ private fun EvolutionForm(
             TextoLargo("Tratamiento", draft.tratamiento, "Lo indicado en esta cita", enabled) { onChange(draft.copy(tratamiento = it)) }
             TextoLargo("Observaciones", draft.observaciones, "Resumen de lo más importante", enabled) { onChange(draft.copy(observaciones = it)) }
             Etiqueta("Próximo control")
-            CampoFecha(draft.proximoControlFecha, { onChange(draft.copy(proximoControlFecha = it)) }, enabled)
+            // Con la ficha de alta la fecha no se puede fijar: el campo se ve, gris, con el motivo.
+            CampoFecha(draft.proximoControlFecha, { onChange(draft.copy(proximoControlFecha = it)) }, enabled && !draft.discharged)
+            if (draft.discharged) {
+                Text(
+                    "Ficha de alta: abre una consulta nueva para otro control",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedTextField(
                 value = draft.proximoControlMotivo,
                 onValueChange = { onChange(draft.copy(proximoControlMotivo = it)) },
                 enabled = enabled,
                 singleLine = true,
-                placeholder = { Text("Motivo del próximo control") },
+                placeholder = { Text("Qué hacer en el próximo control") },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "Motivo del próximo control" },
+                    .focusRequester(nextControlFocus)
+                    .semantics { contentDescription = "Qué hacer en el próximo control" },
             )
             draft.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -498,6 +551,11 @@ private fun OtherEpisodes(
 @Composable
 private fun EvolutionCard(
     row: FilaEvolucion,
+    /** La vigente: la más nueva, la que define el próximo control. */
+    current: Boolean,
+    /** Por qué tocar la tarjeta no abre su formulario; `null` si se puede. */
+    formDisabledReason: String?,
+    onOpenForm: () -> Unit,
     edit: ObservationEdit?,
     editDisabledReason: String?,
     onStartEdit: () -> Unit,
@@ -507,14 +565,23 @@ private fun EvolutionCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
+        border = if (current) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = formDisabledReason == null && edit == null, onClickLabel = "Editar esta evolución", onClick = onOpenForm),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(row.fecha ?: "—", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 if (row.esInicial == true || row.evolutionId == null) {
                     Text("Primera cita", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (current) {
+                    Text("Vigente", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
             Dato("Atendió", row.medico ?: if (row.especialista == null) "—" else null, vacio = row.medico == null && row.especialista == null)
@@ -573,6 +640,13 @@ private fun EvolutionCard(
                 }
                 editDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
+            if (edit == null) {
+                Text(
+                    formDisabledReason ?: "Toca la tarjeta para editar esta evolución",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -588,8 +662,12 @@ private fun Dato(etiqueta: String, valor: String?, vacio: Boolean) {
 }
 
 @Composable
-private fun NextControlBlock(next: NextControl) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun NextControlBlock(next: NextControl, disabledReason: String?, onOpen: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = disabledReason == null, onClickLabel = "Editar el próximo control", onClick = onOpen),
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Próximo control", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             if (next.date == null) {
@@ -604,6 +682,11 @@ private fun NextControlBlock(next: NextControl) {
                 )
             }
             next.motivo?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Text(
+                disabledReason ?: "Toca para cambiar el próximo control",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

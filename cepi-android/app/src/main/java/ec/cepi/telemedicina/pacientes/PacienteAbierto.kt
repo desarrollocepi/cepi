@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +40,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,13 +53,13 @@ import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.app.Entorno
 import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
+import ec.cepi.telemedicina.chat.PaginaHilo
 import ec.cepi.telemedicina.chat.VisorImagen
 import ec.cepi.telemedicina.api.Registro
 import ec.cepi.telemedicina.ficha.ConsultationAnswer
 import ec.cepi.telemedicina.ficha.ConsultationAnswerSheet
 import ec.cepi.telemedicina.ficha.DerivarPantalla
 import ec.cepi.telemedicina.ficha.DischargeDialog
-import ec.cepi.telemedicina.ficha.EpisodeRequest
 import ec.cepi.telemedicina.ficha.EvolutionPage
 import ec.cepi.telemedicina.ficha.FormularioHoja
 import ec.cepi.telemedicina.ficha.PatientDischarge
@@ -114,10 +121,14 @@ fun PacienteAbierto(
     var menu by remember { mutableStateOf(false) }
     var mostrarSecciones by remember { mutableStateOf(false) }
     var derivar by remember { mutableStateOf(false) }
-    // La ficha que se eligió en la evolución: la sección Ficha va a esa.
-    var fichaPedida by remember { mutableStateOf<EpisodeRequest?>(null) }
-    // La ficha que muestra la sección Ficha: Evolución la resalta.
-    var shownEpisode by remember { mutableStateOf<String?>(null) }
+    // El navegador de episodios del paciente (PAPER §28.4.1): el elegido vale para las cuatro
+    // secciones. Los episodios van del más nuevo al más viejo.
+    var episodes by remember(pacienteId) { mutableStateOf(emptyList<Registro>()) }
+    var loadingEpisodes by remember(pacienteId) { mutableStateOf(true) }
+    var episodesError by remember(pacienteId) { mutableStateOf<String?>(null) }
+    var selectedEpisode by remember(pacienteId) { mutableStateOf<String?>(null) }
+    val navigator = EpisodeNavigator(episodes, selectedEpisode, loadingEpisodes)
+    val shownEpisode = navigator.current?.id
     val showEvolution = { alcance.launch { paginas.animateScrollToPage(PAGE_EVOLUTION) } }
     // El episodio activo (estado, quién lo envió, lo que ya tiene la ficha): decide si se puede
     // responder la interconsulta y precarga el formulario (PAPER §30).
@@ -130,6 +141,31 @@ fun PacienteAbierto(
     var cabecera by remember(pacienteId) { mutableStateOf(fila) }
 
     LaunchedEffect(modelo) { modelo.abrir() }
+    // El bot cambió el episodio activo (abrir, «＋ Nueva consulta», activar): el navegador va a
+    // ese, y la lista se relee porque pudo nacer uno nuevo.
+    LaunchedEffect(pacienteId, modelo.episodioActivo) {
+        modelo.episodioActivo?.let { selectedEpisode = it }
+        loadingEpisodes = true
+        try {
+            episodes = api.episodios(pacienteId)
+            episodesError = null
+        } catch (e: ApiError) {
+            episodesError = "No se pudieron listar los episodios: ${e.mensaje}"
+        } finally {
+            loadingEpisodes = false
+        }
+        if (episodes.none { it.id == selectedEpisode }) selectedEpisode = modelo.episodioActivo ?: episodes.firstOrNull()?.id
+    }
+    // «Volver a la actual» en el chat también mueve el navegador.
+    LaunchedEffect(modelo.pagina) {
+        val id = (modelo.pagina as? PaginaHilo.Consulta)?.id ?: return@LaunchedEffect
+        if (episodes.any { it.id == id }) selectedEpisode = id
+    }
+    // Imágenes muestra las fotos del episodio elegido; cambiarlo vuelve a filtrar.
+    LaunchedEffect(shownEpisode) {
+        imagenes.episodio = shownEpisode
+        imagenes.verTodas = false
+    }
     LaunchedEffect(modelo.episodioActivo, episodeReload) {
         val id = modelo.episodioActivo
         activeEpisode = null
@@ -153,6 +189,19 @@ fun PacienteAbierto(
         }
     }
     LaunchedEffect(paginas.currentPage) { if (paginas.currentPage == PAGE_FICHA) fichaMostrada = true }
+
+    /**
+     * Elegir otro episodio en el navegador. El chat lo mira; si se eligió estando en el Chat,
+     * además lo activa (`activar episodio <id>`, acción explícita): ahí se escribe.
+     */
+    fun selectEpisode(id: String) {
+        selectedEpisode = id
+        modelo.mirarConsulta(id)
+        if (paginas.currentPage == PAGE_CHAT && id != modelo.episodioActivo) {
+            alcance.launch { modelo.activarEpisodio(id) }
+        }
+    }
+    val navigatorBusy = paginas.currentPage == PAGE_CHAT && modelo.ocupado
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -181,7 +230,7 @@ fun PacienteAbierto(
                             alNuevaConsulta = {
                                 alcance.launch {
                                     paginas.animateScrollToPage(PAGE_CHAT)
-                                    modelo.enviar("nuevo episodio")
+                                    modelo.enviar("nuevo episodio", accionExplicita = true)
                                 }
                             },
                             alSecciones = {
@@ -236,6 +285,14 @@ fun PacienteAbierto(
                     )
                 }
             }
+            EpisodeBar(
+                navigator = navigator,
+                busy = navigatorBusy,
+                error = episodesError,
+                activeInChat = shownEpisode != null && shownEpisode == modelo.episodioActivo,
+                onPrevious = { navigator.previousId?.let(::selectEpisode) },
+                onNext = { navigator.nextId?.let(::selectEpisode) },
+            )
             HorizontalPager(
                 state = paginas,
                 beyondViewportPageCount = secciones.size - 1,
@@ -246,36 +303,34 @@ fun PacienteAbierto(
                     PAGE_FICHA -> FichaPage(
                         pacienteId = pacienteId,
                         nombre = cabecera?.nombre ?: "Paciente",
-                        episodioActivo = modelo.episodioActivo,
+                        episodes = episodes,
+                        loadingEpisodes = loadingEpisodes,
+                        selectedEpisode = shownEpisode,
                         api = api,
                         web = entorno.config.webBase,
                         mostrada = fichaMostrada,
                         visible = paginas.settledPage == PAGE_FICHA && !paginas.isScrollInProgress,
                         alGuardarDocumento = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
-                        episodioPedido = fichaPedida,
                         onShowEvolution = { showEvolution() },
-                        onEpisodeShown = { shownEpisode = it },
                     )
                     PAGE_EVOLUTION -> EvolutionPage(
                         pacienteId = pacienteId,
-                        currentEpisode = shownEpisode ?: modelo.episodioActivo,
+                        currentEpisode = shownEpisode,
                         api = api,
                         web = entorno.config.webBase,
                         visible = paginas.settledPage == PAGE_EVOLUTION && !paginas.isScrollInProgress,
                         onOpenEpisode = { episodio ->
-                            fichaPedida = EpisodeRequest(episodio)
+                            selectEpisode(episodio)
                             fichaMostrada = true
                             alcance.launch { paginas.animateScrollToPage(PAGE_FICHA) }
                         },
                         onSelectEpisode = { episodio ->
-                            // Otra ficha del paciente (PAPER §28.4): Evolución cambia ya y la
-                            // sección Ficha la sigue sin salir de aquí.
-                            shownEpisode = episodio
-                            fichaPedida = EpisodeRequest(episodio)
-                            fichaMostrada = true
+                            // Otra ficha del paciente (PAPER §28.4): es el navegador de arriba,
+                            // así que las otras secciones la siguen.
+                            selectEpisode(episodio)
                         },
                     )
-                    else -> ImagenesPaciente(imagenes, consents)
+                    else -> ImagenesPaciente(imagenes, consents, navigator.label)
                 }
             }
         }
@@ -342,7 +397,6 @@ fun PacienteAbierto(
                     modelo.error ?: "No se pudo derivar."
                 }
             },
-            responsable = { modelo.responsableDelCaso() },
             alCerrar = { derivar = false },
             yaDerivados = modelo.derivados,
         )
@@ -457,6 +511,60 @@ private fun Acciones(
                 alDerivar()
             },
         )
+    }
+}
+
+/**
+ * «Episodio N de M» con anterior / siguiente, debajo de las secciones del paciente (PAPER
+ * §28.4.1). En los extremos los botones quedan grises y la línea de abajo dice por qué.
+ */
+@Composable
+private fun EpisodeBar(
+    navigator: EpisodeNavigator,
+    busy: Boolean,
+    error: String?,
+    activeInChat: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+) {
+    val previousReason = navigator.previousDisabledReason(busy)
+    val nextReason = navigator.nextDisabledReason(busy)
+    Surface(tonalElevation = 2.dp) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        ) {
+            TextButton(
+                onClick = onPrevious,
+                enabled = previousReason == null,
+                modifier = Modifier.semantics { contentDescription = previousReason ?: "Episodio anterior" },
+            ) { Text("‹ Anterior") }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text(
+                    navigator.title + (navigator.date?.let { " · $it" } ?: ""),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val detail = error ?: navigator.hint(busy)
+                    ?: if (activeInChat) "Activo en el chat" else "En el chat, «Activar este» para escribir en él"
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            TextButton(
+                onClick = onNext,
+                enabled = nextReason == null,
+                modifier = Modifier.semantics { contentDescription = nextReason ?: "Episodio siguiente" },
+            ) { Text("Siguiente ›") }
+        }
     }
 }
 
