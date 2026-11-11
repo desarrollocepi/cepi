@@ -98,8 +98,10 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
     val visibles = remember(episodios, indice, sinMensajes) {
         if (sinMensajes) emptyList() else episodios.visibles(modelo.mensajes, indice)
     }
-    val enLaActual = !sinMensajes && episodios.esActiva(indice, modelo.episodioActivo)
     val mirado = (modelo.pagina as? PaginaHilo.Consulta)?.id
+    // El episodio que se está activando ya cuenta como el activo: se escribe en él al terminar.
+    val enLaActual = (mirado != null && mirado == modelo.episodioDestino) ||
+        (!sinMensajes && episodios.esActiva(indice, modelo.episodioActivo))
 
     // La foto se prepara fuera del hilo principal; la captura temporal se borra enseguida.
     fun subir(uri: Uri, temporal: File?) {
@@ -193,23 +195,23 @@ fun HiloVista(modelo: HiloModelo, alAbrirImagen: (String) -> Unit) {
                         .weight(1f)
                         .padding(start = 6.dp),
                 ) {
+                    // Solo se llega acá si el cambio de episodio falló (o son mensajes viejos sin
+                    // episodio): normalmente el episodio elegido pasa a ser el activo.
                     Text(
-                        "Otro episodio — solo lectura",
+                        "Este episodio no quedó activo — solo lectura",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
-                    if (mirado == null) {
-                        Text(
-                            "Mensajes sin episodio: no se pueden activar",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Text(
+                        if (mirado == null) "Mensajes sin episodio: no se pueden activar" else "No se pudo cambiar de episodio",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 TextButton(
-                    onClick = { mirado?.let { alcance.launch { modelo.activarEpisodio(it) } } },
-                    enabled = mirado != null && !modelo.ocupado,
-                ) { Text("Activar este") }
+                    onClick = { mirado?.let { modelo.cambiarEpisodio(it) } },
+                    enabled = mirado != null,
+                ) { Text("Reintentar") }
                 OutlinedButton(onClick = { modelo.volverALaActual() }, enabled = !modelo.ocupado) { Text("Volver a la actual") }
             }
         }
@@ -265,7 +267,8 @@ private fun Feed(modelo: HiloModelo, visibles: List<MensajeHilo>, alAbrirImagen:
                 }
             }
         }
-        if (modelo.ocupado && modelo.cargado) {
+        // Cambiar de episodio es silencioso: sin «escribiendo…».
+        if (modelo.ocupado && modelo.cargado && !modelo.cambiandoEpisodio) {
             item(key = "escribiendo") {
                 Text(
                     "escribiendo…",
@@ -284,7 +287,7 @@ private fun Feed(modelo: HiloModelo, visibles: List<MensajeHilo>, alAbrirImagen:
             }
         } else if (sinMensajes) {
             item(key = "vacio-episodio") {
-                Texto("Este episodio no tiene mensajes en el chat. «Activar este» lo deja activo para escribir.")
+                Texto("Este episodio todavía no tiene mensajes en el chat.")
             }
         } else if (visibles.isEmpty() && !modelo.ocupado) {
             item(key = "vacio") {

@@ -37,7 +37,6 @@ class EpisodeNavigatorTest {
         assertNull(nav.previousDisabledReason())
         assertNull(nav.nextDisabledReason())
         assertNull(nav.hint())
-        assertEquals("Espera a que termine el chat", nav.previousDisabledReason(busy = true))
     }
 
     @Test

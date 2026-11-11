@@ -144,7 +144,8 @@ fun PacienteAbierto(
     // El bot cambió el episodio activo (abrir, «＋ Nueva consulta», activar): el navegador va a
     // ese, y la lista se relee porque pudo nacer uno nuevo.
     LaunchedEffect(pacienteId, modelo.episodioActivo) {
-        modelo.episodioActivo?.let { selectedEpisode = it }
+        // Con un cambio en marcha, el elegido es el destino: una respuesta vieja no lo pisa.
+        (modelo.episodioDestino ?: modelo.episodioActivo)?.let { selectedEpisode = it }
         loadingEpisodes = true
         try {
             episodes = api.episodios(pacienteId)
@@ -154,7 +155,9 @@ fun PacienteAbierto(
         } finally {
             loadingEpisodes = false
         }
-        if (episodes.none { it.id == selectedEpisode }) selectedEpisode = modelo.episodioActivo ?: episodes.firstOrNull()?.id
+        if (episodes.none { it.id == selectedEpisode }) {
+            selectedEpisode = modelo.episodioDestino ?: modelo.episodioActivo ?: episodes.firstOrNull()?.id
+        }
     }
     // «Volver a la actual» en el chat también mueve el navegador.
     LaunchedEffect(modelo.pagina) {
@@ -191,17 +194,22 @@ fun PacienteAbierto(
     LaunchedEffect(paginas.currentPage) { if (paginas.currentPage == PAGE_FICHA) fichaMostrada = true }
 
     /**
-     * Elegir otro episodio en el navegador. El chat lo mira; si se eligió estando en el Chat,
-     * además lo activa (`activar episodio <id>`, acción explícita): ahí se escribe.
+     * Elegir otro episodio en el navegador. Estando en el Chat, el hilo cambia ya y el bot lo
+     * activa en silencio (`episode_switch`); en las otras secciones el chat solo lo mira, y se
+     * activa al entrar al Chat. Nunca se bloquea: con el chat ocupado el cambio queda pendiente.
      */
     fun selectEpisode(id: String) {
         selectedEpisode = id
-        modelo.mirarConsulta(id)
-        if (paginas.currentPage == PAGE_CHAT && id != modelo.episodioActivo) {
-            alcance.launch { modelo.activarEpisodio(id) }
+        if (paginas.currentPage == PAGE_CHAT) modelo.cambiarEpisodio(id) else modelo.mirarConsulta(id)
+    }
+    // Entrar al Chat con otro episodio elegido lo activa (cuando la activación del paciente ya
+    // terminó: antes, el elegido puede ser solo el más nuevo de la lista).
+    LaunchedEffect(paginas.currentPage, modelo.abierto) {
+        val id = selectedEpisode ?: return@LaunchedEffect
+        if (paginas.currentPage == PAGE_CHAT && modelo.abierto && id != (modelo.episodioDestino ?: modelo.episodioActivo)) {
+            modelo.cambiarEpisodio(id)
         }
     }
-    val navigatorBusy = paginas.currentPage == PAGE_CHAT && modelo.ocupado
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -287,7 +295,6 @@ fun PacienteAbierto(
             }
             EpisodeBar(
                 navigator = navigator,
-                busy = navigatorBusy,
                 error = episodesError,
                 activeInChat = shownEpisode != null && shownEpisode == modelo.episodioActivo,
                 onPrevious = { navigator.previousId?.let(::selectEpisode) },
@@ -515,14 +522,13 @@ private fun Acciones(
 @Composable
 private fun EpisodeBar(
     navigator: EpisodeNavigator,
-    busy: Boolean,
     error: String?,
     activeInChat: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
-    val previousReason = navigator.previousDisabledReason(busy)
-    val nextReason = navigator.nextDisabledReason(busy)
+    val previousReason = navigator.previousDisabledReason()
+    val nextReason = navigator.nextDisabledReason()
     Surface(tonalElevation = 2.dp) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -543,7 +549,7 @@ private fun EpisodeBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val detail = error ?: navigator.hint(busy)
+                val detail = error ?: navigator.hint()
                     ?: if (activeInChat) "Activo en el chat" else "En el chat, «Activar este» para escribir en él"
                 Text(
                     detail,

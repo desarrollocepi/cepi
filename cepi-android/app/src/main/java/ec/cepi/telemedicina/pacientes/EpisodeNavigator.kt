@@ -38,33 +38,33 @@ data class EpisodeNavigator(
         get() = current?.let { "episodio ${episodes.size - index} de ${episodes.size}" + (date?.let { d -> " · $d" } ?: "") }
 
     /** Por qué «‹ Anterior» está deshabilitado; `null` si se puede. Nunca se oculta (CLAUDE.md). */
-    fun previousDisabledReason(busy: Boolean = false): String? = common(busy) ?: when {
+    fun previousDisabledReason(): String? = common() ?: when {
         episodes.size == 1 -> SINGLE
         previousId == null -> "Es el primer episodio del paciente"
         else -> null
     }
 
     /** Por qué «Siguiente ›» está deshabilitado; `null` si se puede. */
-    fun nextDisabledReason(busy: Boolean = false): String? = common(busy) ?: when {
+    fun nextDisabledReason(): String? = common() ?: when {
         episodes.size == 1 -> SINGLE
         nextId == null -> "Es el episodio más reciente"
         else -> null
     }
 
     /** La línea de abajo del título: lo que explica los botones grises. */
-    fun hint(busy: Boolean = false): String? {
-        val previous = previousDisabledReason(busy)
-        val next = nextDisabledReason(busy)
+    fun hint(): String? {
+        val previous = previousDisabledReason()
+        val next = nextDisabledReason()
         return when {
             previous != null && previous == next -> previous
             else -> listOfNotNull(previous, next).joinToString(" · ").ifEmpty { null }
         }
     }
 
-    private fun common(busy: Boolean): String? = when {
+    /** Con el chat ocupado no se bloquea: el cambio queda pendiente (`HiloModelo.cambiarEpisodio`). */
+    private fun common(): String? = when {
         episodes.isEmpty() && loading -> "Cargando los episodios…"
         episodes.isEmpty() -> "Este paciente todavía no tiene episodios"
-        busy -> "Espera a que termine el chat"
         else -> null
     }
 

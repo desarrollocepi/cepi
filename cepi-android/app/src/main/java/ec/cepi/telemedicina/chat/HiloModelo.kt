@@ -77,6 +77,24 @@ class HiloModelo(
     var cargado: Boolean by mutableStateOf(false)
         private set
 
+    /**
+     * El episodio que eligió el navegador y el bot todavía no confirmó (pendiente o en curso);
+     * `null` si no hay cambio en marcha. El chat lo trata como el activo mientras tanto.
+     */
+    var episodioDestino: String? by mutableStateOf(null)
+        private set
+
+    /** Se está cambiando de episodio en silencio: no hay «escribiendo…». */
+    var cambiandoEpisodio: Boolean by mutableStateOf(false)
+        private set
+
+    /** La activación del paciente terminó (bien o mal): desde ahí el navegador puede cambiar. */
+    var abierto: Boolean by mutableStateOf(false)
+        private set
+
+    /** El último episodio elegido que espera a que el chat quede libre. */
+    private var cambioPendiente: String? = null
+
     private var sesionId: String? = null
     private var apertura: Deferred<Unit>? = null
 
@@ -112,6 +130,8 @@ class HiloModelo(
             error = e.mensaje
         } finally {
             ocupado = false
+            abierto = true
+            if (cambioPendiente != null) alcance.launch { aplicarCambioPendiente() }
         }
     }
 
@@ -157,10 +177,37 @@ class HiloModelo(
     }
 
     /**
-     * El navegador de episodios del paciente se movió estando en el Chat (PAPER §28.4.1): el bot
-     * activa ese episodio. Es un botón, una acción explícita: sin sí/no.
+     * El navegador de episodios eligió otro episodio estando en el Chat (PAPER §28.4.1). El hilo
+     * muestra ya sus mensajes y el bot lo activa en silencio (`episode_switch`): sin eco, sin
+     * burbuja y sin turnos nuevos en el hilo. Si el chat está ocupado, el cambio queda pendiente y
+     * se aplica al terminar; si se elige otro mientras tanto, gana el último.
      */
-    suspend fun activarEpisodio(id: String): Boolean = enviar("activar episodio $id", accionExplicita = true)
+    fun cambiarEpisodio(id: String) {
+        pagina = PaginaHilo.Consulta(id)
+        if (id == episodioActivo && episodioDestino == null) return
+        episodioDestino = id
+        cambioPendiente = id
+        if (!ocupado) alcance.launch { aplicarCambioPendiente() }
+    }
+
+    private suspend fun aplicarCambioPendiente() {
+        while (!ocupado) {
+            val id = cambioPendiente ?: return
+            cambioPendiente = null
+            if (id != episodioActivo) {
+                cambiandoEpisodio = true
+                try {
+                    // «Auto» decide si se muestra el formulario que trae: no es explícito.
+                    turno(eco = null, explicito = false) { sesion ->
+                        api.enviarFormulario(EPISODE_SWITCH, episodeSwitchData(id), sesion, null)
+                    }
+                } finally {
+                    cambiandoEpisodio = false
+                }
+            }
+            if (cambioPendiente == null) episodioDestino = null
+        }
+    }
 
     /** Mirar un episodio en el hilo sin activarlo (el navegador se movió en otra sección). */
     fun mirarConsulta(id: String?) {
@@ -206,10 +253,6 @@ class HiloModelo(
         }
     }
 
-    fun irAnterior() = mover(-1)
-
-    fun irSiguiente() = mover(1)
-
     fun volverALaActual() {
         pagina = PaginaHilo.Consulta(episodioActivo)
     }
@@ -236,14 +279,9 @@ class HiloModelo(
             return procesado
         } finally {
             ocupado = false
+            // Un cambio de episodio que llegó mientras el chat estaba ocupado no se pierde.
+            if (cambioPendiente != null) alcance.launch { aplicarCambioPendiente() }
         }
-    }
-
-    private fun mover(paso: Int) {
-        val actuales = episodios
-        val destino = actuales.indice(pagina) + paso
-        if (destino !in actuales.orden.indices) return
-        pagina = PaginaHilo.Consulta(actuales.orden[destino])
     }
 
     private fun aplicar(respuesta: RespuestaChat, explicito: Boolean = false) {
@@ -254,8 +292,15 @@ class HiloModelo(
         respuesta.marcadores?.let { marcadores = it }
         if (respuesta.traeEpisodioActivo) {
             episodioActivo = respuesta.episodioActivo
-            // Abrir, enviar o abrir consulta nueva lleva a mirar la consulta activa.
-            pagina = PaginaHilo.Consulta(respuesta.episodioActivo)
+            // Abrir, enviar o abrir consulta nueva lleva a mirar la consulta activa, salvo que el
+            // navegador ya haya elegido otro episodio que espera su turno: ese gana.
+            if (cambioPendiente == null) pagina = PaginaHilo.Consulta(respuesta.episodioActivo)
         }
     }
 }
+
+/** El cambio silencioso de episodio de cepi-bot (PAPER §28.4.1). */
+const val EPISODE_SWITCH = "episode_switch"
+
+/** Los datos del `form_submission` de `episode_switch`. Sin red, para probarlo. */
+fun episodeSwitchData(episodeId: String): JsonObject = JsonObject(mapOf("episode_id" to JsonPrimitive(episodeId)))

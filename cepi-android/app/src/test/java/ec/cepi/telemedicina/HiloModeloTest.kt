@@ -9,6 +9,7 @@ import ec.cepi.telemedicina.galeria.GaleriaModelo
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -192,28 +193,103 @@ class HiloModeloTest {
         assertEquals("ficha_grp_g_1_4", modelo.formulario?.id)
     }
 
+    /** Espera a que el chat quede libre y sin cambio de episodio en marcha. */
+    private suspend fun esperarLibre(modelo: HiloModelo) {
+        repeat(200) {
+            if (!modelo.ocupado && modelo.episodioDestino == null) return
+            delay(20)
+        }
+        error("El chat no quedó libre")
+    }
+
+    private fun cambio(id: String) =
+        Respuesta.Http(200, """{"ok":true,"session_id":"s1","text":"","active_episode_id":"$id","bookmarks":[]}""")
+
     @Test
-    fun cambiarDeEpisodioEnElChatLoActivaSinPreguntar() = runBlocking {
+    fun cambiarDeEpisodioEsSilenciosoYMuestraYaSusMensajes() = runBlocking {
+        val servidor = servidor()
+        val modelo = HiloModelo("p1", servidor.api(), this)
+        modelo.abrir()
+        servidor.fijar("POST /api/bot/chat", cambio("e2"))
+        val turnosAntes = modelo.mensajes.size
+
+        modelo.cambiarEpisodio("e2")
+        // El hilo pasa a ese episodio antes de que conteste el bot.
+        assertEquals(PaginaHilo.Consulta("e2"), modelo.pagina)
+        assertEquals("e2", modelo.episodioDestino)
+        esperarLibre(modelo)
+
+        val cuerpo = cuerpo(servidor, "POST /api/bot/chat")
+        assertEquals("", cuerpo["message"]?.jsonPrimitive?.content)
+        assertEquals(
+            """{"form_id":"episode_switch","data":{"episode_id":"e2"}}""",
+            cuerpo["form_submission"].toString(),
+        )
+        assertEquals("e2", modelo.episodioActivo)
+        assertEquals(PaginaHilo.Consulta("e2"), modelo.pagina)
+        // Sin eco ni burbuja.
+        assertEquals(turnosAntes, modelo.mensajes.size)
+        // Volver a elegir el activo no manda nada.
+        val pedidos = servidor.pedidos.size
+        modelo.cambiarEpisodio("e2")
+        assertEquals(pedidos, servidor.pedidos.size)
+        // En otra sección, solo se mira.
+        modelo.mirarConsulta("e1")
+        assertEquals(PaginaHilo.Consulta("e1"), modelo.pagina)
+        assertEquals(pedidos, servidor.pedidos.size)
+    }
+
+    @Test
+    fun conElChatOcupadoElCambioQuedaPendienteYGanaElUltimo() = runBlocking {
         val servidor = servidor()
         val modelo = HiloModelo("p1", servidor.api(), this)
         modelo.abrir()
         servidor.fijar(
             "POST /api/bot/chat",
-            Respuesta.Http(200, """{"ok":true,"session_id":"s1","text":"Episodio activo","active_episode_id":"e2"}"""),
+            Respuesta.Http(200, """{"ok":true,"session_id":"s1","text":"Listo","active_episode_id":"e1"}""", demoraMs = 400),
+            cambio("e3"),
+        )
+        val chatsAntes = servidor.pedidos.count { it == "POST /api/bot/chat" }
+
+        val envio = launch { modelo.enviar("hola") }
+        delay(100)
+        assertTrue(modelo.ocupado)
+        modelo.cambiarEpisodio("e2")
+        modelo.cambiarEpisodio("e3")
+        envio.join()
+        // La respuesta vieja (e1) no le quita la vista al elegido.
+        esperarLibre(modelo)
+
+        assertEquals("e3", modelo.episodioActivo)
+        assertEquals(PaginaHilo.Consulta("e3"), modelo.pagina)
+        // El mensaje y un solo cambio: e2 se descartó porque después se eligió e3.
+        assertEquals(chatsAntes + 2, servidor.pedidos.count { it == "POST /api/bot/chat" })
+        assertEquals(
+            """{"form_id":"episode_switch","data":{"episode_id":"e3"}}""",
+            cuerpo(servidor, "POST /api/bot/chat")["form_submission"].toString(),
+        )
+    }
+
+    @Test
+    fun unCambioQueFallaNoTrabaLosSiguientes() = runBlocking {
+        val servidor = servidor()
+        val modelo = HiloModelo("p1", servidor.api(), this)
+        modelo.abrir()
+        servidor.fijar(
+            "POST /api/bot/chat",
+            Respuesta.Http(404, """{"ok":false,"error":"Ese episodio no es de este paciente"}"""),
+            cambio("e3"),
         )
 
-        assertTrue(modelo.activarEpisodio("e2"))
+        modelo.cambiarEpisodio("zz")
+        esperarLibre(modelo)
+        assertEquals("e1", modelo.episodioActivo)
+        assertEquals("Ese episodio no es de este paciente", modelo.error)
 
-        val cuerpo = cuerpo(servidor, "POST /api/bot/chat")
-        assertEquals("activar episodio e2", cuerpo["message"]?.jsonPrimitive?.content)
-        assertEquals("true", cuerpo["explicit"]?.jsonPrimitive?.content)
-        assertEquals("e2", modelo.episodioActivo)
-        assertEquals(PaginaHilo.Consulta("e2"), modelo.pagina)
-        // Mirar otro episodio no le manda nada al bot.
-        val antes = servidor.pedidos.size
-        modelo.mirarConsulta("e1")
-        assertEquals(PaginaHilo.Consulta("e1"), modelo.pagina)
-        assertEquals(antes, servidor.pedidos.size)
+        modelo.cambiarEpisodio("e3")
+        esperarLibre(modelo)
+        assertEquals("e3", modelo.episodioActivo)
+        assertNull(modelo.error)
     }
 
     @Test
