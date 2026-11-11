@@ -3154,8 +3154,16 @@ muestran, Imágenes muestra sus fotos (con un acceso a todas las del paciente) y
 a ese episodio (`activar episodio <id>`) cuando está a la vista o al volver a él: navegar por
 la Ficha no llena el hilo de «activar episodio».
 
-**«＋ Nueva consulta» no pide confirmación:** es un botón, una acción explícita (`explicit`).
-Antes el bot preguntaba «¿Confirmas?» como si lo hubiera inferido de un texto libre.
+**Orden en Evolución y Ficha (pedido del dueño, 2026-11-11).** Sin «Otras fichas del paciente»
+en Evolución (el navegador de episodios las recorre). «＋ Agregar evolución» va al pie, después
+de «Próximo control». «Imprimir» va arriba en la Ficha, en el mismo lugar que en Evolución, y la
+Ficha ya no tiene un botón para ir a Evolución (es su propia sección; en la web, la Evolución
+plegada dentro de la Ficha queda solo en el portal de casos).
+
+**«＋ Nueva consulta» no pide confirmación y arranca la ficha:** es un botón, una acción explícita (`explicit`).
+Antes el bot preguntaba «¿Confirmas?» como si lo hubiera inferido de un texto libre, y al
+crearla no lanzaba la primera pregunta de la ficha; ahora la lanza, igual que al registrar un
+paciente.
 
 ## 29. Calificación de la atención por QR (D-Aux-29)
 

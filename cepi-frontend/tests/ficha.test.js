@@ -513,22 +513,17 @@ describe('EvolucionPaciente — ficha de evolución (PAPER §28)', () => {
       ['Fecha', 'Atendió', 'Diagnóstico clínico', 'Diagnóstico histopatológico', 'Tratamiento', 'Observaciones']);
     const celdas = w.findAll('tbody tr')[0].findAll('td').map((t) => t.text());
     expect(celdas).toEqual(['2026-10-01', 'Dra. Ana Pérez', 'L40.0 — Psoriasis', 'Sin biopsia', 'Clobetasol', 'Sin observaciones✏️']);
-    // Solo las evoluciones de la ficha abierta; la otra ficha va en «Otras fichas».
+    // Solo las evoluciones de la ficha abierta; las otras se recorren con el navegador.
     expect(w.findAll('tbody tr')).toHaveLength(1);
     expect(w.find('.evo-cuenta').text()).toBe('1 evolución en esta ficha · 2 fichas');
     expect(boton(w).text()).toBe('Ocultar');
   });
 
-  it('las otras fichas van plegadas y tocar una la abre', async () => {
+  it('ya no lista «Otras fichas»: se recorren con el navegador de episodios (PAPER §28.4.1)', async () => {
     const w = montar();
     await boton(w).trigger('click');
     await flushPromises();
-    await w.findAll('tbody tr')[0].trigger('click');
-    expect(w.emitted('navegar')).toBeUndefined();
-    expect(w.find('.evo-otra').exists()).toBe(false);
-    await w.find('.evo-otras-btn').trigger('click');
-    await w.find('.evo-otra').trigger('click');
-    expect(w.emitted('navegar')[0]).toEqual(['ep1']);
+    expect(w.find('.evo-otras-btn').exists()).toBe(false);
   });
 
   it('sin paciente el botón sale deshabilitado con su motivo, no se esconde', () => {

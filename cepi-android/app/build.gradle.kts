@@ -31,8 +31,8 @@ android {
         minSdk = 24
         targetSdk = 36
         // La APK Capacitor va en 2; el 3 se subió a Play con el micrófono obligatorio y no se publicó.
-        versionCode = 16
-        versionName = "2.7.3"
+        versionCode = 17
+        versionName = "2.7.4"
     }
 
     signingConfigs {

@@ -311,7 +311,6 @@ fun PacienteAbierto(
                         mostrada = fichaMostrada,
                         visible = paginas.settledPage == PAGE_FICHA && !paginas.isScrollInProgress,
                         alGuardarDocumento = { datos, episodio -> modelo.enviarFormulario("ficha_save", datos, episodio) },
-                        onShowEvolution = { showEvolution() },
                     )
                     PAGE_EVOLUTION -> EvolutionPage(
                         pacienteId = pacienteId,
@@ -323,11 +322,6 @@ fun PacienteAbierto(
                             selectEpisode(episodio)
                             fichaMostrada = true
                             alcance.launch { paginas.animateScrollToPage(PAGE_FICHA) }
-                        },
-                        onSelectEpisode = { episodio ->
-                            // Otra ficha del paciente (PAPER §28.4): es el navegador de arriba,
-                            // así que las otras secciones la siguen.
-                            selectEpisode(episodio)
                         },
                     )
                     else -> ImagenesPaciente(imagenes, consents, navigator.label)

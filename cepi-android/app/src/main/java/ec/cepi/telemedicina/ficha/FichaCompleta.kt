@@ -235,7 +235,6 @@ fun FichaPage(
     visible: Boolean,
     /** Guardar desde el documento imprimible (el visor de `ficha.html`). */
     alGuardarDocumento: suspend (JsonObject, String?) -> Boolean,
-    onShowEvolution: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val index = episodes.indexOfFirst { it.id == selectedEpisode }.coerceAtLeast(0)
@@ -272,19 +271,32 @@ fun FichaPage(
     val changes = FullFichaLogic.changeCount(groups, previousEpisode)
 
     Column(Modifier.fillMaxSize()) {
-        // Qué cambió desde el episodio anterior. Anterior / siguiente están en la barra del
-        // paciente, arriba (PAPER §28.4.1).
-        Surface(tonalElevation = 1.dp) {
-            Text(
-                FullFichaLogic.navDetail(episodes, index, loadingEpisodes, changes),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (changes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = if (changes > 0) FontWeight.Bold else null,
-                maxLines = 2,
+        // Arriba, como en Evolución: título, qué cambió desde el episodio anterior (anterior /
+        // siguiente están en la barra del paciente, PAPER §28.4.1), Actualizar e Imprimir.
+        Surface(tonalElevation = 2.dp) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp),
-            )
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ficha del paciente", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        FullFichaLogic.navDetail(episodes, index, loadingEpisodes, changes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (changes > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (changes > 0) FontWeight.Bold else null,
+                        maxLines = 2,
+                    )
+                }
+                TextButton(onClick = { reloadTick++ }, enabled = mostrada && !loading) { Text("Actualizar") }
+                TextButton(onClick = { printing = true }, enabled = mostrada && !loadingEpisodes) {
+                    Icon(painterResource(R.drawable.ic_imprimir), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("Imprimir")
+                }
+            }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
 
@@ -311,23 +323,6 @@ fun FichaPage(
             }
         }
 
-        Surface(tonalElevation = 3.dp) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                TextButton(onClick = { printing = true }, enabled = mostrada && !loadingEpisodes) {
-                    Icon(painterResource(R.drawable.ic_imprimir), contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text("Imprimir")
-                }
-                TextButton(onClick = onShowEvolution) { Text("Evolución") }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { reloadTick++ }, enabled = mostrada && !loading) { Text("Actualizar") }
-            }
-        }
     }
 
     val group = editing
@@ -374,10 +369,6 @@ fun FichaPage(
                 mostrada = true,
                 visible = true,
                 alGuardar = alGuardarDocumento,
-                onShowEvolution = {
-                    printing = false
-                    onShowEvolution()
-                },
             )
         }
     }

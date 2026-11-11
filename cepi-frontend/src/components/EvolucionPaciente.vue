@@ -1,7 +1,7 @@
 <template>
   <!-- Evolución (PAPER §28, §28.4): una ficha tiene varias evoluciones (citas). Se ven las
-       de la ficha abierta, con su cabecera y «＋ Agregar evolución»; debajo, plegadas, las
-       otras fichas del paciente. Dos lugares: plegada dentro de la ficha y como pestaña
+       de la ficha abierta, con su cabecera; al pie, «Próximo control» y «＋ Agregar
+       evolución». Las otras fichas se recorren con el navegador de episodios. Dos lugares: plegada dentro de la ficha y como pestaña
        propia del paciente (`plegable=false`). «Imprimir» abre el documento A4
        (evolucion.html), que agrupa por ficha. -->
   <section class="evo" :class="{ 'evo--abierta': abierta, 'evo--pestana': !plegable }">
@@ -45,11 +45,6 @@
             </template>
             <span v-else class="evo-ficha-meta">Este paciente todavía no tiene fichas registradas.</span>
           </div>
-          <button
-            class="evo-btn evo-btn--primario" type="button"
-            :disabled="!!motivoNoAgregar" :title="motivoNoAgregar || 'Registrar una cita de control en esta ficha'"
-            @click="abrirFormulario"
-          >＋ Agregar evolución</button>
         </div>
 
         <!-- Formulario de la evolución: nueva, o una existente que se tocó (PAPER §28.4.1).
@@ -180,21 +175,15 @@
           <span v-if="!fichaDeAlta" class="evo-control-editar">✏️</span>
         </button>
 
-        <!-- Las otras fichas del paciente, plegadas: una línea por ficha. Tocarla la abre. -->
-        <div class="evo-otras">
+        <!-- «＋ Agregar evolución» va al final, después del próximo control (pedido del dueño,
+             2026-11-11). Las otras fichas del paciente se recorren con el navegador de arriba. -->
+        <div class="evo-agregar">
           <button
-            class="evo-otras-btn" type="button" :disabled="!otras.length" :aria-expanded="verOtras"
-            :title="otras.length ? 'Ver las otras fichas del paciente' : 'Es la única ficha de este paciente'"
-            @click="verOtras = !verOtras"
-          >{{ verOtras ? '▾' : '▸' }} Otras fichas del paciente ({{ otras.length }})</button>
-          <ul v-if="verOtras && otras.length" class="evo-otras-lista">
-            <li v-for="o in otras" :key="o.episode_id">
-              <button type="button" class="evo-otra" title="Abrir esta ficha" @click="emit('navegar', o.episode_id)">
-                <span class="evo-otra-motivo">{{ o.motivo || 'Sin motivo registrado' }}</span>
-                <span class="evo-otra-meta">{{ o.apertura || '—' }} · {{ etiquetaEstado(o.estado) }} · {{ cuentaEvoluciones(o) }}</span>
-              </button>
-            </li>
-          </ul>
+            class="evo-btn evo-btn--primario" type="button"
+            :disabled="!!motivoNoAgregar" :title="motivoNoAgregar || 'Registrar una cita de control en esta ficha'"
+            @click="abrirFormulario"
+          >＋ Agregar evolución</button>
+          <span class="evo-agregar-ayuda">{{ motivoNoAgregar || 'Para un control del mismo motivo. Otro motivo de consulta es una consulta nueva.' }}</span>
         </div>
       </template>
     </div>
@@ -238,7 +227,6 @@ const filas = ref([]);
 const cargando = ref(false);
 const error = ref('');
 const cargada = ref(false);
-const verOtras = ref(false);
 const formulario = ref(false);
 const enviando = ref(false);
 const errorNueva = ref('');
@@ -297,7 +285,6 @@ const nextControl = computed(() => {
   const label = { atrasado: 'Atrasado', hoy: 'Hoy', proximo: 'Próximo' }[status];
   return { date, status, label, reason: latest.proximo_control_motivo || null };
 });
-const otras = computed(() => fichas.value.filter((g) => g !== actual.value));
 /** Para mostrar: de la más vieja a la más nueva. Internamente, la más nueva va primero. */
 const filasEnOrden = computed(() => (actual.value ? [...actual.value.filas].reverse() : []));
 const fichaDeAlta = computed(() => actual.value?.estado === 'alta');
@@ -463,7 +450,7 @@ async function guardarObservaciones(f) {
 }
 
 watch(() => props.patientId, () => {
-  filas.value = []; cargada.value = false; editando.value = null; formulario.value = false; verOtras.value = false;
+  filas.value = []; cargada.value = false; editando.value = null; formulario.value = false;
   if (abierta.value) cargar();
 });
 
@@ -528,14 +515,6 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-especialista { display: block; margin-top: 2px; font-size: 12px; color: #0369a1; }
 
 /* Otras fichas del paciente. */
-.evo-otras { padding: 6px 12px 10px; border-top: 1px solid #e2e8f0; }
-.evo-otras-btn { padding: 4px 0; font-size: 13px; font-weight: 600; color: #0369a1; background: none; border: 0; cursor: pointer; }
-.evo-otras-btn:disabled { color: #94a3b8; cursor: default; }
-.evo-otras-lista { margin: 4px 0 0; padding: 0; list-style: none; }
-.evo-otra { display: flex; flex-wrap: wrap; gap: 4px 10px; width: 100%; padding: 6px 8px; text-align: left; font: inherit; font-size: 13px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; margin-bottom: 4px; }
-.evo-otra:hover { background: #f0f9ff; }
-.evo-otra-motivo { font-weight: 600; color: #0f172a; }
-.evo-otra-meta { color: #64748b; }
 
 /* Como pestaña ocupa todo el alto: el cuerpo se desplaza dentro. */
 .evo--pestana { display: flex; flex-direction: column; min-height: 0; height: 100%; margin: 0; border: 0; border-radius: 0; }
@@ -559,6 +538,8 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
 .evo-control:hover:not(:disabled) { background: rgba(0,0,0,0.06); }
 .evo-control:disabled { cursor: default; }
 .evo-control-editar { margin-left: auto; font-size: 14px; }
+.evo-agregar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.evo-agregar-ayuda { font-size: 12px; opacity: .75; }
 .evo-fila-tocable { cursor: pointer; }
 .evo-fila-tocable:hover td { background: rgba(37,99,235,0.05); }
 .evo-fila-editando td { background: rgba(37,99,235,0.10); }

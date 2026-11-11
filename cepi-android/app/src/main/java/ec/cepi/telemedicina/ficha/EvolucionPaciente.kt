@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -106,7 +105,8 @@ data class ObservationEdit(
  * **Evolución** · Imágenes (§24.2.1, §28.3). Nativa y adaptable, como `EvolucionPaciente.vue`
  * con `plegable=false` en el teléfono. Muestra las evoluciones de la **ficha abierta** (la de la
  * barra de episodios) con su cabecera —motivo, fecha de apertura, estado— y «＋ Agregar
- * evolución» (§28.4); debajo, plegadas, las otras fichas del paciente. Las evoluciones van en
+ * evolución» (§28.4) al pie, después de «Próximo control». Otra ficha se elige en el navegador
+ * de episodios del paciente, arriba (§28.4.1). Las evoluciones van en
  * orden de cita, la más nueva abajo y resaltada (§28.4.1). Cada una es una tarjeta con las
  * columnas de §28.1: tocarla abre su formulario (el de «＋ Agregar evolución», prellenado), y el
  * ✏️ edita las observaciones en línea (sin sí/no: son acciones explícitas). Tocar «Próximo
@@ -124,8 +124,6 @@ fun EvolutionPage(
     visible: Boolean,
     /** Abrir la ficha en la sección Ficha (se va a esa sección). */
     onOpenEpisode: (String) -> Unit,
-    /** Cambiar a otra ficha del paciente sin dejar Evolución (la sección Ficha la sigue). */
-    onSelectEpisode: (String) -> Unit = onOpenEpisode,
 ) {
     val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf(emptyList<FilaEvolucion>()) }
@@ -134,7 +132,6 @@ fun EvolutionPage(
     var error by remember { mutableStateOf<String?>(null) }
     var edit by remember { mutableStateOf<ObservationEdit?>(null) }
     var draft by remember { mutableStateOf<EvolutionDraft?>(null) }
-    var othersExpanded by remember { mutableStateOf(false) }
     var reloadCount by remember { mutableIntStateOf(0) }
     var printing by remember { mutableStateOf(false) }
 
@@ -155,7 +152,6 @@ fun EvolutionPage(
 
     val groups = remember(rows) { EvolutionGrouping.group(rows) }
     val open = EvolutionGrouping.openEpisode(groups, currentEpisode)
-    val others = EvolutionGrouping.others(groups, open)
     val busy = edit != null || draft != null
     val addReason = EvolutionGrouping.addDisabledReason(open, loaded, busy)
 
@@ -252,33 +248,6 @@ fun EvolutionPage(
                         enabled = !busy,
                     )
                 }
-                item(key = "add") {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Button(
-                            onClick = { open?.let { draft = EvolutionDraft.start(it.episodeId) } },
-                            enabled = addReason == null,
-                            modifier = Modifier.semantics { contentDescription = addReason ?: "Agregar una evolución a esta ficha" },
-                        ) { Text("＋ Agregar evolución") }
-                        Text(
-                            addReason?.takeIf { draft == null && edit == null }
-                                ?: "Para un control de este motivo. Para otro motivo de consulta, «＋ Nueva consulta» en el menú del paciente.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                draft?.takeIf { !it.isEdit }?.let { current ->
-                    item(key = "draft") {
-                        EvolutionForm(
-                            draft = current,
-                            motivo = groups.firstOrNull { it.episodeId == current.episodeId }?.motivo,
-                            api = api,
-                            onChange = { draft = it },
-                            onSave = { saveEvolution(current) },
-                            onCancel = { draft = null },
-                        )
-                    }
-                }
                 if (open == null) {
                     item(key = "empty") {
                         Text(
@@ -327,17 +296,33 @@ fun EvolutionPage(
                         )
                     }
                 }
-                item(key = "others") {
-                    OtherEpisodes(
-                        others = others,
-                        expanded = othersExpanded,
-                        busy = busy,
-                        onToggle = { othersExpanded = !othersExpanded },
-                        onSelect = { id ->
-                            othersExpanded = false
-                            onSelectEpisode(id)
-                        },
-                    )
+                // «＋ Agregar evolución» va al pie, después de «Próximo control» (PAPER §28.4.1).
+                item(key = "add") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Button(
+                            onClick = { open?.let { draft = EvolutionDraft.start(it.episodeId) } },
+                            enabled = addReason == null,
+                            modifier = Modifier.semantics { contentDescription = addReason ?: "Agregar una evolución a esta ficha" },
+                        ) { Text("＋ Agregar evolución") }
+                        Text(
+                            addReason?.takeIf { draft == null && edit == null }
+                                ?: "Para un control de este motivo. Para otro motivo de consulta, «＋ Nueva consulta» en el menú del paciente.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                draft?.takeIf { !it.isEdit }?.let { current ->
+                    item(key = "draft") {
+                        EvolutionForm(
+                            draft = current,
+                            motivo = groups.firstOrNull { it.episodeId == current.episodeId }?.motivo,
+                            api = api,
+                            onChange = { draft = it },
+                            onSave = { saveEvolution(current) },
+                            onCancel = { draft = null },
+                        )
+                    }
                 }
             }
         }
@@ -493,59 +478,6 @@ private fun TextoLargo(etiqueta: String, valor: String, placeholder: String, ena
             .fillMaxWidth()
             .semantics { contentDescription = etiqueta },
     )
-}
-
-/**
- * «Otras fichas del paciente», plegadas: una línea por ficha (motivo, fecha, estado, cuántas
- * evoluciones). Tocar una cambia a esa ficha. Sin otras fichas el encabezado queda gris con el
- * motivo, no se esconde.
- */
-@Composable
-private fun OtherEpisodes(
-    others: List<EpisodeEvolutions>,
-    expanded: Boolean,
-    busy: Boolean,
-    onToggle: () -> Unit,
-    onSelect: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        TextButton(onClick = onToggle, enabled = others.isNotEmpty()) {
-            Text((if (expanded && others.isNotEmpty()) "▾ " else "▸ ") + "Otras fichas del paciente (${others.size})")
-        }
-        when {
-            others.isEmpty() -> Text(
-                "Única ficha de este paciente",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            expanded -> {
-                if (busy) {
-                    Text(
-                        "Termina primero lo que estás editando para cambiar de ficha",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                others.forEach { group ->
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clickable(enabled = !busy, onClickLabel = "Cambiar a esta ficha") { onSelect(group.episodeId) },
-                    ) {
-                        Text(
-                            group.summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

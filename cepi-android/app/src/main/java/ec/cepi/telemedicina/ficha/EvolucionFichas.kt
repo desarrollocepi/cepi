@@ -37,15 +37,6 @@ data class EpisodeEvolutions(
 
     val discharged: Boolean get() = estado == ALTA
 
-    /** La línea de «Otras fichas del paciente»: motivo, fecha, estado, cuántas evoluciones. */
-    val summary: String
-        get() = listOf(
-            motivo ?: "Sin motivo registrado",
-            openedOn ?: "sin fecha",
-            estadoLabel(estado),
-            if (count == 1) "1 evolución" else "$count evoluciones",
-        ).joinToString(" · ")
-
     companion object {
         const val ALTA = "alta"
 
@@ -73,10 +64,6 @@ object EvolutionGrouping {
      */
     fun openEpisode(groups: List<EpisodeEvolutions>, current: String?): EpisodeEvolutions? =
         groups.firstOrNull { it.episodeId == current } ?: groups.firstOrNull()
-
-    /** Las demás fichas, en el mismo orden. */
-    fun others(groups: List<EpisodeEvolutions>, open: EpisodeEvolutions?): List<EpisodeEvolutions> =
-        groups.filter { it.episodeId != open?.episodeId }
 
     /** Por qué «＋ Agregar evolución» está deshabilitado; `null` si se puede. */
     fun addDisabledReason(open: EpisodeEvolutions?, loaded: Boolean, busy: Boolean): String? = when {

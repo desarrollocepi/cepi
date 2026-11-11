@@ -1158,6 +1158,18 @@ async function executePendingActionResult(
       }
     } else if (createdType === '12000000-0000-0000-0000-000000000000') {
       session.active_episode_id = newId;
+      // «＋ Nueva consulta»: la ficha nueva arranca con su primera pregunta, igual que al
+      // registrar un paciente (PAPER §28.4.1). Antes quedaba el chat callado tras crearla.
+      const firstGroup = await firstIncompleteFichaGroup(mcp, session);
+      extraForm = firstGroup ? await fichaGroupFormFilled(firstGroup, mcp, session) : null;
+      session.extracted_slots = {
+        ...(session.extracted_slots || {}),
+        mode: 'patient',
+        form_state: { kind: 'ficha' },
+        ficha_done: [],
+        ...(firstGroup ? { ficha_current: firstGroup } : {}),
+        active_form: extraForm,
+      };
     }
   }
   session.pending_action = null;
@@ -2457,7 +2469,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
               estado:          'en_curso',
             },
           },
-          successMessage: `Episodio creado (id: {{id}}). Lo activo automáticamente; puedes ya subir imágenes.`,
+          successMessage: `Consulta nueva abierta. Empecemos con la ficha.`,
           createdAt: new Date().toISOString(),
         };
         if (!gateOn) {

@@ -87,9 +87,10 @@ class EvolucionesTest {
         assertEquals(2, groups[0].count)
         assertEquals("2026-10-01", groups[0].openedOn)
         assertEquals("Psoriasis en codos", groups[0].motivo)
-        assertEquals("Psoriasis en codos · 2026-10-01 · Cerrada · 2 evoluciones", groups[0].summary)
-        assertEquals("Nevo en espalda · 2026-08-15 · Alta · 1 evolución", groups[1].summary)
-        assertEquals("Sin motivo registrado · 2026-07-01 · En curso · 1 evolución", groups[2].summary)
+        assertEquals("Cerrada", EpisodeEvolutions.estadoLabel(groups[0].estado))
+        assertEquals("Alta", EpisodeEvolutions.estadoLabel(groups[1].estado))
+        assertEquals("En curso", EpisodeEvolutions.estadoLabel(groups[2].estado))
+        assertEquals("Sin estado", EpisodeEvolutions.estadoLabel(null))
     }
 
     @Test
@@ -97,12 +98,10 @@ class EvolucionesTest {
         val groups = EvolutionGrouping.group(rows)
         val open = EvolutionGrouping.openEpisode(groups, "e1")
         assertEquals("e1", open?.episodeId)
-        assertEquals(listOf("e2", "e0"), EvolutionGrouping.others(groups, open).map { it.episodeId })
         // Sin ficha en la barra, o una que no es del paciente: la más nueva.
         assertEquals("e2", EvolutionGrouping.openEpisode(groups, null)?.episodeId)
         assertEquals("e2", EvolutionGrouping.openEpisode(groups, "zz")?.episodeId)
         assertNull(EvolutionGrouping.openEpisode(emptyList(), "e1"))
-        assertEquals(emptyList<EpisodeEvolutions>(), EvolutionGrouping.others(emptyList(), null))
     }
 
     @Test

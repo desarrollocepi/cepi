@@ -125,8 +125,6 @@ fun VisorFicha(
     alGuardar: suspend (JsonObject, String?) -> Boolean,
     /** Otra ficha que pidió abrir quien contiene el visor (una fila de la sección Evolución). */
     episodioPedido: EpisodeRequest? = null,
-    /** El botón "Evolución": lleva a la sección Evolución del paciente. */
-    onShowEvolution: () -> Unit = {},
     /** La ficha que queda a la vista, para que Evolución la resalte. */
     onEpisodeShown: (String?) -> Unit = {},
 ) {
@@ -264,9 +262,6 @@ fun VisorFicha(
                     Icon(painterResource(R.drawable.ic_imprimir), contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
                     Text("Imprimir")
-                }
-                TextButton(onClick = onShowEvolution) {
-                    Text("Evolución")
                 }
                 Spacer(Modifier.weight(1f))
                 Button(

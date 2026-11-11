@@ -12,7 +12,19 @@
     <template v-else-if="grupos.length">
       <!-- Cabecera: cuánto de la ficha tiene dato. Es la primera pregunta del
            portal ("¿qué falta?"), así que va arriba y no escondida. -->
+      <!-- «Imprimir» arriba, en el mismo lugar que en la sección Evolución (pedido del dueño,
+           2026-11-11). Abre la ficha imprimible (ficha.html) del episodio a la vista. -->
+      <div v-if="imprimible" class="ficha-acciones">
+        <button
+          class="ficha-imprimir" type="button" :disabled="!episodeId"
+          :title="episodeId ? 'Abrir la ficha para imprimir o guardar como PDF' : 'Todavía no hay un episodio que imprimir'"
+          @click="imprimiendo = true"
+        >Imprimir</button>
+      </div>
+      <!-- Dentro de la pestaña del paciente la Evolución tiene su propia sección: aquí no se
+           repite (conEvolucion=false). En el portal de casos sigue plegada aquí. -->
       <EvolucionPaciente
+        v-if="conEvolucion"
         ref="evolucion" :patient-id="patientId" :episode-id="episodeId"
         @navegar="emit('navegar', $event)"
       />
@@ -112,6 +124,16 @@
     </template>
 
     <div v-else class="ficha-estado">Esta ficha no tiene grupos.</div>
+
+    <div v-if="imprimiendo" class="ficha-modal" @click.self="imprimiendo = false">
+      <div class="ficha-modal-caja">
+        <button class="ficha-modal-cerrar" type="button" title="Cerrar" @click="imprimiendo = false">✕</button>
+        <VisorFormato
+          src="/ficha.html" titulo="Historia Clínica Dermatológica"
+          :episode-id="episodeId" :patient-id="patientId" :visitas="visitas"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -120,6 +142,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import { fichaCompleta, guardarGrupoFicha, obtenerEntidad } from '../api.js';
 import BotForm from './BotForm.vue';
 import EvolucionPaciente from './EvolucionPaciente.vue';
+import VisorFormato from './VisorFormato.vue';
 
 const props = defineProps({
   episodeId: { type: String, default: null },
@@ -128,8 +151,14 @@ const props = defineProps({
   visitas: { type: Array, default: () => [] },
   /** El contenedor está trayendo la lista: no es lo mismo que no haya ninguna. */
   cargandoVisitas: { type: Boolean, default: false },
+  /** Muestra la Evolución plegada dentro de la ficha (el portal de casos); la pestaña del
+   *  paciente tiene la suya. */
+  conEvolucion: { type: Boolean, default: true },
+  /** Botón «Imprimir» arriba, como en la sección Evolución. */
+  imprimible: { type: Boolean, default: false },
 });
 const emit = defineEmits(['navegar']);
+const imprimiendo = ref(false);
 
 const grupos = ref([]);
 const completos = ref(0);
@@ -419,4 +448,11 @@ defineExpose({ recargar: cargar });
   .ficha-campos { grid-template-columns: 1fr; gap: 1px 0; }
   .ficha-campos dd { margin-bottom: 7px; }
 }
+.ficha-acciones { display: flex; justify-content: flex-end; padding: 6px 12px 0; }
+.ficha-imprimir { padding: 5px 12px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--bg, #fff); color: inherit; cursor: pointer; font-size: 13px; }
+.ficha-imprimir:disabled { opacity: .45; cursor: default; }
+.ficha-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: stretch; justify-content: center; padding: 16px; background: rgba(15,23,42,.55); }
+.ficha-modal-caja { position: relative; flex: 1; max-width: 1000px; display: flex; flex-direction: column; background: var(--bg, #fff); border-radius: 10px; overflow: hidden; }
+.ficha-modal-caja > .visor { flex: 1; min-height: 0; }
+.ficha-modal-cerrar { position: absolute; top: 6px; right: 8px; z-index: 1; border: 0; background: none; font-size: 18px; cursor: pointer; color: inherit; }
 </style>

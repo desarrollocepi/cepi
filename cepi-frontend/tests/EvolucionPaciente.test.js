@@ -76,26 +76,11 @@ describe('EvolucionPaciente (PAPER §28, §28.4)', () => {
     expect(filas[0].text()).not.toContain('Primera cita');
   });
 
-  it('otras fichas plegadas: una línea por ficha y tocarla la abre', async () => {
+  it('«＋ Agregar evolución» va al pie, después del próximo control, y no hay «Otras fichas» (PAPER §28.4.1)', async () => {
     const w = await montar();
-    const btn = w.find('.evo-otras-btn');
-    expect(btn.text()).toContain('Otras fichas del paciente (1)');
-    expect(w.find('.evo-otra').exists()).toBe(false);
-    await btn.trigger('click');
-    const otra = w.find('.evo-otra');
-    expect(otra.text()).toContain('Acné');
-    expect(otra.text()).toContain('Cerrada');
-    expect(otra.text()).toContain('1 evolución');
-    await otra.trigger('click');
-    expect(w.emitted('navegar')).toEqual([['ep1']]);
-  });
-
-  it('con una sola ficha, «Otras fichas» sale deshabilitado con el motivo', async () => {
-    api.listarEvolucion.mockResolvedValue({ data: FILAS.slice(0, 2) });
-    const w = await montar();
-    const btn = w.find('.evo-otras-btn');
-    expect(btn.attributes('disabled')).toBeDefined();
-    expect(btn.attributes('title')).toBe('Es la única ficha de este paciente');
+    expect(w.find('.evo-otras-btn').exists()).toBe(false);
+    const html = w.html();
+    expect(html.indexOf('evo-control')).toBeLessThan(html.indexOf('＋ Agregar evolución'));
   });
 
   it('como pestaña carga sola, sin el botón de plegar, e Imprimir abre el documento', async () => {

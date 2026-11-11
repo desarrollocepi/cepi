@@ -39,6 +39,7 @@
         v-if="selectedId && seccion === 'ficha'"
         :key="selectedId" :patient-id="selectedId" :episode-id="episodioDeLaFicha"
         :visitas="visitas" :cargando-visitas="cargandoVisitas"
+        :con-evolucion="false" imprimible
         class="shell-chat" @navegar="episodioElegido = $event"
       />
       <EvolucionPaciente
