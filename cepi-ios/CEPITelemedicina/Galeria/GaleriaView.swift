@@ -12,7 +12,7 @@ struct GaleriaView: View {
             RejillaImagenes(modelo: modelo, vacio: "Todavía no hay imágenes en esta organización")
                 .navigationTitle("Galería")
                 .searchable(text: $busqueda, prompt: "Paciente, cédula, diagnóstico, CIE-10 o fecha")
-                .refreshable { await modelo.recargar(api: sesion.api) }
+                .refreshable { await Task { await modelo.recargar(api: sesion.api) }.value }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Text(sesion.usuario?.orgs.first { $0.id == sesion.usuario?.orgActiva }?.name ?? "")

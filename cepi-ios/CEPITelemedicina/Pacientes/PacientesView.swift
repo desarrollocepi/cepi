@@ -164,7 +164,7 @@ struct PacientesView: View {
             placement: .navigationBarDrawer(displayMode: .always),
             prompt: "Buscar paciente o cédula"
         )
-        .refreshable { await modelo.cargar(api: sesion.api) }
+        .refreshable { await Task { await modelo.cargar(api: sesion.api) }.value }
         .navigationTitle("Pacientes")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

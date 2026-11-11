@@ -37,8 +37,10 @@ struct ImagenesPacienteView: View {
                 PatientConsentsView(model: consents)
             }
             .refreshable {
-                await consents.load(api: sesion.api)
-                await modelo.recargar(api: sesion.api)
+                await Task {
+                    await consents.load(api: sesion.api)
+                    await modelo.recargar(api: sesion.api)
+                }.value
             }
         }
         .task { await modelo.buscar("", api: sesion.api, esperar: .zero) }

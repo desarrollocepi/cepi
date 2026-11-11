@@ -7,9 +7,19 @@ import OSLog
 struct APIError: LocalizedError, Sendable {
     let status: Int
     let mensaje: String
+    /// El pedido se canceló (URLError -999): la vista que lo lanzó ya no lo espera, p. ej.
+    /// al soltar el gesto de actualizar. No es un fallo que haya que mostrar.
+    var cancelado = false
 
     var errorDescription: String? { mensaje }
     var sinRed: Bool { status == 0 }
+}
+
+extension Error {
+    /// Cancelación (de la tarea o del pedido): no se muestra como error.
+    var esCancelacion: Bool {
+        self is CancellationError || (self as? APIError)?.cancelado == true || (self as? URLError)?.code == .cancelled
+    }
 }
 
 /// Cliente del backend. Espejo de `call()` en `cepi-frontend/src/api.js`: Bearer si hay
@@ -118,7 +128,8 @@ final class APIClient: Sendable {
             if (error as? URLError)?.code != .cancelled {
                 Self.registro.error("\(metodo, privacy: .public) \(ruta, privacy: .public) falló en la red: \(codigo)")
             }
-            throw APIError(status: 0, mensaje: "Sin conexión con el servidor (código \(codigo)).")
+            throw APIError(status: 0, mensaje: "Sin conexión con el servidor (código \(codigo)).",
+                           cancelado: (error as? URLError)?.code == .cancelled)
         }
         let status = (respuesta as? HTTPURLResponse)?.statusCode ?? 0
 

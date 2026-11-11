@@ -131,7 +131,7 @@ struct HiloView: View {
             }
             .pegadoAlFinal()
             .scrollDismissesKeyboard(.interactively)
-            .refreshable { await modelo.releer(api: sesion.api) }
+            .refreshable { await Task { await modelo.releer(api: sesion.api) }.value }
             .onChange(of: modelo.mensajes.count) { bajar(proxy) }
             .onChange(of: modelo.ocupado) { bajar(proxy) }
             .onChange(of: modelo.pagina) { bajar(proxy) }

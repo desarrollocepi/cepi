@@ -30,7 +30,7 @@ struct ShiftsView: View {
                 }
             }
             .navigationTitle("Turnos")
-            .refreshable { await reload() }
+            .refreshable { await Task { await reload() }.value }
             .safeAreaInset(edge: .bottom) {
                 if let notice = model.notice {
                     Text(notice)

@@ -40,7 +40,7 @@ struct PatientFichaView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
             }
-            .refreshable { await model.reload(api: sesion.api) }
+            .refreshable { await Task { await model.reload(api: sesion.api) }.value }
             // Recargar no vacía la ficha: se atenúa y no se puede tocar, pero sigue a la vista.
             .opacity(reloading ? 0.45 : 1)
             .allowsHitTesting(!reloading)

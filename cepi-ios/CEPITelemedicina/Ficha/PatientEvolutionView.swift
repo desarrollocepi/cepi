@@ -168,7 +168,7 @@ struct PatientEvolutionView: View {
                 }
                 .padding(12)
             }
-            .refreshable { await load() }
+            .refreshable { await Task { await load() }.value }
         }
     }
 
@@ -415,6 +415,8 @@ struct PatientEvolutionView: View {
             // Si la fila que se editaba ya no está, se suelta la edición.
             if let editing, !rows.contains(where: { $0.id == editing }) { cancel() }
         } catch {
+            // Al soltar el gesto de actualizar se puede cancelar el pedido (-999): no es un fallo.
+            if error.esCancelacion { return }
             self.error = "No se pudo cargar la evolución: \(error.localizedDescription)"
         }
     }

@@ -41,7 +41,7 @@ struct ControlsView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Paciente o cédula"
             )
-            .refreshable { await model.load(api: sesion.api) }
+            .refreshable { await Task { await model.load(api: sesion.api) }.value }
             .navigationDestination(item: $model.openedPatient) { patient in
                 PacienteView(
                     fila: patient, seccion: $section,
