@@ -51,7 +51,6 @@ async function abrir(w = montar()) {
 }
 const turnos = (w) => w.findAll('.iturn .mc').map((t) => t.text());
 const boton = (w, sel, texto) => w.findAll(sel).find((b) => b.text().includes(texto));
-const nav = (w, titulo) => w.findAll('.enav').find((b) => b.attributes('title') === titulo);
 async function escribirYEnviar(w, texto) {
   await w.find('.icomposer textarea').setValue(texto);
   await w.find('.icomposer').trigger('submit');
@@ -69,13 +68,12 @@ describe('IntakeChat — abrir un paciente', () => {
     w.vm.openPatient(P, 'Ana Pérez');
     await flushPromises();
     expect(w.find('.ihead-name').text()).toContain('Ana Pérez');
-    expect(w.find('.ep-label').text()).toBe('Cargando consultas…');
     expect(w.find('.iwelcome').text()).toBe('Cargando la información…');
     expect(w.find('.thinking').exists()).toBe(false);
     soltar({ messages: HILO });
     await flushPromises();
     expect(w.find('.iwelcome').exists()).toBe(false);
-    expect(w.find('.ep-label').text()).toContain('Consulta 2/2');
+    expect(turnos(w)).toContain('mi nota');
   });
 
   it('pide el hilo guardado en paralelo con la activación, no después', async () => {
@@ -137,45 +135,44 @@ describe('IntakeChat — abrir un paciente', () => {
 });
 
 describe('IntakeChat — consultas', () => {
-  it('abre en la consulta activa y solo muestra sus mensajes', async () => {
+  it('abre en la consulta activa y solo muestra sus mensajes; la barra propia ya no está', async () => {
     const w = await abrir();
     expect(turnos(w)).toEqual(['Paciente activo: Ana', 'mi nota', 'opino que es psoriasis', 'y agrego esto']);
-    expect(nav(w, 'Consulta siguiente').element.disabled).toBe(true);
-    expect(nav(w, 'Consulta anterior').element.disabled).toBe(false);
-    expect(nav(w, 'Ya estás en la consulta actual').element.disabled).toBe(true);
+    expect(w.find('.iepisodes').exists()).toBe(false);
   });
 
-  it('en una consulta anterior: solo lectura, sin composer, y Secciones y Auto-form grises con motivo', async () => {
+  it('cambiar de episodio desde el navegador cambia el contenido y avisa al bot en silencio (PAPER §28.4.1)', async () => {
     const w = await abrir();
-    await nav(w, 'Consulta anterior').trigger('click');
-    expect(w.find('.ep-label').text()).toContain('Consulta 1/2');
+    api.chat.mockClear();
+    api.chat.mockResolvedValue({ session_id: 's1', active_episode_id: 'ep1', text: '' });
+    api.getPatientThread.mockClear();
+    await w.vm.activarEpisodio('ep1');
+    await flushPromises();
     expect(turnos(w)).toEqual(['consulta vieja']);
-    expect(w.find('.ireadonly').exists()).toBe(true);
-    expect(w.find('.icomposer').exists()).toBe(false);
-    const [secciones, auto] = w.findAll('.ihead-sections > button');
-    expect(secciones.element.disabled).toBe(true);
-    expect(secciones.attributes('title')).toBe('Secciones de la ficha: solo en la consulta actual');
-    expect(auto.element.disabled).toBe(true);
-    expect(auto.attributes('title')).toBe('Auto-form: solo en la consulta actual');
-
-    await w.find('.icomposer-ro button').trigger('click');
+    expect(api.chat).toHaveBeenCalledTimes(1);
+    expect(api.chat).toHaveBeenLastCalledWith('', 's1', { formSubmission: { form_id: 'episode_switch', data: { episode_id: 'ep1' } } });
+    // No queda ningún mensaje «activar episodio» en el hilo.
+    expect(turnos(w).some((t) => /activar episodio/.test(t))).toBe(false);
     expect(w.find('.icomposer').exists()).toBe(true);
-    expect(w.findAll('.ihead-sections > button')[0].element.disabled).toBe(false);
   });
 
-  it('con una sola consulta lo dice y las flechas quedan deshabilitadas, no ocultas', async () => {
-    preparar({ hilo: [msg('única', { self: true })] });
+  it('si el chat está ocupado, el cambio espera y no se pierde', async () => {
     const w = await abrir();
-    expect(w.find('.ep-label').text()).toBe('Única consulta');
-    expect(w.findAll('.enav')).toHaveLength(3);
-    expect(w.findAll('.enav').every((b) => b.element.disabled)).toBe(true);
+    let soltar;
+    api.chat.mockReturnValue(new Promise((r) => { soltar = r; }));
+    w.find('textarea').setValue('algo');
+    await w.find('.icomposer').trigger('submit');
+    await flushPromises();
+    w.vm.activarEpisodio('ep1');
+    soltar({ session_id: 's1', active_episode_id: 'ep2' });
+    api.chat.mockResolvedValue({ session_id: 's1', active_episode_id: 'ep1', text: '' });
+    await flushPromises(); await flushPromises();
+    expect(api.chat).toHaveBeenLastCalledWith('', 's1', { formSubmission: { form_id: 'episode_switch', data: { episode_id: 'ep1' } } });
   });
 
-  it('sin mensajes ni consulta: la barra sigue y dice "Sin consultas todavía"', async () => {
+  it('sin mensajes ni consulta, Secciones queda gris con su motivo', async () => {
     preparar({ hilo: [], activacion: { session_id: 's1', bookmarks: [], active_episode_id: null } });
     const w = await abrir();
-    expect(w.find('.iepisodes').exists()).toBe(true);
-    expect(w.find('.ep-label').text()).toBe('Sin consultas todavía');
     expect(w.find('.iwelcome').text()).toContain('pega un texto');
     const secciones = w.findAll('.ihead-sections > button')[0];
     expect(secciones.element.disabled).toBe(true);
@@ -185,7 +182,6 @@ describe('IntakeChat — consultas', () => {
   it('una consulta recién abierta, todavía sin mensajes, también es una página', async () => {
     preparar({ activacion: { ...ACTIVACION, active_episode_id: 'ep3' } });
     const w = await abrir();
-    expect(w.find('.ep-label').text()).toContain('Consulta 3/3');
     expect(turnos(w)).toEqual([]);
   });
 

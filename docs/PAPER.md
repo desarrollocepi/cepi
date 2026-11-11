@@ -3152,7 +3152,10 @@ siguiente) sale debajo de las pestañas del paciente en Chat, Ficha, Evolución 
 no solo en la Ficha. El episodio elegido vale para todas: la Ficha y la Evolución lo
 muestran, Imágenes muestra sus fotos (con un acceso a todas las del paciente) y el Chat pasa
 a ese episodio (`activar episodio <id>`) cuando está a la vista o al volver a él: navegar por
-la Ficha no llena el hilo de «activar episodio».
+la Ficha no llena el hilo de «activar episodio». El cambio es silencioso: form_submission
+`episode_switch` `{episode_id}` pone ese episodio activo y su ficha en la primera sección
+pendiente, sin turnos en el hilo; el chat muestra los mensajes de ese episodio. Si el chat está
+ocupado, el cambio espera a que termine. El chat ya no tiene su propia barra «Consulta N/M».
 
 **Orden en Evolución y Ficha (pedido del dueño, 2026-11-11).** Sin «Otras fichas del paciente»
 en Evolución (el navegador de episodios las recorre). «＋ Agregar evolución» va al pie, después

@@ -40,18 +40,8 @@
       </div>
     </div>
 
-    <!-- La barra de consultas está siempre: mientras carga y sin consultas lo dice, en vez
-         de aparecer de golpe cuando llega el hilo. -->
-    <div v-if="patientName" class="iepisodes">
-      <button type="button" class="enav" :disabled="busy || episodeIndex <= 0" @click="prevEpisode" title="Consulta anterior">‹</button>
-      <span class="ep-label">{{ cargado ? (episodeLabel || 'Sin consultas todavía') : 'Cargando consultas…' }}</span>
-      <button type="button" class="enav" :disabled="busy || episodeIndex >= episodeOrder.length - 1" @click="nextEpisode" title="Consulta siguiente">›</button>
-      <button
-        type="button" class="enav enav-now" :disabled="busy || isActiveEpisode"
-        :title="isActiveEpisode ? 'Ya estás en la consulta actual' : 'Volver a la consulta actual'"
-        @click="backToActiveEpisode"
-      >↻ actual</button>
-    </div>
+    <!-- Las consultas se recorren con el navegador de episodios de arriba (ChatShell, PAPER
+         §28.4.1); el chat muestra la del episodio elegido. -->
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
     <button
       v-if="patientName && derivados.length" type="button" class="iderivado"
@@ -437,7 +427,10 @@ const episodeOrder = computed(() => {       // episode_ids distintos, cronológi
   // El episodio activo (consulta nueva) puede no tener mensajes aún → igual debe
   // ser navegable como la página actual (vacía).
   const ae = activeEpisodeId.value;
-  if (ae && !seen.has(ae)) out.push(ae);
+  if (ae && !seen.has(ae)) { seen.add(ae); out.push(ae); }
+  // El elegido en el navegador de episodios, aunque todavía no tenga mensajes.
+  const ce = currentEpisodeId.value;
+  if (ce && !seen.has(ce)) out.push(ce);
   return out;
 });
 const episodeIndex = computed(() => {
@@ -468,19 +461,6 @@ const isActiveEpisode = computed(() => {
   const active = activeEpisodeId.value || ord[ord.length - 1];
   return ord[episodeIndex.value] === active;
 });
-const episodeLabel = computed(() => {
-  const ord = episodeOrder.value;
-  // Con una sola consulta la etiqueta iba vacía y la barra quedaba con dos flechas
-  // muertas y un hueco. Decir que es la única explica por qué no hay a dónde ir.
-  if (ord.length === 1) return 'Única consulta';
-  if (!ord.length) return '';
-  const cur = ord[episodeIndex.value];
-  const first = messages.value.find(m => (m.episode_id || null) === cur);
-  const when = first?.ts ? new Date(first.ts).toLocaleDateString('es', { day: '2-digit', month: 'short' }) : '';
-  return `Consulta ${episodeIndex.value + 1}/${ord.length}${when ? ' · ' + when : ''}`;
-});
-function prevEpisode() { const i = episodeIndex.value; if (i > 0) { currentEpisodeId.value = episodeOrder.value[i - 1]; scrollEnd(); } }
-function nextEpisode() { const i = episodeIndex.value; if (i < episodeOrder.value.length - 1) { currentEpisodeId.value = episodeOrder.value[i + 1]; scrollEnd(); } }
 function backToActiveEpisode() { currentEpisodeId.value = activeEpisodeId.value; scrollEnd(); }
 
 // Sender label above a left-side message, shown once per run of consecutive
@@ -993,11 +973,25 @@ onUnmounted(() => {
 // El navegador entre episodios del paciente sigue al chat (PAPER §28.4.1).
 watch(activeEpisodeId, (id) => { if (id) emit('episodio', id); });
 
-/** Otro episodio elegido en el navegador: el chat sigue en él (acción explícita). */
+/**
+ * Otro episodio elegido en el navegador (PAPER §28.4.1): el chat muestra ya los mensajes de
+ * ese episodio y el bot pasa a él en silencio (`episode_switch`, sin mensajes en el hilo).
+ * Si el chat está ocupado, el cambio espera a que termine en vez de perderse.
+ */
+let episodioPendiente = null;
 async function activarEpisodio(id) {
-  if (!id || id === activeEpisodeId.value || !currentPatientId.value || busy.value) return;
-  await send(`activar episodio ${id}`, { explicit: true });
+  if (!id || !currentPatientId.value) return;
+  currentEpisodeId.value = id;
+  if (id === activeEpisodeId.value) return;
+  if (busy.value) { episodioPendiente = id; return; }
+  await send('', { formSubmission: { form_id: 'episode_switch', data: { episode_id: id } } });
 }
+watch(busy, (ocupado) => {
+  if (ocupado || !episodioPendiente) return;
+  const id = episodioPendiente;
+  episodioPendiente = null;
+  activarEpisodio(id);
+});
 
 defineExpose({ openPatient, newGeneral, activarEpisodio });
 </script>
@@ -1063,18 +1057,6 @@ defineExpose({ openPatient, newGeneral, activarEpisodio });
 .ihead-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Barra de navegación de episodios (consultas). */
-.iepisodes {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 5px 10px; background: var(--bg); border-bottom: 1px solid var(--border);
-}
-.iepisodes .enav {
-  border: 1px solid var(--border); background: #fff; color: var(--text);
-  border-radius: 14px; padding: 2px 10px; font-size: 0.8rem; font-weight: 700; cursor: pointer; line-height: 1.4;
-}
-.iepisodes .enav:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.iepisodes .enav:disabled { opacity: .35; cursor: not-allowed; }
-.iepisodes .enav-now { border-style: dashed; }
-.ep-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
 .ireadonly {
   flex-shrink: 0; text-align: center; padding: 5px 10px; font-size: 0.8rem;
   background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d;

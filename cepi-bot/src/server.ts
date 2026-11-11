@@ -1295,6 +1295,40 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
         await saveSession(mcp, session);
       }
 
+      // ── Cambiar de episodio desde el navegador (PAPER §28.4.1): en silencio ──
+      // Es navegar, no conversar: no deja turnos en el hilo. Pone la ficha de ese episodio
+      // en su primera sección pendiente; sin esto el chat seguía en la sección del episodio
+      // anterior y, tras varios cambios, dejaba de responder bien.
+      if ((formSubmission as any)?.form_id === 'episode_switch') {
+        const epId = String((formSubmission as any)?.data?.episode_id || (formSubmission as any)?.episode_id || '');
+        let ok = false;
+        try {
+          const r: any = await mcp.call('entities.get', { id: epId });
+          ok = !!r?.ok && String(recordField(r.data, 'patient_id') || '') === String(session.active_patient_id || '');
+        } catch { ok = false; }
+        if (!ok) {
+          return res.status(404).json({ ok: false, error: 'Ese episodio no es del paciente abierto' });
+        }
+        session.active_episode_id = epId;
+        const firstGroup = await firstIncompleteFichaGroup(mcp, session);
+        const form = firstGroup ? await fichaGroupFormFilled(firstGroup, mcp, session) : null;
+        session.extracted_slots = {
+          ...(session.extracted_slots || {}),
+          mode: 'patient',
+          form_state: { kind: 'ficha' },
+          ficha_done: [],
+          ...(firstGroup ? { ficha_current: firstGroup } : {}),
+          active_form: form,
+        };
+        await saveSession(mcp, session);
+        return res.json({
+          ok: true, session_id: sessionId, text: '', solo_registro: true,
+          history: session.turns, toolCalls: [],
+          active_patient_id: session.active_patient_id, active_episode_id: epId,
+          form, bookmarks: await fichaBookmarks(mcp, session),
+        });
+      }
+
       // ── slash-style state commands handled server-side, no LLM needed ──
       const trimmed = message.trim();
       const setPatient = trimmed.match(/^\/?\s*activar\s+paciente\s+([0-9a-f-]{36})\s*$/i);
