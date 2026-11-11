@@ -28,6 +28,12 @@ struct EpisodiosTests {
         #expect(episodios.etiqueta(indice: 0, mensajes: mensajes) == "Única consulta")
         #expect(episodios.visibles(mensajes, indice: 0).count == 2)
         #expect(episodios.esActiva(indice: 0, activo: "e1"))
+        // El elegido en el navegador tiene página aunque no tenga mensajes: vacía.
+        let elegido = Episodios(mensajes: mensajes, activo: "e1", aLaVista: "e0")
+        #expect(elegido.orden == ["e1", "e0"])
+        #expect(elegido.indice(de: .consulta("e0")) == 1)
+        #expect(elegido.visibles(mensajes, indice: 1).isEmpty)
+        #expect(elegido.esActiva(indice: 1, activo: "e0"))
     }
 
     @Test func variasConsultasYLaActivaVaAlFinal() throws {

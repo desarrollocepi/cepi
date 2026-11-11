@@ -10,16 +10,19 @@ enum PaginaHilo: Equatable, Sendable {
 /// El hilo partido por consultas, como en IntakeChat.vue: un episodio por página.
 struct Episodios: Sendable {
     /// Episodios distintos en orden de aparición. El activo va al final aunque todavía no tenga
-    /// mensajes: una consulta recién abierta también es una página.
+    /// mensajes: una consulta recién abierta también es una página. Igual el elegido en el
+    /// navegador (`aLaVista`): su página se ve vacía hasta que tenga mensajes.
     let orden: [String?]
 
-    init(mensajes: [MensajeHilo], activo: String?) {
+    init(mensajes: [MensajeHilo], activo: String?, aLaVista: String? = nil) {
         var vistos = Set<String?>()
         var orden: [String?] = []
         for mensaje in mensajes where vistos.insert(mensaje.episodio).inserted {
             orden.append(mensaje.episodio)
         }
-        if let activo, !vistos.contains(activo) { orden.append(activo) }
+        for extra in [activo, aLaVista] {
+            if let extra, vistos.insert(extra).inserted { orden.append(extra) }
+        }
         self.orden = orden
     }
 

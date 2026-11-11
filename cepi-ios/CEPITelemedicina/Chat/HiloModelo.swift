@@ -15,6 +15,11 @@ final class HiloModelo {
     /// A quién está derivada la consulta activa ahora mismo (revisiones pendientes).
     private(set) var derivados: [Derivado] = []
     private(set) var pagina: PaginaHilo = .masNueva
+    /// El episodio elegido en el navegador que todavía espera su turno (PAPER §28.4.1): el
+    /// chat estaba ocupado. Se aplica al terminar; si se elige otro antes, gana el último.
+    private(set) var episodioPedido: String?
+    /// El episodio que se está cambiando ahora (`episode_switch` en vuelo).
+    private(set) var episodioEnCambio: String?
     private(set) var ocupado = false
     private(set) var subiendo = false
     private(set) var adjunto: Adjunto?
@@ -41,7 +46,11 @@ final class HiloModelo {
         "cepi.autoform.\(paciente)"
     }
 
-    var episodios: Episodios { Episodios(mensajes: mensajes, activo: episodioActivo) }
+    /// El episodio cuyo contenido muestra el chat: lo último elegido, aunque el bot todavía no
+    /// lo haya confirmado.
+    var episodioALaVista: String? { episodioPedido ?? episodioEnCambio ?? episodioActivo }
+
+    var episodios: Episodios { Episodios(mensajes: mensajes, activo: episodioActivo, aLaVista: episodioALaVista) }
 
     /// Al abrir: reanuda la sesión abierta propia (o crea una) activando al paciente. El bot
     /// saluda y dice qué falta de la ficha sin pasar por el LLM.
@@ -63,6 +72,7 @@ final class HiloModelo {
         // tarda): así se ve lo que hay en cuanto llega, sin esperar al saludo.
         async let historial: Void = releer(api: api)
         ocupado = true
+        defer { seguirConElCambioPendiente(api: api) }
         defer { ocupado = false }
         do {
             let propia = try? await api.sesionesBot(paciente: pacienteId)
@@ -158,6 +168,45 @@ final class HiloModelo {
         pagina = .consulta(episodioActivo)
     }
 
+    /// Cambia el chat a otro episodio desde el navegador (PAPER §28.4.1). Es navegar, no
+    /// conversar: el contenido cambia ya (la página de ese episodio, vacía si no tiene
+    /// mensajes) y el bot lo activa con `episode_switch`, sin eco ni turno en el hilo. Si el
+    /// chat está ocupado, el cambio queda pedido y se aplica al terminar; gana el último.
+    func cambiarEpisodio(_ id: String, api: CEPIAPI) async {
+        guard id != episodioALaVista else {
+            pagina = .consulta(id)
+            return
+        }
+        episodioPedido = id
+        pagina = .consulta(id)
+        await aplicarCambioPendiente(api: api)
+    }
+
+    private func aplicarCambioPendiente(api: CEPIAPI) async {
+        while !ocupado, let id = episodioPedido {
+            episodioPedido = nil
+            // Volver al que ya está activo no necesita al bot.
+            if id == episodioActivo {
+                pagina = .consulta(id)
+                continue
+            }
+            episodioEnCambio = id
+            let hecho = await turno(eco: nil, explicito: false, api: api) { sesion in
+                try await api.enviarFormulario("episode_switch", datos: ["episode_id": .texto(id)], sesion: sesion)
+            }
+            episodioEnCambio = nil
+            // Si el bot lo rechazó (404: no es de este paciente), el chat vuelve al activo.
+            if !hecho, episodioPedido == nil { pagina = .consulta(episodioActivo) }
+        }
+    }
+
+    /// Al terminar un turno, el cambio de episodio que esperaba se aplica. En una tarea aparte:
+    /// corre cuando `ocupado` ya volvió a `false`.
+    private func seguirConElCambioPendiente(api: CEPIAPI) {
+        guard episodioPedido != nil else { return }
+        Task { await aplicarCambioPendiente(api: api) }
+    }
+
     private func turno(
         eco: String?, explicito: Bool, api: CEPIAPI, _ ejecutar: (String?) async throws -> RespuestaChat
     ) async -> Bool {
@@ -166,6 +215,8 @@ final class HiloModelo {
         respuestasRapidas = []
         if let eco { mensajes.append(MensajeHilo(eco: eco, episodio: episodioActivo)) }
         ocupado = true
+        // Los `defer` corren al revés: primero se libera `ocupado`, después sigue el cambio pedido.
+        defer { seguirConElCambioPendiente(api: api) }
         defer { ocupado = false }
         var procesado = true
         do {
@@ -194,8 +245,9 @@ final class HiloModelo {
         if let marcadores = respuesta.marcadores { self.marcadores = marcadores }
         if respuesta.traeEpisodioActivo {
             episodioActivo = respuesta.episodioActivo
-            // Abrir, enviar o abrir consulta nueva lleva a mirar la consulta activa.
-            pagina = .consulta(respuesta.episodioActivo)
+            // Abrir, enviar o abrir consulta nueva lleva a mirar la consulta activa, salvo que en
+            // el navegador ya se haya elegido otra (pedida o cambiándose): esa se sigue viendo.
+            pagina = .consulta(episodioPedido ?? episodioEnCambio ?? respuesta.episodioActivo)
         }
     }
 }

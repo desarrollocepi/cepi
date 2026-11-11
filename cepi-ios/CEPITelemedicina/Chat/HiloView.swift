@@ -22,7 +22,8 @@ struct HiloView: View {
         let episodios = modelo.episodios
         let indice = episodios.indice(de: modelo.pagina)
         let visibles = episodios.visibles(modelo.mensajes, indice: indice)
-        let enLaActual = episodios.esActiva(indice: indice, activo: modelo.episodioActivo)
+        // El episodio elegido en el navegador cuenta como actual aunque el bot no lo confirmó.
+        let enLaActual = episodios.esActiva(indice: indice, activo: modelo.episodioALaVista)
 
         feed(visibles, enLaActual: enLaActual)
         .safeAreaInset(edge: .bottom) {

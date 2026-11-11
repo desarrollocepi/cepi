@@ -24,9 +24,6 @@ struct PacienteView: View {
     @State private var mostrarDerivar = false
     /// El episodio elegido en la barra «Episodio N de M»: lo muestran las cuatro secciones.
     @State private var navigator: EpisodeNavigatorModel
-    /// El último `activar episodio` que se mandó al chat: si el bot lo rechaza no se reintenta
-    /// en bucle; elegir otra vez en la barra lo vuelve a intentar.
-    @State private var lastChatActivation: String?
     /// Sube cada vez que la Evolución vuelve a la vista: entre una vez y otra se pudo guardar
     /// un diagnóstico, así que se vuelve a pedir (PAPER §28.3).
     @State private var evolutionReload = 0
@@ -75,9 +72,8 @@ struct PacienteView: View {
 
             EpisodeNavigatorBar(
                 model: navigator,
-                busy: seccion == .chat && modelo.ocupado,
-                onPrevious: { navigator.goPrevious(); lastChatActivation = nil },
-                onNext: { navigator.goNext(); lastChatActivation = nil }
+                onPrevious: { navigator.goPrevious() },
+                onNext: { navigator.goNext() }
             )
 
             // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
@@ -144,14 +140,13 @@ struct PacienteView: View {
         .task(id: modelo.episodioActivo) { await loadEpisodeRecord() }
         // El chat cambió de episodio (abrir, nueva consulta, `activar episodio`): la barra lo sigue.
         .onChange(of: modelo.episodioActivo) { _, active in
-            Task { await navigator.follow(active: active, api: sesion.api) }
+            // Si en el chat ya se pidió otro episodio, lo elegido en la barra se mantiene.
+            Task { await navigator.follow(active: active, keepSelection: modelo.episodioPedido != nil, api: sesion.api) }
         }
-        // Con el chat a la vista, el episodio elegido en la barra se activa en el chat para que
-        // siga ahí (acción explícita). Corre al cambiar de episodio en el Chat y al volver al
-        // Chat con otro episodio elegido en otra sección.
-        .task(id: ChatSyncKey(
-            inChat: seccion == .chat, selected: navigator.selected, active: modelo.episodioActivo, busy: modelo.ocupado
-        )) { await syncChatEpisode() }
+        // Con el chat a la vista, el episodio elegido en la barra pasa al chat: cambia el
+        // contenido ya y el bot lo activa en silencio (`episode_switch`). Corre al cambiar de
+        // episodio en el Chat y al volver al Chat con otro elegido en otra sección.
+        .task(id: ChatSyncKey(inChat: seccion == .chat, selected: navigator.selected)) { syncChatEpisode() }
         .onChange(of: seccion) { _, nueva in
             if nueva == .evolucion { evolutionReload += 1 }
         }
@@ -241,19 +236,16 @@ struct PacienteView: View {
 
     private func selectEpisode(_ episode: String) {
         navigator.select(episode)
-        lastChatActivation = nil
     }
 
-    private func syncChatEpisode() async {
-        guard let episode = EpisodeNavigation.chatActivation(
-            selected: navigator.selected, active: modelo.episodioActivo, inChat: seccion == .chat,
-            busy: modelo.ocupado, lastAttempt: lastChatActivation
+    private func syncChatEpisode() {
+        guard let episode = EpisodeNavigation.chatSwitch(
+            selected: navigator.selected, shown: modelo.episodioALaVista, inChat: seccion == .chat
         ) else { return }
-        lastChatActivation = episode
-        // En una tarea aparte: el turno cambia `ocupado`, eso relanza esta `.task(id:)` y la
-        // cancelación cortaría el pedido a mitad.
+        // En una tarea del modelo, no de la vista: elegir otro episodio relanza esta
+        // `.task(id:)`, y la cancelación cortaría el pedido a mitad.
         let api = sesion.api
-        Task { await modelo.enviar(EpisodeNavigation.activationCommand(episode), api: api, accionExplicita: true) }
+        Task { await modelo.cambiarEpisodio(episode, api: api) }
     }
 
     private func loadEpisodeRecord() async {
@@ -342,6 +334,4 @@ struct PacienteView: View {
 private struct ChatSyncKey: Equatable {
     let inChat: Bool
     let selected: String?
-    let active: String?
-    let busy: Bool
 }

@@ -168,15 +168,13 @@ struct EvolucionEditableTests {
     }
 
     @Test func elChatSigueAlEpisodioElegido() {
-        // Elegido otro episodio con el chat a la vista: se activa.
-        #expect(EpisodeNavigation.chatActivation(selected: "e1", active: "e2", inChat: true, busy: false, lastAttempt: nil) == "e1")
-        // En otra sección, ocupado, sin elección, ya activo o ya intentado: nada.
-        #expect(EpisodeNavigation.chatActivation(selected: "e1", active: "e2", inChat: false, busy: false, lastAttempt: nil) == nil)
-        #expect(EpisodeNavigation.chatActivation(selected: "e1", active: "e2", inChat: true, busy: true, lastAttempt: nil) == nil)
-        #expect(EpisodeNavigation.chatActivation(selected: nil, active: "e2", inChat: true, busy: false, lastAttempt: nil) == nil)
-        #expect(EpisodeNavigation.chatActivation(selected: "e2", active: "e2", inChat: true, busy: false, lastAttempt: nil) == nil)
-        #expect(EpisodeNavigation.chatActivation(selected: "e1", active: "e2", inChat: true, busy: false, lastAttempt: "e1") == nil)
-        #expect(EpisodeNavigation.activationCommand("e1") == "activar episodio e1")
+        // Elegido otro episodio con el chat a la vista: se cambia, aunque el chat esté ocupado
+        // (el modelo lo deja pedido).
+        #expect(EpisodeNavigation.chatSwitch(selected: "e1", shown: "e2", inChat: true) == "e1")
+        // En otra sección, sin elección o ya a la vista: nada.
+        #expect(EpisodeNavigation.chatSwitch(selected: "e1", shown: "e2", inChat: false) == nil)
+        #expect(EpisodeNavigation.chatSwitch(selected: nil, shown: "e2", inChat: true) == nil)
+        #expect(EpisodeNavigation.chatSwitch(selected: "e2", shown: "e2", inChat: true) == nil)
     }
 
     // MARK: Imágenes del episodio
@@ -251,8 +249,11 @@ struct EpisodeNavigatorModelTests {
         modelo.goNext()
         #expect(modelo.current == "e2")
 
-        // El chat activó otro episodio: la barra lo sigue y suelta la elección.
+        // Con otro cambio pedido en el chat, la elección se mantiene.
         modelo.select("e2")
+        await modelo.follow(active: "e1", keepSelection: true, api: api)
+        #expect(modelo.selected == "e2")
+        // El chat activó otro episodio: la barra lo sigue y suelta la elección.
         await modelo.follow(active: "e1", api: api)
         #expect(modelo.selected == nil)
         #expect(modelo.current == "e1")
@@ -261,5 +262,119 @@ struct EpisodeNavigatorModelTests {
         await modelo.follow(active: "e3", api: api)
         #expect(servidor.pedidos.filter { $0 == "GET /api/entities" }.count == antes + 1)
         #expect(modelo.current == "e3")
+    }
+}
+
+/// El cambio de episodio en el chat contra un bot falso (PAPER §28.4.1): silencioso, inmediato
+/// y, con el chat ocupado, pendiente hasta que termine; gana el último elegido.
+@MainActor
+struct EpisodeSwitchTests {
+    private func api(_ servidor: ServidorFalso) -> CEPIAPI {
+        let red = URLSessionConfiguration.ephemeral
+        red.protocolClasses = [ProtocoloFalso.self]
+        let base = URL(string: "https://\(servidor.host)")!
+        let credenciales = Credenciales(cuenta: "prueba-\(UUID().uuidString)")
+        return CEPIAPI(cliente: APIClient(base: base, baseBot: base, credenciales: credenciales, configuracion: red))
+    }
+
+    private func cuerpos(_ servidor: ServidorFalso) throws -> [String: Any] {
+        let cuerpo = try #require(servidor.cuerpo(de: "POST /api/bot/chat"))
+        return try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: Any])
+    }
+
+    private func esperar(_ condicion: () -> Bool) async throws {
+        for _ in 0..<100 where !condicion() {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    private static let activar = #"{"ok":true,"session_id":"s1","text":"Paciente activo: Ana","active_episode_id":"e2"}"#
+    private static func cambio(_ id: String) -> String {
+        #"{"ok":true,"session_id":"s1","text":"","active_episode_id":"\#(id)","form":null,"bookmarks":[]}"#
+    }
+
+    @Test func elCambioEsSilenciosoEInmediato() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("GET /api/patient-thread", .http(200, #"{"ok":true,"messages":[]}"#))
+        servidor.fijar("POST /api/bot/chat", .http(200, Self.activar), .lenta(0.3, 200, Self.cambio("e1")))
+        let api = api(servidor)
+        let modelo = HiloModelo(pacienteId: "p1")
+
+        let cambio = Task { await modelo.cambiarEpisodio("e1", api: api) }
+        // El chat muestra ya la página de e1 (vacía), sin esperar al bot.
+        try await esperar { modelo.episodioEnCambio != nil }
+        #expect(modelo.pagina == .consulta("e1"))
+        #expect(modelo.episodioALaVista == "e1")
+        #expect(modelo.episodios.orden.contains("e1"))
+        await cambio.value
+
+        #expect(modelo.episodioActivo == "e1")
+        #expect(modelo.episodioALaVista == "e1")
+        // Sin eco: ningún mensaje propio en el hilo.
+        #expect(modelo.mensajes.isEmpty)
+        let json = try cuerpos(servidor)
+        #expect(json["message"] as? String == "")
+        #expect(json["session_id"] as? String == "s1")
+        let envio = try #require(json["form_submission"] as? [String: Any])
+        #expect(envio["form_id"] as? String == "episode_switch")
+        #expect(envio["data"] as? [String: String] == ["episode_id": "e1"])
+        // No es explícito: el formulario que traiga lo decide «Auto».
+        #expect(json["explicit"] as? Bool == false)
+    }
+
+    @Test func conElChatOcupadoQuedaPendienteYGanaElUltimo() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("GET /api/patient-thread", .http(200, #"{"ok":true,"messages":[]}"#))
+        servidor.fijar(
+            "POST /api/bot/chat",
+            .http(200, Self.activar),
+            .lenta(0.5, 200, #"{"ok":true,"session_id":"s1","text":"Anotado"}"#),
+            .http(200, Self.cambio("e3"))
+        )
+        let api = api(servidor)
+        let modelo = HiloModelo(pacienteId: "p1")
+
+        let mensaje = Task { await modelo.enviar("placas en codos", api: api) }
+        try await esperar { modelo.ocupado }
+        // Dos cambios con el chat ocupado: ninguno se pierde ni se manda todavía; gana el último.
+        await modelo.cambiarEpisodio("e1", api: api)
+        await modelo.cambiarEpisodio("e3", api: api)
+        #expect(modelo.episodioPedido == "e3")
+        #expect(modelo.pagina == .consulta("e3"))
+        #expect(servidor.pedidos.filter { $0 == "POST /api/bot/chat" }.count <= 2)
+        await mensaje.value
+
+        // Al terminar el turno se aplica el pedido: un solo episode_switch, al último.
+        try await esperar { modelo.episodioActivo == "e3" }
+        #expect(modelo.episodioActivo == "e3")
+        #expect(modelo.episodioPedido == nil)
+        #expect(modelo.pagina == .consulta("e3"))
+        #expect(servidor.pedidos.filter { $0 == "POST /api/bot/chat" }.count == 3)
+        let envio = try #require(try cuerpos(servidor)["form_submission"] as? [String: Any])
+        #expect(envio["form_id"] as? String == "episode_switch")
+        #expect(envio["data"] as? [String: String] == ["episode_id": "e3"])
+    }
+
+    @Test func siElBotLoRechazaVuelveAlActivo() async throws {
+        let servidor = ServidorFalso()
+        defer { servidor.retirar() }
+        servidor.fijar("GET /api/patient-thread", .http(200, #"{"ok":true,"messages":[]}"#))
+        servidor.fijar(
+            "POST /api/bot/chat",
+            .http(200, Self.activar),
+            .http(404, #"{"ok":false,"error":"Ese episodio no es del paciente abierto"}"#),
+            .http(200, Self.cambio("e1"))
+        )
+        let api = api(servidor)
+        let modelo = HiloModelo(pacienteId: "p1")
+        await modelo.cambiarEpisodio("otro", api: api)
+        #expect(modelo.episodioActivo == "e2")
+        #expect(modelo.pagina == .consulta("e2"))
+        #expect(modelo.error == "Ese episodio no es del paciente abierto")
+        // Y sigue funcionando: el siguiente cambio se manda.
+        await modelo.cambiarEpisodio("e1", api: api)
+        #expect(modelo.episodioActivo == "e1")
     }
 }

@@ -24,18 +24,12 @@ enum EpisodeNavigation {
         return motivo ?? "usa las flechas para ir a otro episodio"
     }
 
-    /// El episodio al que hay que llevar el chat con `activar episodio <id>`, o `nil`. Solo con
-    /// el chat a la vista, cuando se eligió uno distinto del activo, sin otro turno en curso y
-    /// sin repetir un intento que ya se hizo (si el bot lo rechazó, no se insiste en bucle).
-    static func chatActivation(
-        selected: String?, active: String?, inChat: Bool, busy: Bool, lastAttempt: String?
-    ) -> String? {
-        guard inChat, !busy, let selected, selected != active, selected != lastAttempt else { return nil }
+    /// El episodio al que hay que llevar el chat (`episode_switch`), o `nil`: solo con el chat
+    /// a la vista y cuando lo elegido no es lo que el chat ya muestra. Que el chat esté ocupado
+    /// no importa: el modelo deja el cambio pedido y lo aplica al terminar.
+    static func chatSwitch(selected: String?, shown: String?, inChat: Bool) -> String? {
+        guard inChat, let selected, selected != shown else { return nil }
         return selected
-    }
-
-    static func activationCommand(_ episode: String) -> String {
-        "activar episodio \(episode)"
     }
 }
 
@@ -113,11 +107,13 @@ final class EpisodeNavigatorModel {
         selected = visits[index].id
     }
 
-    /// El chat cambió de episodio (lo activó el bot: abrir, nueva consulta, `activar episodio`):
-    /// el navegador lo sigue. Una consulta recién abierta todavía no está en la lista: se relee.
-    func follow(active: String?, api: CEPIAPI) async {
+    /// El chat cambió de episodio (lo activó el bot: abrir, nueva consulta, `episode_switch`):
+    /// el navegador lo sigue. Con `keepSelection` (en el chat ya se pidió otro, que espera su
+    /// turno) lo elegido se mantiene. Una consulta recién abierta todavía no está en la lista:
+    /// se relee.
+    func follow(active: String?, keepSelection: Bool = false, api: CEPIAPI) async {
         activeEpisode = active
-        selected = nil
+        if !keepSelection || selected == active { selected = nil }
         if let active, !visits.contains(where: { $0.id == active }) { await load(api: api) }
     }
 }
@@ -126,8 +122,6 @@ final class EpisodeNavigatorModel {
 /// episodio: las flechas grises y la nota dicen por qué (CLAUDE.md: nunca ocultes un botón).
 struct EpisodeNavigatorBar: View {
     let model: EpisodeNavigatorModel
-    /// Hay un turno del chat en curso: cambiar ahora pisaría lo que está guardando.
-    var busy = false
     let onPrevious: () -> Void
     let onNext: () -> Void
 
@@ -136,8 +130,8 @@ struct EpisodeNavigatorBar: View {
         HStack {
             Button("Anterior", systemImage: "chevron.left", action: onPrevious)
                 .labelStyle(.iconOnly)
-                .disabled(busy || !nav.hasPrevious)
-                .accessibilityHint(busy ? "Espera a que termine el chat" : nav.previousHint)
+                .disabled(!nav.hasPrevious)
+                .accessibilityHint(nav.previousHint)
                 .accessibilityIdentifier("episodios.anterior")
             Spacer(minLength: 4)
             VStack(spacing: 1) {
@@ -147,7 +141,7 @@ struct EpisodeNavigatorBar: View {
                         Text(date).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text(busy ? "espera a que termine el chat para cambiar de episodio" : model.note)
+                Text(model.note)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -157,8 +151,8 @@ struct EpisodeNavigatorBar: View {
             Spacer(minLength: 4)
             Button("Siguiente", systemImage: "chevron.right", action: onNext)
                 .labelStyle(.iconOnly)
-                .disabled(busy || !nav.hasNext)
-                .accessibilityHint(busy ? "Espera a que termine el chat" : nav.nextHint)
+                .disabled(!nav.hasNext)
+                .accessibilityHint(nav.nextHint)
                 .accessibilityIdentifier("episodios.siguiente")
         }
         .buttonStyle(.bordered)
