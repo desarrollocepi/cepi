@@ -140,3 +140,18 @@ describe('RejillaImagenes', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:a2');
   });
 });
+
+describe('RejillaImagenes — fotos de un episodio (PAPER §28.4.1)', () => {
+  it('con episodeId muestra solo las de ese episodio y avisa cuántas hay en total', async () => {
+    galeria.mockResolvedValue({ data: [img(1, { episode_id: 'ep1' }), img(2, { episode_id: 'ep2' })], total: 2 });
+    const w = await montar({ patientId: 'p1', episodeId: 'ep2' });
+    expect(w.findAll('.rej-celda')).toHaveLength(1);
+    expect(w.emitted('cuenta').at(-1)).toEqual([{ todas: 2, visibles: 1 }]);
+  });
+
+  it('si el episodio no tiene fotos pero el paciente sí, lo dice', async () => {
+    galeria.mockResolvedValue({ data: [img(1, { episode_id: 'ep1' })], total: 1 });
+    const w = await montar({ patientId: 'p1', episodeId: 'ep9' });
+    expect(w.find('.rej-estado').text()).toBe('Este episodio no tiene fotos clínicas');
+  });
+});

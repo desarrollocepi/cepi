@@ -95,3 +95,26 @@ describe('evolución: utilidades', () => {
     expect(isLatestEvolution(rows, 'zz')).toBe(false);
   });
 });
+
+describe('editar una evolución desde su formulario (PAPER §28.4)', () => {
+  it('solo cambia lo que viene; vacío borra; lo vigente va al episodio', async () => {
+    const { planEvolutionEdit } = await import('../src/evolucion.js');
+    const p: any = planEvolutionEdit({ evolution_id: 'x', tratamiento: '  crema ', proximo_control_fecha: '2026-12-01', proximo_control_motivo: '' });
+    expect(p.fields).toEqual({ tratamiento: 'crema', proximo_control_fecha: '2026-12-01', proximo_control_motivo: null });
+    expect(p.vigente).toEqual({ tratamiento_resumen: 'crema', proximo_control_fecha: '2026-12-01', proximo_control_motivo: null });
+  });
+
+  it('valida fechas, no deja la fecha vacía y pide algo que guardar', async () => {
+    const { planEvolutionEdit } = await import('../src/evolucion.js');
+    expect(planEvolutionEdit({ fecha: '1/12/2026' })).toEqual({ error: 'fecha debe ser YYYY-MM-DD' });
+    expect(planEvolutionEdit({ fecha: '' })).toEqual({ error: 'La fecha de la evolución no puede quedar vacía' });
+    expect(planEvolutionEdit({ proximo_control_fecha: 'mañana' })).toEqual({ error: 'proximo_control_fecha debe ser YYYY-MM-DD' });
+    expect(planEvolutionEdit({ evolution_id: 'x' })).toEqual({ error: 'No hay nada que guardar' });
+  });
+
+  it('una ficha de alta no lleva próximo control, pero sí se corrigen sus datos', async () => {
+    const { planEvolutionEdit } = await import('../src/evolucion.js');
+    expect('error' in planEvolutionEdit({ proximo_control_fecha: '2026-12-01' }, { discharged: true })).toBe(true);
+    expect('fields' in planEvolutionEdit({ diagnostico: 'Nevus' }, { discharged: true })).toBe(true);
+  });
+});

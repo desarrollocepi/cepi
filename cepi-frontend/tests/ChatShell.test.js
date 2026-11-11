@@ -12,12 +12,16 @@ const paciente = (id, nombre) => ({ id, data: { nombre, apellidos: 'Pérez' } })
 
 // Los hijos se reemplazan por dobles que registran lo que el shell les pide.
 const abiertos = [];
+const activados = [];
 let generales = 0;
 const IntakeChat = defineComponent({
   name: 'IntakeChat',
-  emits: ['closed', 'back', 'head'],
+  emits: ['closed', 'back', 'head', 'episodio'],
   setup(_, { expose }) {
-    expose({ openPatient: (id, nombre) => abiertos.push([id, nombre]), newGeneral: () => { generales++; } });
+    expose({
+      openPatient: (id, nombre) => abiertos.push([id, nombre]), newGeneral: () => { generales++; },
+      activarEpisodio: (id) => activados.push(id),
+    });
     return () => h('div', { class: 'chat-doble' });
   },
 });
@@ -181,12 +185,30 @@ describe('ChatShell — secciones del paciente', () => {
     expect(evo.props('plegable')).toBe(false);
   });
 
-  it('tocar una fila de la evolución abre esa ficha en la pestaña Ficha', async () => {
+  it('elegir otra ficha en la evolución la sigue mostrando ahí, sin saltar a la Ficha (PAPER §28.4.1)', async () => {
     const { w, router } = await montar('/chat/p9/evolucion');
     w.findComponent(EvolucionPaciente).vm.$emit('navegar', 'ep1');
     await flushPromises();
-    expect(router.currentRoute.value.fullPath).toBe('/chat/p9/ficha');
-    expect(w.findComponent(FichaCompleta).props('episodeId')).toBe('ep1');
+    expect(router.currentRoute.value.fullPath).toBe('/chat/p9/evolucion');
+    expect(w.findComponent(EvolucionPaciente).props('episodeId')).toBe('ep1');
+  });
+
+  it('el navegador entre episodios sale en Chat, Evolución e Imágenes; en la Ficha va el suyo', async () => {
+    const { w } = await montar('/chat/p9');
+    expect(w.find('.epnav').exists()).toBe(true);
+    await pestana(w, 'Evolución').trigger('click'); await flushPromises();
+    expect(w.find('.epnav').exists()).toBe(true);
+    await pestana(w, 'Imágenes').trigger('click'); await flushPromises();
+    expect(w.find('.epnav').exists()).toBe(true);
+    await pestana(w, 'Ficha').trigger('click'); await flushPromises();
+    expect(w.find('.epnav').exists()).toBe(false);
+  });
+
+  it('cambiar de episodio en el navegador lo sigue el chat (activar episodio)', async () => {
+    const { w } = await montar('/chat/p9');
+    activados.length = 0;
+    await w.findAll('.epnav-btn')[0].trigger('click'); await flushPromises();   // ‹ Anterior → ep1
+    expect(activados).toEqual(['ep1']);
   });
 
   it('el chat queda montado al cambiar de sección: no se pierde lo escrito', async () => {
@@ -224,9 +246,9 @@ describe('ChatShell — secciones del paciente', () => {
     expect(w.findComponent(FichaCompleta).props('episodeId')).toBe('x2');
   });
 
-  it('las visitas se piden recién al entrar a la Ficha, y una vez por paciente', async () => {
+  it('las visitas se piden al abrir el paciente (las usa el navegador), y una vez por paciente', async () => {
     const { w } = await montar('/chat/p9');
-    expect(api.listarCasosDePaciente).not.toHaveBeenCalled();
+    expect(api.listarCasosDePaciente).toHaveBeenCalledTimes(1);
     await pestana(w, 'Ficha').trigger('click'); await flushPromises();
     await pestana(w, 'Chat').trigger('click'); await flushPromises();
     await pestana(w, 'Ficha').trigger('click'); await flushPromises();

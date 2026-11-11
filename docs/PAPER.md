@@ -3126,6 +3126,36 @@ nuevo. Web, iOS, Android y `evolucion.html` (al pie de cada ficha).
 4. Empezar Fase 1 (capacidades genéricas: alertas + vector + break-glass + revisión).
 
 ---
+
+### 28.4.1 Evolución editable y en orden de cita (pedido del dueño, 2026-11-11)
+
+Probado en iOS; vale igual en la PWA y en Android.
+
+- **Orden:** la más vieja arriba y la **más nueva abajo**, justo encima del bloque «Próximo
+  control», como se lee una historia clínica. Vale en la sección Evolución y en el imprimible.
+- **Tocar una evolución abre su formulario** (el mismo de «＋ Agregar evolución», con sus
+  datos): fecha, hallazgos, diagnóstico, tratamiento, observaciones y próximo control
+  (fecha y qué hacer). Antes la tarjeta llevaba a la sección Ficha.
+- **Tocar «Próximo control»** abre el formulario de la evolución más reciente con el foco en
+  el próximo control. Con la ficha de alta el bloque sigue a la vista, pero no se puede fijar
+  un próximo control: lo dice.
+- **Guardar:** `POST /api/bot/evolucion/editar` `{evolution_id | episode_id, fecha?,
+  hallazgos?, diagnostico?, tratamiento?, observaciones?, proximo_control_fecha?,
+  proximo_control_motivo?}`. Solo cambia lo que viene; un texto vacío borra el campo (la
+  fecha no). Si es la más reciente, el episodio copia lo vigente, y cambiar ahí la fecha del
+  próximo control dispara el aviso de cita al paciente (§36). La fila armada de una ficha sin
+  evoluciones se edita con `episode_id`: primero se registra su evolución inicial con lo que
+  dice la ficha y se edita esa.
+
+**Navegador entre episodios en las cuatro secciones.** La barra «Episodio N de M» (anterior /
+siguiente) sale debajo de las pestañas del paciente en Chat, Ficha, Evolución e Imágenes,
+no solo en la Ficha. El episodio elegido vale para todas: la Ficha y la Evolución lo
+muestran, el Chat sigue en ese episodio (`activar episodio <id>`) e Imágenes muestra sus
+fotos, con un acceso a todas las del paciente.
+
+**«＋ Nueva consulta» no pide confirmación:** es un botón, una acción explícita (`explicit`).
+Antes el bot preguntaba «¿Confirmas?» como si lo hubiera inferido de un texto libre.
+
 ## 29. Calificación de la atención por QR (D-Aux-29)
 
 **Pedido del cliente (2026-10-29).** El paciente califica la atención que recibió. En la
@@ -3287,23 +3317,22 @@ sin aviso. El caso sigue visible para todo el círculo; lo que cambia es a quié
 notifica. La nota del chatter dice «de turno» cuando se usó el calendario. Vale para
 cualquier grupo con turnos (Dermatología, la bandeja `turno`), no para el virtual «Todos».
 
-### 32.2.1 El responsable del caso nuevo (definición del dueño, 2026-11-09)
+### 32.2.1 El responsable del caso nuevo (redefinido por el dueño, 2026-11-11)
 
-El de turno es el **responsable**: el médico que recibe el aviso de paciente nuevo cuando
-otro médico lo ingresa. Le toca revisar la ficha y completarla o pedir que se complete,
-responder las inquietudes del médico que lo ingresó y, si no puede resolverlo, derivar.
+**Quien abre la consulta es su responsable**, y el caso no se deriva solo: nadie más recibe
+aviso hasta que alguien lo deriva.
 
 - Hook `episode_new_responsible` (TodoERP `hooks/medical.ts`, `on_create` del episodio):
-  el de turno hoy del grupo `CEPI_RESPONSIBLE_GROUP` (por defecto `dermatologia`) queda en
-  `responsable_actual_id` y recibe «Revisión solicitada: Paciente nuevo — <paciente>»
-  (campana, push y correo; el caso le sale en «revisar»). Nota en el chatter.
-- Vale para cada consulta nueva (también la de un paciente que vuelve): cada una trae su
-  ficha a revisar.
-- Sin nadie de turno: avisa a todo el grupo y el caso queda sin responsable.
-- No corre para lo que crea una cuenta de servicio (espejo DrPro) ni se avisa a sí mismo.
-- **Responder** (§30) se habilita también para el responsable con la consulta en curso, no
-  solo cuando está derivada. Responde a quien ingresó el caso (`medico_primario_id`, o
-  `medico_id` si nunca se envió). Responder o derivar apagan el aviso.
+  deja a quien crea el episodio en `responsable_actual_id` (si no tenía) y anota en el
+  chatter «Responsable: … Nadie más recibe aviso hasta que se derive». No corre para lo que
+  crea una cuenta de servicio (espejo DrPro).
+- **«Al responsable»** en Derivar manda el caso a quien está **de turno** hoy: deriva al
+  círculo responsable (`CEPI_RESPONSIBLE_GROUP`, por defecto `dermatologia`), y derivar a un
+  círculo avisa solo al de turno (§32.2); sin nadie de turno, a todo el círculo. En el bot,
+  `derivar a responsable [motivo]`.
+- Antes (2026-11-09) el hook avisaba al de turno al crear la consulta, sin que nadie la
+  derivara; el dueño lo corrigió.
+- **Responder** (§30) sigue habilitado para el responsable con la consulta en curso.
 
 ### 32.3 Quién lo edita y dónde se ve
 

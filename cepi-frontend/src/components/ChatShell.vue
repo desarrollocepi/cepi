@@ -20,12 +20,20 @@
         >{{ s.label }}</button>
       </nav>
 
+      <!-- El episodio elegido vale para las cuatro secciones (PAPER §28.4.1). La Ficha trae
+           su propio navegador, con lo que cambió respecto del episodio anterior. -->
+      <NavegadorEpisodios
+        v-if="selectedId && seccion !== 'ficha'"
+        :visitas="visitas" :episode-id="episodioDeLaFicha" :cargando="cargandoVisitas"
+        @navegar="elegirEpisodio"
+      />
+
       <!-- El chat queda montado: cambiar de sección no debe perder lo escrito. -->
       <IntakeChat
         v-show="seccion === 'chat'"
         ref="chatRef" :user="user" class="shell-chat"
         @closed="onChatClosed" @back="volverALista" @head="patientActive = $event"
-        @respondida="listaRef?.reload?.()"
+        @respondida="listaRef?.reload?.()" @episodio="onEpisodioDelChat"
       />
       <FichaCompleta
         v-if="selectedId && seccion === 'ficha'"
@@ -36,15 +44,22 @@
       <EvolucionPaciente
         v-if="selectedId && seccion === 'evolucion'"
         :key="selectedId" :patient-id="selectedId" :episode-id="episodioDeLaFicha" :plegable="false"
-        class="shell-chat" @navegar="abrirFichaDesdeEvolucion"
+        class="shell-chat" @navegar="elegirEpisodio"
       />
       <!-- Imágenes: arriba los dos consentimientos (PAPER §31), abajo las fotos clínicas. -->
       <div v-if="selectedId && seccion === 'imagenes'" :key="selectedId" class="shell-chat shell-imagenes">
         <ConsentimientosPaciente :patient-id="selectedId" />
+        <div class="shell-filtro-fotos">
+          <span>{{ todasLasFotos ? 'Fotos de todas las consultas del paciente' : 'Fotos de este episodio' }}</span>
+          <button type="button" class="shell-filtro-btn" @click="todasLasFotos = !todasLasFotos">
+            {{ todasLasFotos ? 'Solo este episodio' : `Ver todas (${cuentaFotos.todas})` }}
+          </button>
+        </div>
         <RejillaImagenes
           :patient-id="selectedId" :mostrar-paciente="false"
+          :episode-id="todasLasFotos ? '' : (episodioDeLaFicha || '')"
           vacio="Este paciente todavía no tiene fotos clínicas"
-          class="shell-rejilla"
+          class="shell-rejilla" @cuenta="cuentaFotos = $event"
         />
       </div>
     </div>
@@ -56,6 +71,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import ChatList from './ChatList.vue';
 import IntakeChat from './IntakeChat.vue';
 import FichaCompleta from './FichaCompleta.vue';
+import NavegadorEpisodios from './NavegadorEpisodios.vue';
 import RejillaImagenes from './RejillaImagenes.vue';
 import ConsentimientosPaciente from './ConsentimientosPaciente.vue';
 import EvolucionPaciente from './EvolucionPaciente.vue';
@@ -115,9 +131,25 @@ async function cargarVisitas(patientId) {
   }
 }
 
-watch([selectedId, seccion], ([id, s]) => {
-  if (id && s === 'ficha') cargarVisitas(id);
-});
+// El navegador entre episodios está en las cuatro secciones: las visitas se piden siempre.
+watch([selectedId, seccion], ([id]) => { if (id) cargarVisitas(id); }, { immediate: true });
+const todasLasFotos = ref(false);
+const cuentaFotos = ref({ todas: 0, visibles: 0 });
+
+/** Otro episodio en el navegador: Ficha, Evolución e Imágenes lo siguen; el chat también
+ *  (`activar episodio`, acción explícita), para que lo que se escriba quede en él. */
+function elegirEpisodio(id) {
+  if (!id || id === episodioDeLaFicha.value) return;
+  episodioElegido.value = id;
+  todasLasFotos.value = false;
+  chatRef.value?.activarEpisodio?.(id);
+}
+/** El chat cambió de episodio por su cuenta (Nueva consulta, reclamar…): el navegador lo sigue. */
+function onEpisodioDelChat(id) {
+  if (!id || id === episodioElegido.value) return;
+  if (!visitas.value.some((v) => v.id === id)) { visitasDe = null; cargarVisitas(selectedId.value); }
+  episodioElegido.value = id;
+}
 
 const chatRef = ref(null);
 
@@ -167,12 +199,6 @@ function onSelect(p, s = 'chat') {
  *  la lista, no recorre las pestañas que se fueron tocando. */
 function irASeccion(s) {
   if (selectedId.value) router.replace(rutaDePaciente(selectedId.value, s));
-}
-
-/** Tocar una fila de la evolución abre esa ficha en la pestaña Ficha. */
-function abrirFichaDesdeEvolucion(episodeId) {
-  episodioElegido.value = episodeId;
-  irASeccion('ficha');
 }
 
 function onGeneral() {
@@ -302,6 +328,8 @@ onUnmounted(() => { mq.removeEventListener('change', onMq); });
 .shell-detail { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .shell-chat { flex: 1; min-height: 0; }
 .shell-imagenes { display: flex; flex-direction: column; overflow-y: auto; }
+.shell-filtro-fotos { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; font-size: 13px; opacity: .9; }
+.shell-filtro-btn { padding: 3px 10px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--bg, #fff); color: inherit; cursor: pointer; font-size: 12px; }
 .shell-rejilla { flex: 1 0 auto; overflow-y: visible; }
 .mchat-bar { display: none; }
 /* Pestañas Chat / Ficha / Evolución / Imágenes. Sin estilo salían como botones nativos del navegador. */

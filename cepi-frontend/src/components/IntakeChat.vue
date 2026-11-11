@@ -148,7 +148,7 @@
         </div>
         <p class="derivar-hint">Escribe el motivo (opcional) y <b>elige un destino</b> para derivar — se ejecuta al instante.</p>
         <input v-model="derivarMotivo" class="derivar-motivo" type="text" placeholder="Motivo de la derivación (opcional)" />
-        <button type="button" class="derivar-resp" :disabled="busy" @click="pickResponsable" title="Derivar al médico responsable del caso (o a quien lo creó)">⭐ Al responsable del caso</button>
+        <button type="button" class="derivar-resp" :disabled="busy" @click="pickResponsable" title="Derivar a quien está de turno hoy en el círculo responsable (si nadie está de turno, a todo el círculo)">⭐ Al responsable de turno</button>
 
         <p v-if="derivarError" class="derivar-error">{{ derivarError }}</p>
         <p v-if="derivarLoading" class="derivar-muted">Cargando destinos…</p>
@@ -251,7 +251,7 @@ import { createDictation, dictationSupported } from '../native/speech.js';
 import { edadDesde } from '../edad.js';
 
 const props = defineProps({ user: Object });
-const emit = defineEmits(['closed', 'back', 'head', 'respondida']);
+const emit = defineEmits(['closed', 'back', 'head', 'respondida', 'episodio']);
 
 const draft = ref('');
 const busy = ref(false);
@@ -585,20 +585,16 @@ async function toggleMembers(g) {
   }
 }
 
-// Derivar al responsable del caso: el responsable_actual_id del episodio (quien
-// lo reclamó/se le asignó por turno) o, si no hay, el médico que lo creó.
+// Derivar al responsable de turno (PAPER §32.2.1): el bot lo manda al círculo responsable,
+// que avisa solo a quien está de turno hoy. Quien abrió la consulta es su responsable hasta
+// que la deriva; derivarse a sí mismo no tendría sentido.
 async function pickResponsable() {
-  const epId = activeEpisodeId.value;
-  if (!epId) { derivarError.value = 'No hay episodio activo.'; return; }
+  if (!activeEpisodeId.value) { derivarError.value = 'No hay episodio activo.'; return; }
   derivarError.value = '';
-  const ep = await fetchEntity(epId);
-  const d = ep?.data || {};
-  const uid = d.responsable_actual_id || d.medico_id || '';
-  if (!uid) { derivarError.value = 'El episodio no tiene responsable ni creador definido.'; return; }
   const motivo = derivarMotivo.value.trim();
   showDerivar.value = false;
   derivarMotivo.value = '';
-  await send(`escalar a ${uid}${motivo ? ' ' + motivo : ''}`);
+  await send(`derivar a responsable${motivo ? ' ' + motivo : ''}`, { explicit: true });
   if (!error.value) closeChat();
 }
 
@@ -881,7 +877,8 @@ function nuevaConsulta() {
   if (busy.value) return;
   showSections.value = false;
   showMenu.value = false;
-  send('nuevo episodio');
+  // Es un botón: ya lo confirmó al tocarlo (el gate es para lo que el agente infiere).
+  send('nuevo episodio', { explicit: true });
 }
 
 // Fetch + render the patient's merged group thread. Does not toggle busy (the
@@ -992,7 +989,16 @@ onUnmounted(() => {
   // privacidad, además de bloquear el recognizer para la próxima sesión.
   if (session) { session.stop(); session.dispose(); session = null; }
 });
-defineExpose({ openPatient, newGeneral });
+// El navegador entre episodios del paciente sigue al chat (PAPER §28.4.1).
+watch(activeEpisodeId, (id) => { if (id) emit('episodio', id); });
+
+/** Otro episodio elegido en el navegador: el chat sigue en él (acción explícita). */
+async function activarEpisodio(id) {
+  if (!id || id === activeEpisodeId.value || !currentPatientId.value || busy.value) return;
+  await send(`activar episodio ${id}`, { explicit: true });
+}
+
+defineExpose({ openPatient, newGeneral, activarEpisodio });
 </script>
 
 <style scoped>

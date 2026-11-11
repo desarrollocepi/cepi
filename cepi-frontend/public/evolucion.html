@@ -210,7 +210,8 @@ function fillEvolucion(data) {
     cab.appendChild(tdc);
     cab.addEventListener('click', () => abrir(g.episode_id));
     tbody.appendChild(cab);
-    for (const f of g.filas) {
+    // La más vieja arriba y la más nueva abajo, encima de su próximo control (PAPER §28.4.1).
+    for (const f of [...g.filas].reverse()) {
       const tr = document.createElement('tr');
       if (actual) tr.className = 'actual';
       tr.title = actual ? 'Es la ficha que estás viendo' : 'Abrir esta ficha';

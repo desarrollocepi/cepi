@@ -191,3 +191,41 @@ export function isLatestEvolution(rows: any[], evolutionId: string): boolean {
   const k = key(target);
   return rows.every((r) => String(r?.id) === evolutionId || key(r) <= k);
 }
+
+/** Campos de una evolución que se editan desde su formulario (PAPER §28.4). */
+export const EDITABLE_EVOLUTION_FIELDS = [
+  'fecha', 'hallazgos', 'diagnostico', 'tratamiento', 'observaciones',
+  'proximo_control_fecha', 'proximo_control_motivo',
+] as const;
+
+/**
+ * Qué guardar al editar una evolución. Solo cambian las claves que trae el cuerpo; un
+ * texto vacío borra ese campo (salvo la fecha, que no se puede dejar vacía). `vigente` es
+ * lo que se copia al episodio si es la evolución más reciente: la cabecera de la ficha y
+ * el bloque «Próximo control» muestran lo vigente, y cambiar la fecha del próximo control
+ * en el episodio dispara el aviso de cita (§36).
+ */
+export function planEvolutionEdit(b: Record<string, unknown>, opts: { discharged?: boolean } = {}):
+  { error: string } | { fields: Record<string, string | null>; vigente: Record<string, string | null> } {
+  const fields: Record<string, string | null> = {};
+  for (const k of EDITABLE_EVOLUTION_FIELDS) {
+    if (!(k in b) || b[k] === undefined) continue;
+    const v = b[k];
+    if (v !== null && typeof v !== 'string') return { error: `${k} debe ser texto` };
+    const t = typeof v === 'string' ? v.trim() : '';
+    if ((k === 'fecha' || k === 'proximo_control_fecha') && t && !DATE_RE.test(t)) return { error: `${k} debe ser YYYY-MM-DD` };
+    if (k === 'fecha' && !t) return { error: 'La fecha de la evolución no puede quedar vacía' };
+    fields[k] = t || null;
+  }
+  if (!Object.keys(fields).length) return { error: 'No hay nada que guardar' };
+  if (opts.discharged && fields.proximo_control_fecha) {
+    return { error: 'Esta ficha está de alta: no lleva próximo control. Abre una consulta nueva' };
+  }
+  const vigente: Record<string, string | null> = {};
+  if ('diagnostico' in fields) vigente.diagnostico = fields.diagnostico;
+  if ('tratamiento' in fields) vigente.tratamiento_resumen = fields.tratamiento;
+  if ('observaciones' in fields) vigente.observaciones = fields.observaciones;
+  if ('proximo_control_fecha' in fields) vigente.proximo_control_fecha = fields.proximo_control_fecha;
+  if ('proximo_control_motivo' in fields) vigente.proximo_control_motivo = fields.proximo_control_motivo;
+  return { fields, vigente };
+}

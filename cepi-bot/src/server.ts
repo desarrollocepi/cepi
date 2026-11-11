@@ -41,7 +41,7 @@ import { listarControles } from './controles.js';
 import { buildDischargeBatch, dischargeBlockReason } from './alta.js';
 import {
   EVOLUTION_ENTITY_ID, buildAddEvolutionBatch, evolutionBlockReason, evolutionInputError,
-  isLatestEvolution, recordField,
+  isLatestEvolution, recordField, planEvolutionEdit, buildInitialEvolution,
 } from './evolucion.js';
 import { startWhatsapp } from './whatsapp.js';
 import { startTelegram } from './telegram.js';
@@ -629,10 +629,14 @@ app.post('/api/bot/episodio/evolucion', async (req: Request, res: Response, next
 });
 
 /**
- * /api/bot/evolucion/editar — observaciones de una evolución registrada (PAPER §28.4).
- * Body: {evolution_id, observaciones} → {ok}. Acción explícita: sin gate. Si es la
- * evolución más reciente de su ficha, el episodio (que muestra lo vigente) también.
- * La fila armada (ficha sin evoluciones) sigue guardando `g_7` del episodio.
+ * /api/bot/evolucion/editar — edita una evolución desde su formulario (PAPER §28.4).
+ * Body: {evolution_id | episode_id, fecha?, hallazgos?, diagnostico?, tratamiento?,
+ *        observaciones?, proximo_control_fecha?, proximo_control_motivo?} → {ok, evolution_id}.
+ * Solo cambian las claves que vienen; un texto vacío borra el campo. Acción explícita: sin gate.
+ * Con `episode_id` es la fila armada de una ficha sin evoluciones: primero se registra su
+ * evolución inicial con lo que dice la ficha, y se edita esa. Si es la evolución más reciente,
+ * el episodio (que muestra lo vigente) también cambia; su próximo control dispara el aviso de
+ * cita al paciente (§36).
  */
 app.post('/api/bot/evolucion/editar', async (req: Request, res: Response, next: NextFunction) => {
   let mcp: TodoErpMcpClient | null = null;
@@ -640,37 +644,64 @@ app.post('/api/bot/evolucion/editar', async (req: Request, res: Response, next: 
     const auth = req.header('authorization') || '';
     const jwt = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : '';
     if (!jwt) return res.status(401).json({ ok: false, error: 'Auth required' });
-    const { evolution_id, observaciones } = req.body || {};
-    if (!evolution_id) return res.status(400).json({ ok: false, error: 'evolution_id required' });
-    if (observaciones != null && typeof observaciones !== 'string') {
-      return res.status(400).json({ ok: false, error: 'observaciones debe ser texto' });
+    const body = req.body || {};
+    if (!body.evolution_id && !body.episode_id) {
+      return res.status(400).json({ ok: false, error: 'evolution_id o episode_id required' });
     }
-    const texto = typeof observaciones === 'string' ? observaciones.trim() : '';
     mcp = new TodoErpMcpClient({ jwt, apiKey: '' });
     await mcp.connect();
-    const cur: any = await mcp.call('entities.get', { id: String(evolution_id) });
-    if (!cur?.ok || String(cur.data?.entity_id || EVOLUTION_ENTITY_ID) !== EVOLUTION_ENTITY_ID) {
-      return res.status(404).json({ ok: false, error: 'No se encontró la evolución' });
+
+    let evolutionId = body.evolution_id ? String(body.evolution_id) : '';
+    let episodeId = '';
+    if (evolutionId) {
+      const cur: any = await mcp.call('entities.get', { id: evolutionId });
+      if (!cur?.ok || String(cur.data?.entity_id || EVOLUTION_ENTITY_ID) !== EVOLUTION_ENTITY_ID) {
+        return res.status(404).json({ ok: false, error: 'No se encontró la evolución' });
+      }
+      episodeId = String(recordField(cur.data, 'episode_id') || '');
+    } else {
+      episodeId = String(body.episode_id);
     }
-    const r: any = await mcp.call('entities.update', {
-      id: String(evolution_id), record_type: 'business', data: { observaciones: texto || null },
-    });
+    const ep: any = episodeId ? await mcp.call('entities.get', { id: episodeId }) : null;
+    if (!evolutionId && !ep?.ok) return res.status(404).json({ ok: false, error: 'No se encontró la consulta' });
+    const epData = ep?.ok ? (ep.data?.data || {}) : {};
+
+    const plan = planEvolutionEdit(body, { discharged: epData.estado === 'alta' });
+    if ('error' in plan) return res.status(400).json({ ok: false, error: plan.error });
+
+    const hermanas: any = episodeId ? await mcp.call('entities.list', {
+      type: EVOLUTION_ENTITY_ID, filter: { episode_id: episodeId }, limit: 500,
+    }) : null;
+    let rows = Array.isArray(hermanas?.data) ? hermanas.data : [];
+
+    // Fila armada: la ficha no tiene evoluciones todavía. Se registra la inicial.
+    if (!evolutionId) {
+      if (rows.length) {
+        return res.status(409).json({ ok: false, error: 'Esta ficha ya tiene evoluciones: edita una de ellas' });
+      }
+      const patientId = recordField(ep.data, 'patient_id');
+      const created: any = await mcp.call('entities.create', buildInitialEvolution({
+        episodeId, patientId: patientId ? String(patientId) : null, ep: epData,
+        createdBy: ep.data?.created_by || null,
+      }));
+      evolutionId = String(created?.data?.id || created?.id || '');
+      if (!evolutionId) return res.status(502).json({ ok: false, error: `No se pudo guardar: ${created?.error || 'error'}` });
+      rows = [{ id: evolutionId, data: { fecha: epData.fecha }, created_at: new Date().toISOString() }];
+    }
+
+    const r: any = await mcp.call('entities.update', { id: evolutionId, record_type: 'business', data: plan.fields });
     if (r?.ok === false || r?.isError) {
       return res.status(502).json({ ok: false, error: `No se pudo guardar: ${r?.error || 'error'}` });
     }
-    const episodeId = recordField(cur.data, 'episode_id');
-    if (episodeId) {
-      const hermanas: any = await mcp.call('entities.list', {
-        type: EVOLUTION_ENTITY_ID, filter: { episode_id: String(episodeId) }, limit: 500,
-      });
-      const rows = Array.isArray(hermanas?.data) ? hermanas.data : [];
-      if (isLatestEvolution(rows, String(evolution_id))) {
-        await mcp.call('entities.update', {
-          id: String(episodeId), record_type: 'business', data: { observaciones: texto || null },
-        });
+    if (episodeId && Object.keys(plan.vigente).length) {
+      // La fecha recién editada cuenta para saber cuál es la más reciente.
+      const conCambio = rows.map((row: any) => String(row?.id) === evolutionId && plan.fields.fecha
+        ? { ...row, data: { ...(row.data || {}), fecha: plan.fields.fecha } } : row);
+      if (isLatestEvolution(conCambio, evolutionId)) {
+        await mcp.call('entities.update', { id: episodeId, record_type: 'business', data: plan.vigente });
       }
     }
-    res.json({ ok: true });
+    res.json({ ok: true, evolution_id: evolutionId });
   } catch (err: any) { next(err); }
   finally { if (mcp) await mcp.close().catch(() => {}); }
 });
@@ -942,6 +973,20 @@ const UUID_DESTINO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * es ninguno de ellos tampoco es un destino, es el comienzo del motivo. `desconocidos`
  * devuelve el primer destino inválido cuando no hubo ninguno válido antes.
  */
+/** El círculo responsable de los casos (el mismo `CEPI_RESPONSIBLE_GROUP` de TodoERP). */
+export function responsibleGroup(): string {
+  return process.env.CEPI_RESPONSIBLE_GROUP || 'dermatologia';
+}
+
+/**
+ * «derivar a responsable …»: el destino «responsable» es el círculo responsable, y derivar a
+ * un círculo avisa solo a quien está de turno hoy (PAPER §32.2; sin nadie de turno, a todo
+ * el círculo). Quien abre la consulta es su responsable hasta que la deriva (§32.2.1).
+ */
+export function resolverResponsable(texto: string): string {
+  return texto.replace(/^\s*responsable\b/i, responsibleGroup());
+}
+
 export function parsearDestinos(texto: string, conocidos?: string[]): {
   circulos: string[]; personas: string[]; motivo: string; desconocido?: string;
 } {
@@ -2222,7 +2267,7 @@ const chatHandler = async (req: Request, res: Response, next: NextFunction) => {
           const filas: any[] = Array.isArray(g?.data?.data) ? g.data.data : Array.isArray(g?.data) ? g.data : [];
           if (g?.ok && filas.length) conocidos = filas.map(x => String(x?.slug || '')).filter(Boolean);
         } catch { conocidos = undefined; }
-        const { circulos, personas, motivo, desconocido } = parsearDestinos(deriveMatch[1], conocidos);
+        const { circulos, personas, motivo, desconocido } = parsearDestinos(resolverResponsable(deriveMatch[1]), conocidos);
         if (!circulos.length && !personas.length) {
           const ackText = desconocido && conocidos
             ? `No conozco el círculo «${desconocido}». Círculos: ${conocidos.join(', ')}.`

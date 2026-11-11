@@ -7,10 +7,12 @@
       No se pudieron cargar las imágenes: {{ error }}
       <br><button class="rej-btn" @click="recargar">Reintentar</button>
     </div>
-    <p v-else-if="!imagenes.length" class="rej-estado">{{ q.trim() ? `Sin resultados para «${q.trim()}»` : vacio }}</p>
+    <p v-else-if="!visibles.length" class="rej-estado">
+      {{ q.trim() ? `Sin resultados para «${q.trim()}»` : (episodeId && imagenes.length ? 'Este episodio no tiene fotos clínicas' : vacio) }}
+    </p>
 
     <div v-else class="rej-grid">
-      <button v-for="img in imagenes" :key="img.id" type="button" class="rej-celda" @click="abrir(img)">
+      <button v-for="img in visibles" :key="img.id" type="button" class="rej-celda" @click="abrir(img)">
         <img v-if="urls[img.attachment_id]" :src="urls[img.attachment_id]" :alt="pie(img)" loading="lazy" />
         <span v-else-if="rotas[img.attachment_id]" class="rej-ph">Imagen no disponible</span>
         <span v-else class="rej-ph">Cargando…</span>
@@ -43,7 +45,10 @@ const props = defineProps({
   q: { type: String, default: '' },
   vacio: { type: String, default: 'Todavía no hay imágenes' },
   mostrarPaciente: { type: Boolean, default: true },
+  /** Solo las fotos de este episodio (el navegador entre episodios, PAPER §28.4.1). */
+  episodeId: { type: String, default: '' },
 });
+const emit = defineEmits(['cuenta']);
 
 const imagenes = ref([]);
 const total = ref(null);
@@ -106,6 +111,12 @@ async function cargar(desde = 0) {
     if (mia === pedido) cargando.value = false;
   }
 }
+
+/** Las que se muestran: todas, o las del episodio elegido. */
+const visibles = computed(() => (props.episodeId
+  ? imagenes.value.filter((i) => i.episode_id === props.episodeId)
+  : imagenes.value));
+watch([imagenes, visibles], () => emit('cuenta', { todas: imagenes.value.length, visibles: visibles.value.length }));
 
 function recargar() { cargar(0); }
 function mas() { cargar(imagenes.value.length); }

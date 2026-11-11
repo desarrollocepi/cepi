@@ -380,7 +380,7 @@ describe('IntakeChat — secciones y auto-form', () => {
     const w = await abrir();
     await boton(w, '.ihead-actions > button', 'Nueva consulta').trigger('click');
     await flushPromises();
-    expect(api.chat).toHaveBeenLastCalledWith('nuevo episodio', 's1', {});
+    expect(api.chat).toHaveBeenLastCalledWith('nuevo episodio', 's1', { explicit: true });
   });
 });
 
@@ -434,6 +434,16 @@ describe('IntakeChat — derivar', () => {
     expect(api.chat).toHaveBeenLastCalledWith('derivar a derma, u3 segunda opinión', 's1', { explicit: true });
     expect(w.emitted('closed')).toHaveLength(1);
     expect(w.find('.ihead').exists()).toBe(false);
+  });
+
+  it('«Al responsable de turno» manda «derivar a responsable» explícito, con el motivo (PAPER §32.2.1)', async () => {
+    const w = await abrir();
+    await abrirDerivar(w);
+    expect(w.find('.derivar-resp').text()).toContain('Al responsable de turno');
+    await w.find('.derivar-motivo').setValue(' revisar lesión ');
+    await w.find('.derivar-resp').trigger('click');
+    await flushPromises();
+    expect(api.chat).toHaveBeenLastCalledWith('derivar a responsable revisar lesión', 's1', { explicit: true });
   });
 
   it('si derivar falla el chat no se cierra y el error queda a la vista', async () => {

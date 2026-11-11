@@ -542,11 +542,19 @@ export async function agregarEvolucion({
 }
 
 /** Observaciones de una evolución registrada (PAPER §28.4). La fila armada guarda `g_7`. */
-export async function editarEvolucion({ evolutionId, observaciones }) {
-  return call('/api/bot/evolucion/editar', {
-    method: 'POST',
-    body: JSON.stringify({ evolution_id: evolutionId, observaciones }),
-  });
+/**
+ * Edita una evolución (PAPER §28.4.1): solo viajan los campos que se pasan; '' borra el
+ * campo. `episodeId` en vez de `evolutionId` es la fila armada de una ficha sin evoluciones.
+ */
+export async function editarEvolucion({ evolutionId, episodeId, ...campos }) {
+  const body = evolutionId ? { evolution_id: evolutionId } : { episode_id: episodeId };
+  const claves = {
+    fecha: 'fecha', hallazgos: 'hallazgos', diagnostico: 'diagnostico', tratamiento: 'tratamiento',
+    observaciones: 'observaciones', proximoControlFecha: 'proximo_control_fecha',
+    proximoControlMotivo: 'proximo_control_motivo',
+  };
+  for (const [k, v] of Object.entries(campos)) if (claves[k] && v !== undefined) body[claves[k]] = v;
+  return call('/api/bot/evolucion/editar', { method: 'POST', body: JSON.stringify(body) });
 }
 
 /**

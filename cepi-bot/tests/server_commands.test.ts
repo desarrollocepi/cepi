@@ -142,6 +142,16 @@ describe('telemedicine command regexes', () => {
     expect(`reclamar ${VALID_UUID}`.match(RE.claim)?.[1]).toBe(VALID_UUID);
   });
 
+  it('«derivar a responsable» va al círculo responsable, que avisa al de turno (PAPER §32.2.1)', async () => {
+    const { resolverResponsable, parsearDestinos } = await import('../src/server.js');
+    expect(resolverResponsable('responsable revisar lesión')).toBe('dermatologia revisar lesión');
+    expect(resolverResponsable('Responsable')).toBe('dermatologia');
+    expect(resolverResponsable('pediatria, responsable')).toBe('pediatria, responsable');
+    const r = parsearDestinos(resolverResponsable('responsable revisar lesión'), ['dermatologia', 'pediatria']);
+    expect(r.circulos).toEqual(['dermatologia']);
+    expect(r.motivo).toBe('revisar lesión');
+  });
+
   it('parsea varios destinos: círculos, personas y el motivo', async () => {
     const { parsearDestinos } = await import('../src/server.js');
     const uno = parsearDestinos('dermatologia sospecha de melanoma');

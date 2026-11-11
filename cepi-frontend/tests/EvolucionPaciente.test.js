@@ -55,7 +55,8 @@ describe('EvolucionPaciente (PAPER §28, §28.4)', () => {
     expect(w.find('.evo-ficha-meta').text()).toContain('2 evoluciones');
     expect(w.findAll('th').map((t) => t.text())).toEqual(
       ['Fecha', 'Atendió', 'Diagnóstico clínico', 'Diagnóstico histopatológico', 'Tratamiento', 'Observaciones']);
-    const [nueva, inicial] = w.findAll('tbody tr');
+    // La más vieja arriba y la más nueva abajo (PAPER §28.4.1).
+    const [inicial, nueva] = w.findAll('tbody tr');
     expect(w.findAll('tbody tr')).toHaveLength(2);
     expect(nueva.text()).toContain('Hallazgos: Lesión estable');
     expect(nueva.text()).toContain('Próximo control: 2027-01-20 · Dermatoscopia');
@@ -201,7 +202,7 @@ describe('EvolucionPaciente — observaciones editables', () => {
 
   it('en una evolución registrada guarda con editarEvolucion', async () => {
     const w = await montar();
-    await w.findAll('.evo-obs-editar')[1].trigger('click');
+    await w.findAll('.evo-obs-editar')[0].trigger('click'); // la inicial (ev1), arriba
     const guardar = () => w.findAll('.evo-obs-acciones button')[0];
     expect(guardar().attributes('disabled')).toBeDefined(); // sin cambios todavía
     await w.find('.evo-obs-texto').setValue('  Control con dermatología en 6 meses ');
@@ -209,7 +210,7 @@ describe('EvolucionPaciente — observaciones editables', () => {
     expect(api.editarEvolucion).toHaveBeenCalledWith({ evolutionId: 'ev1', observaciones: 'Control con dermatología en 6 meses' });
     expect(api.guardarGrupoFicha).not.toHaveBeenCalled();
     expect(w.find('.evo-obs-texto').exists()).toBe(false);
-    expect(w.findAll('tbody tr')[1].text()).toContain('Control con dermatología en 6 meses');
+    expect(w.findAll('tbody tr')[0].text()).toContain('Control con dermatología en 6 meses');
     expect(w.emitted('guardado')).toEqual([['ep2']]);
   });
 
@@ -244,11 +245,11 @@ describe('EvolucionPaciente — observaciones editables', () => {
 
   it('Cancelar vuelve sin guardar', async () => {
     const w = await montar();
-    await w.findAll('.evo-obs-editar')[0].trigger('click');
+    await w.findAll('.evo-obs-editar')[1].trigger('click'); // la más nueva (ev2), abajo
     await w.find('.evo-obs-texto').setValue('No lo quiero');
     await w.findAll('.evo-obs-acciones button')[1].trigger('click');
     expect(api.editarEvolucion).not.toHaveBeenCalled();
-    expect(w.findAll('tbody tr')[0].text()).toContain('Sin cambios');
+    expect(w.findAll('tbody tr')[1].text()).toContain('Sin cambios');
   });
 });
 
@@ -284,5 +285,56 @@ describe('Próximo control al pie de la evolución (PAPER §28.4)', () => {
     api.listarEvolucion.mockResolvedValue({ data: [{ ...FILAS[2], estado: 'alta' }] });
     const w = await montar();
     expect(w.find('.evo-control').text()).toContain('Ficha de alta: sin controles pendientes');
+  });
+});
+
+describe('Tocar una evolución abre su formulario (PAPER §28.4.1)', () => {
+  beforeEach(() => {
+    api.editarEvolucion.mockReset();
+    api.editarEvolucion.mockResolvedValue({ ok: true });
+  });
+
+  it('prellena el formulario y guarda solo lo que cambió', async () => {
+    const w = await montar();
+    await w.findAll('tbody tr')[1].trigger('click'); // la más nueva (ev2), abajo
+    expect(w.find('.evo-form-titulo').text()).toBe('Editar la evolución del 2026-10-20');
+    const guardar = w.findAll('.evo-form button[type="submit"]')[0];
+    expect(guardar.attributes('disabled')).toBeDefined();
+    expect(guardar.attributes('title')).toBe('No hay cambios que guardar');
+    await w.findAll('.evo-form textarea')[1].setValue('Crema y control');
+    await w.find('.evo-form').trigger('submit'); await flushPromises();
+    expect(api.editarEvolucion).toHaveBeenCalledWith({ evolutionId: 'ev2', tratamiento: 'Crema y control' });
+    expect(w.find('.evo-form').exists()).toBe(false);
+  });
+
+  it('tocar las observaciones no abre el formulario (se editan en la celda)', async () => {
+    const w = await montar();
+    await w.findAll('.evo-obs')[0].trigger('click');
+    expect(w.find('.evo-form').exists()).toBe(false);
+  });
+
+  it('la fila armada se edita por la ficha (episode_id)', async () => {
+    const w = await montar({ episodeId: 'ep1' });
+    await w.find('tbody tr').trigger('click');
+    await w.findAll('.evo-form input[type="date"]')[1].setValue('2026-12-15');
+    await w.find('.evo-form').trigger('submit'); await flushPromises();
+    expect(api.editarEvolucion).toHaveBeenCalledWith({ episodeId: 'ep1', proximoControlFecha: '2026-12-15' });
+  });
+
+  it('«Próximo control» abre el formulario de la más reciente', async () => {
+    const w = await montar();
+    await w.find('.evo-control').trigger('click'); await flushPromises();
+    expect(w.find('.evo-form-titulo').text()).toBe('Editar la evolución del 2026-10-20');
+    await w.findAll('.evo-form input[type="date"]')[1].setValue('2027-02-01');
+    await w.find('.evo-form').trigger('submit'); await flushPromises();
+    expect(api.editarEvolucion).toHaveBeenCalledWith({ evolutionId: 'ev2', proximoControlFecha: '2027-02-01' });
+  });
+
+  it('con la ficha de alta, «Próximo control» queda a la vista pero deshabilitado con el motivo', async () => {
+    api.listarEvolucion.mockResolvedValue({ data: [{ ...FILAS[0], estado: 'alta', proximo_control_fecha: null }] });
+    const w = await montar();
+    const b = w.find('.evo-control');
+    expect(b.attributes('disabled')).toBeDefined();
+    expect(b.attributes('title')).toContain('Ficha de alta');
   });
 });

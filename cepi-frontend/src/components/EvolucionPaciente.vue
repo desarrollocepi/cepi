@@ -52,8 +52,10 @@
           >＋ Agregar evolución</button>
         </div>
 
-        <!-- Formulario de la evolución nueva. Acción explícita: se guarda sin confirmación. -->
-        <form v-if="formulario" class="evo-form" @submit.prevent="guardarEvolucion">
+        <!-- Formulario de la evolución: nueva, o una existente que se tocó (PAPER §28.4.1).
+             Acción explícita: se guarda sin confirmación. -->
+        <form v-if="formulario" ref="formEl" class="evo-form" @submit.prevent="guardarEvolucion">
+          <p class="evo-form-titulo">{{ enEdicion ? `Editar la evolución del ${enEdicion.fecha || '—'}` : 'Evolución nueva' }}</p>
           <label class="evo-campo evo-campo--corto">
             <span>Fecha</span>
             <input v-model="nueva.fecha" type="date" :disabled="enviando" required />
@@ -77,20 +79,20 @@
           <div class="evo-fila">
             <label class="evo-campo evo-campo--corto">
               <span>Próximo control</span>
-              <input v-model="nueva.proximoControlFecha" type="date" :disabled="enviando" />
+              <input ref="controlEl" v-model="nueva.proximoControlFecha" type="date" :disabled="enviando || fichaDeAlta" :title="fichaDeAlta ? 'Ficha de alta: abre una consulta nueva para otro control' : ''" />
             </label>
             <label class="evo-campo">
               <span>Qué hacer en el control</span>
-              <input v-model="nueva.proximoControlMotivo" type="text" :disabled="enviando" placeholder="Motivo del próximo control" />
+              <input v-model="nueva.proximoControlMotivo" type="text" :disabled="enviando || fichaDeAlta" placeholder="Motivo del próximo control" />
             </label>
           </div>
           <p v-if="errorNueva" class="evo-obs-error">{{ errorNueva }}</p>
           <div class="evo-obs-acciones">
             <button
-              class="evo-btn" type="submit" :disabled="enviando || !nuevaTieneContenido"
-              :title="enviando ? 'Guardando…' : (nuevaTieneContenido ? 'Guardar la evolución en esta ficha' : 'Escribe al menos hallazgos, diagnóstico, tratamiento u observaciones')"
-            >{{ enviando ? 'Guardando…' : 'Guardar evolución' }}</button>
-            <button class="evo-btn evo-btn--junto" type="button" :disabled="enviando" @click="formulario = false">Cancelar</button>
+              class="evo-btn" type="submit" :disabled="enviando || !!motivoNoGuardar"
+              :title="enviando ? 'Guardando…' : (motivoNoGuardar || (enEdicion ? 'Guardar los cambios de esta evolución' : 'Guardar la evolución en esta ficha'))"
+            >{{ enviando ? 'Guardando…' : (enEdicion ? 'Guardar cambios' : 'Guardar evolución') }}</button>
+            <button class="evo-btn evo-btn--junto" type="button" :disabled="enviando" @click="cerrarFormulario">Cancelar</button>
           </div>
         </form>
 
@@ -103,7 +105,14 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="f in actual.filas" :key="claveFila(f)">
+              <!-- La más vieja arriba, la más nueva abajo (PAPER §28.4.1). Tocar la fila abre su
+                   formulario; las observaciones se siguen editando aquí mismo. -->
+              <tr
+                v-for="f in filasEnOrden" :key="claveFila(f)" class="evo-fila-tocable"
+                :class="{ 'evo-fila-editando': enEdicion && claveFila(enEdicion) === claveFila(f) }"
+                tabindex="0" title="Abrir el formulario de esta evolución"
+                @click="abrirEdicion(f)" @keydown.enter.self="abrirEdicion(f)"
+              >
                 <td class="evo-fecha" data-col="Fecha">
                   {{ f.fecha || '—' }}<span v-if="f.es_inicial && f.evolution_id" class="evo-inicial">Primera cita</span>
                 </td>
@@ -120,7 +129,7 @@
                 <!-- Observaciones se escribe aquí mismo (pedido de las dermatólogas). Una
                      evolución registrada guarda en ella (editarEvolucion); la fila armada de
                      una ficha sin evoluciones, en la sección 7 de la ficha (g_7). -->
-                <td data-col="Observaciones" class="evo-obs" :class="{ 'evo-vacio': !f.observaciones && editando !== claveFila(f) }">
+                <td data-col="Observaciones" class="evo-obs" :class="{ 'evo-vacio': !f.observaciones && editando !== claveFila(f) }" @click.stop>
                   <div v-if="editando === claveFila(f)">
                     <textarea
                       v-model="borrador" class="evo-obs-texto" rows="3" :disabled="guardando"
@@ -153,7 +162,14 @@
         </div>
 
         <!-- Próximo control de la ficha abierta (PAPER §28.4): el de su evolución más nueva. -->
-        <div v-if="actual" class="evo-control" :class="nextControl.status ? `evo-control--${nextControl.status}` : null">
+        <!-- Tocarlo abre el formulario de la evolución más reciente con el foco en el próximo
+             control. Con la ficha de alta sigue a la vista, sin abrir nada, y lo dice. -->
+        <button
+          v-if="actual" type="button" class="evo-control" :class="nextControl.status ? `evo-control--${nextControl.status}` : null"
+          :disabled="fichaDeAlta || enviando"
+          :title="fichaDeAlta ? 'Ficha de alta: abre una consulta nueva para otro control' : 'Fijar o cambiar el próximo control'"
+          @click="abrirEdicion(actual.filas[0], true)"
+        >
           <strong>Próximo control</strong>
           <template v-if="nextControl.date">
             <span class="evo-control-fecha">{{ nextControl.date }}</span>
@@ -161,7 +177,8 @@
             <span class="evo-control-motivo">{{ nextControl.reason || 'Sin indicación de qué hacer' }}</span>
           </template>
           <span v-else class="evo-control-vacio">{{ nextControl.empty }}</span>
-        </div>
+          <span v-if="!fichaDeAlta" class="evo-control-editar">✏️</span>
+        </button>
 
         <!-- Las otras fichas del paciente, plegadas: una línea por ficha. Tocarla la abre. -->
         <div class="evo-otras">
@@ -191,7 +208,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { listarEvolucion, guardarGrupoFicha, agregarEvolucion, editarEvolucion } from '../api.js';
 import VisorEvolucion from './VisorEvolucion.vue';
 import IcdSearchField from './IcdSearchField.vue';
@@ -226,6 +243,10 @@ const formulario = ref(false);
 const enviando = ref(false);
 const errorNueva = ref('');
 const nueva = reactive(vacia());
+/** La fila que se edita en el formulario; null = evolución nueva. */
+const enEdicion = ref(null);
+const formEl = ref(null);
+const controlEl = ref(null);
 
 /** 'YYYY-MM-DD' de hoy en la zona del dispositivo (nunca toISOString: da el día UTC). */
 function hoyLocal(d = new Date()) {
@@ -277,6 +298,34 @@ const nextControl = computed(() => {
   return { date, status, label, reason: latest.proximo_control_motivo || null };
 });
 const otras = computed(() => fichas.value.filter((g) => g !== actual.value));
+/** Para mostrar: de la más vieja a la más nueva. Internamente, la más nueva va primero. */
+const filasEnOrden = computed(() => (actual.value ? [...actual.value.filas].reverse() : []));
+const fichaDeAlta = computed(() => actual.value?.estado === 'alta');
+
+/** Lo que cambió en el formulario de edición respecto de la fila (claves de editarEvolucion). */
+const cambios = computed(() => {
+  const f = enEdicion.value;
+  if (!f) return {};
+  const orig = {
+    fecha: f.fecha || '', hallazgos: f.hallazgos || '', diagnostico: f.diagnostico || '',
+    tratamiento: f.tratamiento || '', observaciones: f.observaciones || '',
+    proximoControlFecha: f.proximo_control_fecha || '', proximoControlMotivo: f.proximo_control_motivo || '',
+  };
+  const out = {};
+  for (const k of Object.keys(orig)) {
+    const v = String(nueva[k] || '').trim();
+    if (v !== orig[k]) out[k] = v;
+  }
+  return out;
+});
+const motivoNoGuardar = computed(() => {
+  if (enEdicion.value) {
+    if (!Object.keys(cambios.value).length) return 'No hay cambios que guardar';
+    if (!nueva.fecha) return 'La fecha de la evolución no puede quedar vacía';
+    return null;
+  }
+  return nuevaTieneContenido.value ? null : 'Escribe al menos hallazgos, diagnóstico, tratamiento u observaciones';
+});
 
 const motivoNoAgregar = computed(() => {
   if (!actual.value) return 'Todavía no hay una ficha: ábrela con «＋ Nueva consulta»';
@@ -319,15 +368,47 @@ function alternar() {
 
 function abrirFormulario() {
   Object.assign(nueva, vacia());
+  enEdicion.value = null;
   errorNueva.value = '';
   formulario.value = true;
 }
 
+/** Abre el formulario con los datos de una evolución; `aControl` pone el foco en el próximo control. */
+async function abrirEdicion(f, aControl = false) {
+  if (!f || enviando.value) return;
+  Object.assign(nueva, {
+    fecha: f.fecha || hoyLocal(), hallazgos: f.hallazgos || '', diagnostico: f.diagnostico || '',
+    tratamiento: f.tratamiento || '', observaciones: f.observaciones || '',
+    proximoControlFecha: f.proximo_control_fecha || '', proximoControlMotivo: f.proximo_control_motivo || '',
+  });
+  enEdicion.value = f;
+  errorNueva.value = '';
+  formulario.value = true;
+  await nextTick();
+  formEl.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  if (aControl) controlEl.value?.focus?.();
+}
+
+function cerrarFormulario() {
+  formulario.value = false;
+  enEdicion.value = null;
+}
+
 async function guardarEvolucion() {
-  if (!actual.value || !nuevaTieneContenido.value) return;
+  if (!actual.value || motivoNoGuardar.value) return;
   const episodeId = actual.value.episode_id;
   enviando.value = true; errorNueva.value = '';
   try {
+    if (enEdicion.value) {
+      const f = enEdicion.value;
+      await editarEvolucion(f.evolution_id
+        ? { evolutionId: f.evolution_id, ...cambios.value }
+        : { episodeId: f.episode_id, ...cambios.value });
+      cerrarFormulario();
+      emit('guardado', episodeId);
+      await cargar();
+      return;
+    }
     await agregarEvolucion({
       episodeId,
       fecha: nueva.fecha || hoyLocal(),
@@ -338,7 +419,7 @@ async function guardarEvolucion() {
       proximoControlFecha: nueva.proximoControlFecha,
       proximoControlMotivo: nueva.proximoControlMotivo.trim(),
     });
-    formulario.value = false;
+    cerrarFormulario();
     emit('guardado', episodeId);
     await cargar();
   } catch (e) {
@@ -474,7 +555,14 @@ defineExpose({ recargar: () => (abierta.value ? cargar() : undefined) });
   .evo-tabla td::before { content: attr(data-col); font-size: 12px; font-style: normal; color: #64748b; }
   .evo-tabla td > .evo-especialista, .evo-tabla td > .evo-extra, .evo-tabla td > .evo-inicial { grid-column: 2; }
 }
-.evo-control { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-top: 10px; padding: 8px 10px; border-left: 4px solid #9CA3AF; background: rgba(0,0,0,0.03); border-radius: 4px; }
+.evo-control { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-top: 10px; padding: 8px 10px; border-left: 4px solid #9CA3AF; background: rgba(0,0,0,0.03); border-radius: 4px; width: 100%; border-top: 0; border-right: 0; border-bottom: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.evo-control:hover:not(:disabled) { background: rgba(0,0,0,0.06); }
+.evo-control:disabled { cursor: default; }
+.evo-control-editar { margin-left: auto; font-size: 14px; }
+.evo-fila-tocable { cursor: pointer; }
+.evo-fila-tocable:hover td { background: rgba(37,99,235,0.05); }
+.evo-fila-editando td { background: rgba(37,99,235,0.10); }
+.evo-form-titulo { margin: 0 0 4px; font-weight: 600; }
 .evo-control--atrasado { border-left-color: #DC2626; }
 .evo-control--atrasado .evo-control-estado { color: #DC2626; font-weight: 600; }
 .evo-control--hoy { border-left-color: var(--accent, #2563EB); }
