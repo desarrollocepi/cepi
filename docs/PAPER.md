@@ -1047,6 +1047,14 @@ entrar a casos. El dominio de una org manda sobre lo guardado.
 
 Ser médico en el consultorio, entonces, no aprueba en telemedicina: cada org aprueba lo suyo.
 
+**Pendiente = no ve nada, tampoco por el costado.** Ser miembro de la org no alcanza para
+leer nada de ella. Los adjuntos (`/api/attachments`) piden lo mismo que el registro al que
+cuelgan (`view_all` de su definición, o `view_own` y ser el autor), y uno suelto lo ve quien
+lo subió o quien puede ver registros de otros (algún `record:view_all`). Antes bastaba con
+la org activa y una cuenta recién registrada, pendiente en `cepi`, listaba y bajaba las fotos
+sueltas de la org (prueba en prod, 2026-11-11). `review-queue/patient` tampoco resuelve el
+nombre de un paciente sin permiso de recordatorios. Test: `tests/attachments_pending.test.ts`.
+
 **Invitar por email con rol preasignado** (migración 025, `invitations`). El admin de una
 org invita a la suya —el superadmin a cualquiera— un email con un rol que esa org usa y que
 él podría dar ahí (`POST /admin/invitations`; consola → Invitaciones). El correo sale por
