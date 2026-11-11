@@ -138,6 +138,25 @@ struct ContratoTests {
         #expect(respuesta.user.permissions == ["entity:x:record:create"])
     }
 
+    /// `/me` de una cuenta pendiente en telemedicina y aprobada en otras (backend 2026-11-11):
+    /// la pantalla de «pendiente» ofrece entrar solo a las reales donde tiene rol.
+    @Test func pendienteConRolEnOtraOrg() throws {
+        let respuesta = try decodificar(SesionRespuesta.self, """
+        {"ok":true,"token":"abc","user":{"id":"u1","name":"Dr. X","email":"x@cepi.ec","role":"pendiente",
+         "permissions":["chat:bot"],"org_id":"tele","orgs":[
+         {"id":"tele","slug":"cepi","name":"CEPI Telemedicina","role_in_org":"member","features":[],"sandbox":false,"approved":false},
+         {"id":"cons","slug":"cepi-drpro","name":"Consultorio","role_in_org":"member","features":[],"sandbox":false,"approved":true},
+         {"id":"test","slug":"cepi-testing","name":"Testing","role_in_org":"member","features":[],"sandbox":true,"approved":true}]}}
+        """)
+        #expect(respuesta.user.otrasOrgsAprobadas.map(\.id) == ["cons"])
+        // Un backend viejo no manda `approved`: no se ofrece nada.
+        let viejo = try decodificar(SesionRespuesta.self, """
+        {"ok":true,"token":"t","user":{"id":"u","name":"X","email":"x@cepi.ec","role":"pendiente","permissions":[],
+         "org_id":"o1","orgs":[{"id":"o1","slug":"cepi","name":"CEPI"},{"id":"o2","slug":"cepi-drpro","name":"C"}]}}
+        """)
+        #expect(viejo.user.otrasOrgsAprobadas.isEmpty)
+    }
+
     @Test func loginSinOrganizaciones() throws {
         let respuesta = try decodificar(SesionRespuesta.self, """
         {"ok":true,"token":"t","user":{"id":"u","name":"X","email":"x@cepi.ec","role":"pendiente","permissions":[]}}

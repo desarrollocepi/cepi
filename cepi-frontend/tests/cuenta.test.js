@@ -314,3 +314,31 @@ describe('Profile', () => {
     expect(w.emitted('logout')).toHaveLength(2);
   });
 });
+
+describe('PendingApproval: entrar a otra organización', () => {
+  const orgs = [
+    { id: 'tele', name: 'CEPI Telemedicina', approved: false, sandbox: false },
+    { id: 'cons', name: 'Consultorio', approved: true, sandbox: false },
+    { id: 'test', name: 'Testing', approved: true, sandbox: true },
+  ];
+
+  it('ofrece entrar solo a las orgs reales donde ya tiene rol', async () => {
+    const w = mount(PendingApproval, { props: { user: { org_id: 'tele', orgs } } });
+    const botones = w.findAll('button.entrar');
+    expect(botones.map((b) => b.text())).toEqual(['Entrar a Consultorio']);
+    await botones[0].trigger('click');
+    expect(w.emitted('switch-org')).toEqual([['cons']]);
+  });
+
+  it('sin rol en ninguna otra org no muestra nada para cambiar', () => {
+    const w = mount(PendingApproval, { props: { user: { org_id: 'tele', orgs: [orgs[0], orgs[2]] } } });
+    expect(w.find('.otras').exists()).toBe(false);
+  });
+
+  it('mientras cambia, el botón queda deshabilitado y dice por qué', () => {
+    const w = mount(PendingApproval, { props: { user: { org_id: 'tele', orgs }, switching: true } });
+    const b = w.find('button.entrar');
+    expect(b.attributes('disabled')).toBeDefined();
+    expect(b.attributes('title')).toBe('Cambiando de organización…');
+  });
+});

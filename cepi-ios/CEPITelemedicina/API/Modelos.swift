@@ -89,6 +89,27 @@ struct Registro: Decodable, Identifiable, Sendable, Hashable {
 struct Organizacion: Decodable, Identifiable, Sendable, Hashable {
     let id: String
     let name: String
+    /// Tiene un rol de verdad ahí (no `pendiente`). El backend lo manda desde 2026-11-11.
+    let approved: Bool
+    /// Org de pruebas (D-Aux-21): la pantalla de «pendiente» no ofrece entrar a ella.
+    let sandbox: Bool
+
+    enum CodingKeys: String, CodingKey { case id, name, approved, sandbox }
+
+    init(id: String, name: String, approved: Bool = false, sandbox: Bool = false) {
+        self.id = id
+        self.name = name
+        self.approved = approved
+        self.sandbox = sandbox
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        approved = try c.decodeIfPresent(Bool.self, forKey: .approved) ?? false
+        sandbox = try c.decodeIfPresent(Bool.self, forKey: .sandbox) ?? false
+    }
 }
 
 struct Usuario: Decodable, Sendable, Equatable {
@@ -430,4 +451,12 @@ struct Adjunto: Decodable, Sendable, Hashable {
     }
 
     var nombre: String { nombreOriginal ?? filename ?? "imagen" }
+}
+
+extension Usuario {
+    /// Orgs reales (no sandbox) donde ya tiene un rol, distintas de la activa: lo que la
+    /// pantalla de «pendiente» ofrece para entrar a propósito (PAPER §13.8).
+    var otrasOrgsAprobadas: [Organizacion] {
+        orgs.filter { $0.approved && !$0.sandbox && $0.id != orgActiva }
+    }
 }

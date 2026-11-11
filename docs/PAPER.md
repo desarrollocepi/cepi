@@ -1035,9 +1035,19 @@ persona, y siempre queda `pendiente` ahí:
 - iniciar sesión por el **dominio** de una org de la que no es miembro. El backend reconoce
   la org por el `Host` (`organizations.data.hosts`; seed 023: `telemedicina.cepi.ec` →
   `cepi`; `casos.cepi.ec` no, es una vista para todas). Las apps nativas llaman a ese
-  mismo dominio, así que no cambian. Quien ya está aprobado en otra org no queda trabado en
-  «pendiente»: la sesión arranca en la primera org donde tiene rol (`elegirOrgActiva`) y la
-  solicitud espera en la del dominio.
+  mismo dominio, así que no cambian.
+
+**La app de una org abre en esa org** (pedido del dueño, 2026-11-11). Si la persona es
+miembro de la org del dominio, la sesión arranca ahí aunque esté pendiente y tenga rol en
+otra: ve la pantalla de «pendiente», y esa pantalla ofrece «Entrar a <org>» por cada org
+real (no sandbox) donde ya tiene rol (`orgs[].approved`, `orgs[].sandbox`). Entrar a otra
+org es siempre un acto de la persona, nunca algo que la sesión decide sola. Antes arrancaba
+en la primera org donde tenía rol: una cuenta pendiente en telemedicina abría Testing y veía
+sus datos, y al aprobarla en telemedicina seguía en Testing, porque `/auth/me` conserva la
+org del token. Ahora `/auth/me` devuelve a la org del dominio un token que quedó en otra sin
+que la persona la eligiera; el que sale de `/orgs/switch` lleva `org_explicit` y se respeta.
+Una cuenta que solo existe en una sandbox no es miembro de la org del dominio
+(`soloDeSandbox`) y sigue abriendo en la sandbox.
 
 **Dominio sin org propia** (`casos.cepi.ec`): la sesión arranca en la **última org activa**
 de la persona (`users.data.last_org_id`), si sigue aprobada ahí. Se guarda al iniciar

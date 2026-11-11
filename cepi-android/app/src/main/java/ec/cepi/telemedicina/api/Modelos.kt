@@ -38,7 +38,14 @@ fun JsonElement.texto(): String? {
 }
 
 @Serializable
-data class Organizacion(val id: String, val name: String)
+data class Organizacion(
+    val id: String,
+    val name: String,
+    /** Tiene un rol de verdad ahí (no `pendiente`). El backend lo manda desde 2026-11-11. */
+    val approved: Boolean = false,
+    /** Org de pruebas (D-Aux-21): la pantalla de «pendiente» no ofrece entrar a ella. */
+    val sandbox: Boolean = false,
+)
 
 // `/login` puede no traer `orgs` ni `org_id` (AuthResponse los declara opcionales).
 @Serializable
@@ -53,6 +60,11 @@ data class Usuario(
 ) {
     /** El backend es quien manda; esto solo decide si se ofrece una acción. */
     fun puede(permiso: String): Boolean = "*:*:*:*" in permissions || permiso in permissions
+
+    /** Orgs reales (no sandbox) donde ya tiene un rol, distintas de la activa: lo que la
+     *  pantalla de «pendiente» ofrece para entrar a propósito (PAPER §13.8). */
+    val otrasOrgsAprobadas: List<Organizacion>
+        get() = orgs.filter { it.approved && !it.sandbox && it.id != orgActiva }
 }
 
 /** `POST /api/auth/login` y `GET /api/auth/me`: el token (re)emitido y el usuario. */
