@@ -60,9 +60,6 @@ struct VisorFicha: View {
     var embebido = false
     /// Otra ficha que pidió abrir quien contiene el visor (la evolución del menú del paciente).
     var episodioPedido: String? = nil
-    /// Lleva a la sección Evolución del paciente (PAPER §28.3). Sin quien la contenga no hay a
-    /// dónde ir: el botón sale deshabilitado.
-    var onShowEvolution: (() -> Void)? = nil
     /// Guarda lo editado (`ficha_save`); devuelve si el bot lo procesó.
     let alGuardar: ([String: JSONValor], String?) async -> Bool
 
@@ -102,7 +99,6 @@ struct VisorFicha: View {
                             Button("Imprimir", systemImage: "printer", action: imprimir)
                                 .disabled(cargando)
                         }
-                        ToolbarItem(placement: .bottomBar) { botonEvolucion }
                     }
                     .confirmationDialog("Hay cambios sin guardar en la ficha.", isPresented: $confirmarCierre, titleVisibility: .visible) {
                         Button("Descartar cambios", role: .destructive) { cerrar() }
@@ -118,7 +114,6 @@ struct VisorFicha: View {
         HStack {
             Button("Imprimir", systemImage: "printer", action: imprimir)
                 .disabled(cargando)
-            botonEvolucion
             Spacer()
             Button("Guardar") { Task { await guardar() } }
                 .buttonStyle(.borderedProminent)
@@ -127,13 +122,6 @@ struct VisorFicha: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-
-    /// Nunca se esconde: sin la sección Evolución a mano, gris y con el motivo.
-    private var botonEvolucion: some View {
-        Button("Evolución", systemImage: "list.bullet.rectangle") { onShowEvolution?() }
-            .disabled(onShowEvolution == nil)
-            .accessibilityHint(onShowEvolution == nil ? "La evolución se abre desde el paciente." : "Abre la sección Evolución del paciente.")
     }
 
     private var contenido: some View {

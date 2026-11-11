@@ -45,15 +45,15 @@ final class HumoProduccionUITests: XCTestCase {
         esperarTexto(app, "Evolución del paciente")
         captura(app, "3 evolucion desde el menu")
 
-        // Ficha editable y su botón Evolución.
+        // Ficha editable con «Imprimir» arriba, como en la Evolución.
         app.buttons["Ficha"].firstMatch.tap()
         esperarTexto(app, "grupos con dato")
         captura(app, "4 ficha")
-        let evolucionFicha = app.buttons["Evolución"].firstMatch
-        XCTAssertTrue(evolucionFicha.waitForExistence(timeout: 20), "No está el botón Evolución en la ficha")
-        evolucionFicha.tap()
+        let imprimirFicha = app.buttons["ficha.imprimir"]
+        XCTAssertTrue(imprimirFicha.waitForExistence(timeout: 20), "No está «Imprimir» en la ficha")
+        app.buttons["Evolución"].firstMatch.tap()
         esperarTexto(app, "Evolución del paciente")
-        captura(app, "5 evolucion desde la ficha")
+        captura(app, "5 evolucion desde las pestañas")
 
         // Imágenes.
         app.buttons["Imágenes"].firstMatch.tap()

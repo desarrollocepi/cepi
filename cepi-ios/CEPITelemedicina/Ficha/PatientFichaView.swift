@@ -3,15 +3,14 @@ import SwiftUI
 /// La sección Ficha del paciente: la ficha **editable y adaptable**, igual que la pestaña de la
 /// web (`FichaCompleta.vue`, PAPER §24.2.1). Los grupos de `GET /api/bot/ficha` por categoría,
 /// con lo cargado y «Completar» / «Editar», que abre el mismo formulario del chat. El documento
-/// imprimible (`ficha.html`, `VisorFicha`) queda detrás de «Imprimir». La consulta la elige el
-/// navegador de episodios del paciente (`EpisodeNavigatorBar`, PAPER §28.4.1).
+/// imprimible (`ficha.html`, `VisorFicha`) queda detrás de «Imprimir», arriba como en la
+/// Evolución. La consulta la elige el navegador de episodios del paciente
+/// (`EpisodeNavigatorBar`, PAPER §28.4.1).
 struct PatientFichaView: View {
     let patientId: String
     let name: String
     /// El episodio elegido en el navegador del paciente; `nil` mientras no se sabe (la más nueva).
     let episode: String?
-    /// Lleva a la sección Evolución del paciente (PAPER §28.3).
-    var onShowEvolution: () -> Void = {}
     /// Guarda lo editado en el documento imprimible (`ficha_save` por el hilo).
     let onPrintSave: ([String: JSONValor], String?) async -> Bool
 
@@ -21,19 +20,20 @@ struct PatientFichaView: View {
     @State private var saveError: String?
 
     init(
-        patientId: String, name: String, episode: String?, onShowEvolution: @escaping () -> Void = {},
+        patientId: String, name: String, episode: String?,
         onPrintSave: @escaping ([String: JSONValor], String?) async -> Bool
     ) {
         self.patientId = patientId
         self.name = name
         self.episode = episode
-        self.onShowEvolution = onShowEvolution
         self.onPrintSave = onPrintSave
         _model = State(initialValue: FichaModel(patientId: patientId))
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            header
+            Divider()
             changesNote
             ScrollView {
                 content
@@ -50,7 +50,6 @@ struct PatientFichaView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) { bottomBar }
         .task { await model.open(preferred: episode, api: sesion.api) }
         .onChange(of: episode) { _, episode in
             // Una consulta que ya está en la lista solo se muestra; una nueva relee la lista
@@ -68,11 +67,7 @@ struct PatientFichaView: View {
             VisorFicha(
                 pacienteId: patientId,
                 nombre: name,
-                episodioActivo: model.episodeId,
-                onShowEvolution: {
-                    printing = false
-                    onShowEvolution()
-                }
+                episodioActivo: model.episodeId
             ) { datos, episodio in
                 let saved = await onPrintSave(datos, episodio)
                 if saved { await model.reload(api: sesion.api) }
@@ -289,16 +284,28 @@ struct PatientFichaView: View {
             .accessibilityIdentifier("ficha.cambios")
     }
 
-    /// El documento imprimible y la evolución, donde se ven siempre.
-    private var bottomBar: some View {
-        HStack {
+    /// Cabecera con «Imprimir» arriba, en el mismo lugar y estilo que en la sección Evolución.
+    private var header: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Ficha del paciente").font(.subheadline.weight(.semibold))
+                Text("Los datos de la consulta, por secciones")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Button("Actualizar", systemImage: "arrow.clockwise") { Task { await model.reload(api: sesion.api) } }
+                .labelStyle(.iconOnly)
+                .disabled(model.loading)
+                .accessibilityHint(model.loading ? "Ya se está cargando" : "Volver a leer la ficha")
             Button("Imprimir", systemImage: "printer") { printing = true }
                 .disabled(model.loading && model.ficha == nil)
-                .accessibilityHint("Abre la ficha como documento para imprimir")
-            Spacer()
-            Button("Evolución", systemImage: "list.bullet.rectangle", action: onShowEvolution)
-                .accessibilityHint("Abre la sección Evolución del paciente.")
+                .accessibilityHint(model.loading && model.ficha == nil ? "Espera a que cargue la ficha" : "Abre la ficha como documento para imprimir")
+                .accessibilityIdentifier("ficha.imprimir")
         }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)

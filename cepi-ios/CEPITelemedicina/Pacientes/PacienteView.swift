@@ -111,8 +111,7 @@ struct PacienteView: View {
                 PatientFichaView(
                     patientId: fila.id,
                     name: fila.nombre,
-                    episode: navigator.current,
-                    onShowEvolution: { seccion = .evolucion }
+                    episode: navigator.current
                 ) { datos, episodio in
                     await modelo.enviarFormulario("ficha_save", datos: datos, episodio: episodio, api: sesion.api)
                 }
@@ -121,10 +120,7 @@ struct PacienteView: View {
                 PatientEvolutionView(
                     patientId: fila.id,
                     current: navigator.current,
-                    reload: evolutionReload,
-                    // Otra ficha elegida en la evolución: el navegador la sigue sin dejar la
-                    // sección.
-                    onSelectEpisode: { selectEpisode($0) }
+                    reload: evolutionReload
                 ) { episodio in
                     selectEpisode(episodio)
                     seccion = .ficha

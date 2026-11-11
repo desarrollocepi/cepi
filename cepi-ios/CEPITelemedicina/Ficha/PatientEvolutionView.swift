@@ -4,8 +4,9 @@ import SwiftUI
 /// `EvolucionPaciente.vue` con `plegable=false` en el teléfono. Muestra las evoluciones (citas)
 /// de la **ficha abierta**, con su cabecera (motivo, fecha de apertura y estado), una tarjeta
 /// por evolución en orden de cita: la más vieja arriba y la más nueva abajo, justo encima del
-/// bloque «Próximo control» (PAPER §28.4.1). Arriba, «＋ Agregar evolución»; debajo, plegadas,
-/// las otras fichas del paciente. Tocar una tarjeta abre el formulario de esa evolución; tocar
+/// bloque «Próximo control» (PAPER §28.4.1), y al final «＋ Agregar evolución». Otra ficha del
+/// paciente se elige en el navegador de episodios de arriba. Tocar una tarjeta abre el
+/// formulario de esa evolución; tocar
 /// «Próximo control», el de la más nueva con el foco ahí. Las observaciones también se editan
 /// en línea (✏️): en una evolución registrada, `POST /api/bot/evolucion/editar`; en la fila
 /// armada, la sección 7 de la ficha (`g_7`). El documento imprimible (`evolucion.html`,
@@ -17,8 +18,6 @@ struct PatientEvolutionView: View {
     /// Quien la contiene la sube cada vez que la sección vuelve a la vista: se vuelve a pedir,
     /// porque entre una vez y otra se pudo guardar un diagnóstico.
     var reload = 0
-    /// Otra ficha elegida en «Otras fichas del paciente»: el navegador de episodios la sigue.
-    var onSelectEpisode: (String) -> Void = { _ in }
     /// Una ficha elegida en el documento imprimible: abre la sección Ficha.
     let onOpen: (String) -> Void
 
@@ -33,7 +32,6 @@ struct PatientEvolutionView: View {
     @State private var saving = false
     @State private var saveError: String?
     @State private var printing = false
-    @State private var showOthers = false
     @State private var adding = false
     /// La evolución cuyo formulario está abierto.
     @State private var editingForm: EditRequest?
@@ -163,8 +161,8 @@ struct PatientEvolutionView: View {
                             card(row)
                         }
                         nextControlFooter(group)
+                        addEvolutionButton(group)
                     }
-                    othersSection
                 }
                 .padding(12)
             }
@@ -172,19 +170,24 @@ struct PatientEvolutionView: View {
         }
     }
 
-    /// Cabecera de la ficha abierta (motivo, fecha de apertura, estado) y «＋ Agregar evolución»,
-    /// que nunca se esconde: con la ficha de alta sale gris con el motivo.
+    /// Cabecera de la ficha abierta: motivo, fecha de apertura y estado.
     private func groupHeader(_ group: EvolutionLogic.EpisodeGroup) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(EvolutionLogic.headerTitle(group))
+                .font(.headline)
+                .italic(group.motivo == nil)
+            Text(EvolutionLogic.headerDetail(group))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// «＋ Agregar evolución» al final, después del próximo control: la cita nueva queda debajo de
+    /// la última. Nunca se esconde: con la ficha de alta sale gris con el motivo al lado.
+    private func addEvolutionButton(_ group: EvolutionLogic.EpisodeGroup) -> some View {
         let reason = EvolutionLogic.addBlockReason(group: group, loading: loading)
-        return VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(EvolutionLogic.headerTitle(group))
-                    .font(.headline)
-                    .italic(group.motivo == nil)
-                Text(EvolutionLogic.headerDetail(group))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        return VStack(alignment: .leading, spacing: 6) {
             Button { adding = true } label: {
                 Label("＋ Agregar evolución", systemImage: "plus.circle")
                     .frame(maxWidth: .infinity)
@@ -249,43 +252,6 @@ struct PatientEvolutionView: View {
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-
-    /// «Otras fichas del paciente», plegadas: una línea por ficha; tocarla cambia a esa ficha.
-    private var othersSection: some View {
-        let others = EvolutionLogic.otherGroups(groups, current: effectiveCurrent)
-        return DisclosureGroup(isExpanded: $showOthers) {
-            if others.isEmpty {
-                Text("Es la única ficha de este paciente.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
-            }
-            ForEach(others) { group in
-                Button {
-                    onSelectEpisode(group.episodeId)
-                } label: {
-                    HStack {
-                        Text(EvolutionLogic.otherLine(group))
-                            .font(.subheadline)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Ver las evoluciones de esta ficha")
-                .accessibilityIdentifier("evolucion.otra.\(group.episodeId)")
-            }
-        } label: {
-            Text("Otras fichas del paciente (\(others.count))")
-                .font(.subheadline.weight(.semibold))
-        }
-        .padding(12)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func card(_ row: FilaEvolucion) -> some View {

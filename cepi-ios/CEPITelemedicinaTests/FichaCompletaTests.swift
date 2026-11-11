@@ -429,7 +429,7 @@ struct EvolutionLogicTests {
         // Un estado que la app no conoce se muestra tal cual.
         #expect(EvolutionLogic.statusLabel("pendiente_x") == "pendiente_x")
         #expect(EvolutionLogic.statusLabel(nil) == "Sin estado")
-        #expect(EvolutionLogic.otherLine(grupos[1]) == "Lunar · 2026-06-10 · Alta · 1 evolución")
+        #expect(EvolutionLogic.headerDetail(grupos[1]) == "Abierta el 2026-06-10 · Alta · 1 evolución")
         // Sin ninguna marcada como inicial, vale la más vieja.
         let sinInicial = EvolutionLogic.groups([fila("e9", evolution: "a", fecha: "2026-11-01"),
                                                 fila("e9", evolution: "b", fecha: "2026-09-01")])
@@ -444,9 +444,8 @@ struct EvolutionLogicTests {
         #expect(EvolutionLogic.openRows(paciente, current: nil).count == 3)
         #expect(EvolutionLogic.openRows(paciente, current: "otra").count == 3)
         let grupos = EvolutionLogic.groups(paciente)
-        #expect(EvolutionLogic.otherGroups(grupos, current: "e2").map(\.episodeId) == ["e1"])
-        #expect(EvolutionLogic.otherGroups(grupos, current: "e1").map(\.episodeId) == ["e2"])
-        #expect(EvolutionLogic.otherGroups([], current: nil).isEmpty)
+        #expect(EvolutionLogic.openGroup(grupos, current: "e1")?.episodeId == "e1")
+        #expect(EvolutionLogic.openGroup([], current: nil) == nil)
         #expect(EvolutionLogic.rowBadge(paciente[0]) == nil)
         #expect(EvolutionLogic.rowBadge(paciente[2]) == "Primera cita")
         #expect(EvolutionLogic.rowBadge(paciente[3]) == "Primera cita · datos de la ficha")

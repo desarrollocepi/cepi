@@ -60,12 +60,6 @@ enum EvolutionLogic {
         openGroup(groups(rows), current: current)?.rows ?? []
     }
 
-    /// «Otras fichas del paciente»: todas menos la abierta, en el mismo orden.
-    static func otherGroups(_ groups: [EpisodeGroup], current: String?) -> [EpisodeGroup] {
-        guard let open = openGroup(groups, current: current) else { return [] }
-        return groups.filter { $0.episodeId != open.episodeId }
-    }
-
     static func countText(_ count: Int) -> String {
         count == 1 ? "1 evolución" : "\(count) evoluciones"
     }
@@ -87,12 +81,6 @@ enum EvolutionLogic {
 
     static func headerDetail(_ group: EpisodeGroup) -> String {
         "Abierta el \(group.openedOn ?? "—") · \(statusLabel(group.estado)) · \(countText(group.count))"
-    }
-
-    /// Una línea de «Otras fichas del paciente»: motivo, fecha, estado y cuántas evoluciones.
-    static func otherLine(_ group: EpisodeGroup) -> String {
-        [headerTitle(group), group.openedOn ?? "—", statusLabel(group.estado), countText(group.count)]
-            .joined(separator: " · ")
     }
 
     /// Etiqueta de la primera cita: la foto guardada al agregar la primera evolución, o la ficha
