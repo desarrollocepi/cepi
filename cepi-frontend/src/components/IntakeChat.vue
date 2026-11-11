@@ -878,7 +878,8 @@ function nuevaConsulta() {
   showSections.value = false;
   showMenu.value = false;
   // Es un botón: ya lo confirmó al tocarlo (el gate es para lo que el agente infiere).
-  send('nuevo episodio', { explicit: true });
+  // `_explicit`: la primera pregunta de la ficha se muestra aunque «Auto» esté apagado.
+  send('nuevo episodio', { explicit: true, _explicit: true });
 }
 
 // Fetch + render the patient's merged group thread. Does not toggle busy (the

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Novedades CEPI Telemedicina</title>
+<style>
+  :root { --tinta: #2b2118; --suave: #6b5b4b; --marca: #8a6a3a; --borde: #e6dccb; --rojo: #e11d48; }
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--tinta); font: 11pt/1.5 "Segoe UI", "Noto Sans", Arial, sans-serif; }
+  .portada { height: 255mm; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; break-after: page; }
+  .portada img { width: 34mm; height: 34mm; border-radius: 8mm; margin-bottom: 10mm; }
+  .portada h1 { font-size: 28pt; margin: 0 0 4mm; color: var(--marca); font-weight: 700; }
+  .portada p { font-size: 15pt; margin: 0; color: var(--suave); }
+  .portada .nota { margin-top: 16mm; font-size: 10pt; max-width: 120mm; }
+  .indice { break-after: page; }
+  .indice h2 { color: var(--marca); }
+  .indice ol { padding-left: 6mm; }
+  .indice li { margin: 1.5mm 0; }
+  .novedad { break-inside: avoid; page-break-inside: avoid; border-top: 2px solid var(--borde); padding: 6mm 0 7mm; }
+  .novedad h2 { margin: 0 0 2mm; font-size: 15pt; color: var(--marca); }
+  .novedad h2 .n { color: var(--rojo); margin-right: 2mm; }
+  .novedad p { margin: 0 0 2mm; }
+  .donde { color: var(--suave); font-size: 10pt; }
+  .capturas { display: flex; gap: 6mm; justify-content: center; margin-top: 4mm; flex-wrap: wrap; }
+  .capturas figure { margin: 0; text-align: center; break-inside: avoid; }
+  .capturas img { width: 76mm; border: 1px solid var(--borde); border-radius: 3mm; display: block; }
+  .capturas img.icono { width: 40mm; border-radius: 9mm; }
+  .capturas figcaption { font-size: 9pt; color: var(--suave); margin-top: 1.5mm; max-width: 76mm; }
+  @media screen { body { max-width: 820px; margin: 0 auto; padding: 0 16px; } .portada { height: auto; padding: 60px 0; } }
+</style>
+</head>
+<body>
+
+<section class="portada">
+  <img src="16-icono-nuevo.png" alt="Ícono de CEPI Telemedicina">
+  <h1>CEPI Telemedicina — Novedades</h1>
+  <p>Semana del 4 al 11 de noviembre de 2026</p>
+  <p class="nota">Todo lo de este documento vale en la app de iPhone, en la de Android y en la versión web. Las capturas son de la versión web en tamaño de teléfono, con pacientes de prueba. En rojo, lo nuevo.</p>
+</section>
+
+<section class="indice">
+  <h2>Contenido</h2>
+  <ol>
+    <li>Evolución: una ficha con varias citas</li>
+    <li>Próximo control al pie de la evolución</li>
+    <li>Recorrer los episodios desde cualquier sección</li>
+    <li>«Imprimir» arriba en la Ficha</li>
+    <li>«Nueva consulta» empieza la ficha de inmediato</li>
+    <li>Responsable del caso y «Al responsable de turno»</li>
+    <li>Turnos: calendario de guardia</li>
+    <li>Controles: próximos controles de los pacientes</li>
+    <li>Responder interconsulta con prioridad clínica</li>
+    <li>Dar de alta al paciente</li>
+    <li>Consentimientos con foto</li>
+    <li>Nuevo paciente: celular obligatorio y aviso de cita</li>
+    <li>Cuenta pendiente de aprobación</li>
+    <li>Ícono nuevo</li>
+  </ol>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">1</span>Evolución: una ficha con varias citas</h2>
+  <p>Cuando el paciente vuelve a control por el mismo motivo, ya no hace falta abrir otra ficha: se agrega una evolución a la misma. Las evoluciones se leen como una historia clínica, de la más antigua arriba a la más reciente abajo.</p>
+  <p>Toque una evolución para abrirla y corregir fecha, hallazgos, diagnóstico, tratamiento, observaciones o próximo control. Las observaciones también se editan directamente con el lápiz ✏️.</p>
+  <p class="donde">Dónde: paciente → pestaña <b>Evolución</b>.</p>
+  <div class="capturas">
+    <figure><img src="01-evolucion-lista.png" alt=""><figcaption>(1) La evolución más reciente queda abajo. (2) Lápiz para editar las observaciones.</figcaption></figure>
+    <figure><img src="02-evolucion-editar.png" alt=""><figcaption>Al tocar una evolución se abre su formulario para editarla.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">2</span>Próximo control al pie de la evolución</h2>
+  <p>Debajo de la última evolución aparece el próximo control: la fecha, qué hacer y si está atrasado, es hoy o es próximo. Tóquelo para cambiar la fecha o la indicación.</p>
+  <p>Al final está el botón «＋ Agregar evolución» para registrar la cita de control de hoy.</p>
+  <p class="donde">Dónde: paciente → <b>Evolución</b>, al final de la página.</p>
+  <div class="capturas">
+    <figure><img src="03-proximo-control.png" alt=""><figcaption>(1) Próximo control, editable al tocarlo. (2) «＋ Agregar evolución».</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">3</span>Recorrer los episodios desde cualquier sección</h2>
+  <p>La barra «Episodio N de M», con «Anterior» y «Siguiente», ahora está en Chat, Ficha, Evolución e Imágenes. El episodio que elija vale para las cuatro secciones.</p>
+  <p>En Imágenes se ven las fotos de ese episodio; con «Ver todas» se ven las de todas las consultas del paciente.</p>
+  <p class="donde">Dónde: debajo de las pestañas del paciente.</p>
+  <div class="capturas">
+    <figure><img src="04-navegador-episodios.png" alt=""><figcaption>(1) Barra de episodios. (2) «Ver todas» las fotos del paciente.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">4</span>«Imprimir» arriba en la Ficha</h2>
+  <p>El botón «Imprimir» está ahora arriba en la Ficha, en el mismo lugar que en Evolución. Abre la ficha lista para imprimir o guardar en PDF.</p>
+  <p class="donde">Dónde: paciente → <b>Ficha</b>, esquina superior derecha.</p>
+  <div class="capturas">
+    <figure><img src="05-imprimir-ficha.png" alt=""><figcaption>«Imprimir» arriba en la Ficha.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">5</span>«Nueva consulta» empieza la ficha de inmediato</h2>
+  <p>Al tocar «＋ Nueva consulta» la ficha se crea sin pedir confirmación y aparece enseguida la primera pregunta. Use «Nueva consulta» para otro motivo de consulta; para un control del mismo motivo, use «＋ Agregar evolución».</p>
+  <p class="donde">Dónde: paciente → Chat → menú ☰ → «＋ Nueva consulta».</p>
+  <div class="capturas">
+    <figure><img src="06-nueva-consulta.png" alt=""><figcaption>(1) Consulta abierta. (2) Primera pregunta de la ficha.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">6</span>Responsable del caso y «Al responsable de turno»</h2>
+  <p>Quien abre la consulta queda como su responsable. Nadie más recibe aviso hasta que el caso se derive.</p>
+  <p>Para pedir la opinión del especialista, en «Derivar» toque «Al responsable de turno»: el caso le llega solo a quien está de guardia ese día. Si nadie está de turno, les llega a todos los especialistas del grupo.</p>
+  <p class="donde">Dónde: paciente → Chat → menú ☰ → «Derivar».</p>
+  <div class="capturas">
+    <figure><img src="07-al-responsable.png" alt=""><figcaption>«Al responsable de turno» en la ventana de Derivar.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">7</span>Turnos: calendario de guardia</h2>
+  <p>Calendario semanal, de lunes a domingo, con el especialista de guardia de cada semana. Arriba dice quién es el responsable de turno hoy. Los especialistas pueden asignar o quitar personas en cada semana.</p>
+  <p class="donde">Dónde: menú ☰ de arriba → «Turnos».</p>
+  <div class="capturas">
+    <figure><img src="08b-menu-turnos-controles.png" alt=""><figcaption>(1) Turnos y (2) Controles en el menú de arriba.</figcaption></figure>
+    <figure><img src="08-turnos.png" alt=""><figcaption>Responsable de turno hoy y la semana en curso.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">8</span>Controles: próximos controles de los pacientes</h2>
+  <p>Lista de los próximos controles de todos los pacientes, agrupados por semana. Los atrasados salen arriba, en rojo. Cada uno dice el paciente, la fecha, qué hacer, el diagnóstico y el médico que lo indicó. Sirve para que no se pierda ningún seguimiento con el cambio de internos.</p>
+  <p>Puede buscar por nombre o cédula. Al tocar un control se abre el paciente.</p>
+  <p class="donde">Dónde: menú ☰ de arriba → «Controles».</p>
+  <div class="capturas">
+    <figure><img src="09-controles.png" alt=""><figcaption>(1) Buscador. (2) Un control con su fecha y qué hacer.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">9</span>Responder interconsulta con prioridad clínica</h2>
+  <p>El especialista responde la interconsulta desde un formulario: respuesta, diagnóstico, tratamiento, observaciones y prioridad clínica (Urgente, Preferente o Programada). La respuesta queda guardada en la ficha y en la evolución, y el paciente deja de figurar como pendiente de revisar. La prioridad reemplaza a la pregunta BLINK.</p>
+  <p>La prioridad se ve como una etiqueta de color en la lista de pacientes. Marcar «Urgente» no envía avisos por sí solo: para avisar al supervisor hay que derivarle el caso.</p>
+  <p class="donde">Dónde: paciente → Chat → menú ☰ → «Responder interconsulta».</p>
+  <div class="capturas">
+    <figure><img src="10-responder-interconsulta.png" alt=""><figcaption>Prioridad clínica en el formulario de respuesta.</figcaption></figure>
+    <figure><img src="11-prioridad-lista.png" alt=""><figcaption>Etiqueta de prioridad en la lista de pacientes.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">10</span>Dar de alta al paciente</h2>
+  <p>«Dar de alta» cierra el caso, con una nota opcional. Desde el día siguiente el paciente ya no aparece en la lista; se lo encuentra buscándolo o con el filtro «Alta». Si vuelve, se abre una consulta nueva con su propio motivo.</p>
+  <p class="donde">Dónde: paciente → Chat → menú ☰ → «Dar de alta».</p>
+  <div class="capturas">
+    <figure><img src="12a-dar-de-alta-menu.png" alt=""><figcaption>«Dar de alta» en el menú del paciente.</figcaption></figure>
+    <figure><img src="12b-dar-de-alta.png" alt=""><figcaption>Confirmación con nota opcional.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">11</span>Consentimientos con foto</h2>
+  <p>Dos recuadros propios, separados de las fotos clínicas: el consentimiento informado, que firma el paciente, y el de privacidad de los datos, que firma el profesional. En cada uno se sube la foto de la hoja firmada con «Subir foto». Valen para todas las consultas del paciente.</p>
+  <p class="donde">Dónde: paciente → pestaña <b>Imágenes</b>, arriba.</p>
+  <div class="capturas">
+    <figure><img src="13-consentimientos.png" alt=""><figcaption>(1) Consentimiento informado. (2) Privacidad de los datos.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">12</span>Nuevo paciente: celular obligatorio y aviso de cita</h2>
+  <p>Al registrar un paciente, el celular es obligatorio y el email es opcional.</p>
+  <p>Cuando usted fija o cambia el próximo control para hoy o una fecha futura, el paciente recibe un aviso de su cita por WhatsApp y por email (si tiene email registrado).</p>
+  <p class="donde">Dónde: lista de pacientes → «＋ Nuevo paciente».</p>
+  <div class="capturas">
+    <figure><img src="14-nuevo-paciente.png" alt=""><figcaption>(1) Celular obligatorio. (2) Email opcional.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">13</span>Cuenta pendiente de aprobación</h2>
+  <p>Una cuenta que todavía no está aprobada solo ve la pantalla de espera, sin acceso a pacientes ni a fotos. Si la persona ya tiene acceso en otra organización de CEPI, aparece un botón para entrar a esa organización.</p>
+  <p class="donde">Dónde: al iniciar sesión con una cuenta sin aprobar.</p>
+  <div class="capturas">
+    <figure><img src="15-cuenta-pendiente.png" alt=""><figcaption>Botón para entrar a la organización donde ya tiene acceso.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">14</span>Ícono nuevo</h2>
+  <p>El ícono de la app ya no lleva la palabra «Dermatosito». Se actualiza en el teléfono al instalar la versión nueva de la app.</p>
+  <div class="capturas">
+    <figure><img class="icono" src="16-icono-antes.png" alt=""><figcaption>Antes</figcaption></figure>
+    <figure><img class="icono" src="16-icono-nuevo.png" alt=""><figcaption>Ahora</figcaption></figure>
+  </div>
+</section>
+
+</body>
+</html>

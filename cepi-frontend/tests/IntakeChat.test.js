@@ -376,11 +376,13 @@ describe('IntakeChat — secciones y auto-form', () => {
     expect(api.chat).not.toHaveBeenCalled();
   });
 
-  it('"Nueva consulta" manda el comando', async () => {
+  it('"Nueva consulta" manda el comando y muestra la primera pregunta aunque el auto-form esté apagado', async () => {
     const w = await abrir();
+    api.chat.mockResolvedValue({ session_id: 's1', form: { id: 'ficha_grp_g1' } });
     await boton(w, '.ihead-actions > button', 'Nueva consulta').trigger('click');
     await flushPromises();
-    expect(api.chat).toHaveBeenLastCalledWith('nuevo episodio', 's1', { explicit: true });
+    expect(api.chat).toHaveBeenLastCalledWith('nuevo episodio', 's1', { explicit: true, _explicit: true });
+    expect(w.find('.iform').exists()).toBe(true);
   });
 });
 

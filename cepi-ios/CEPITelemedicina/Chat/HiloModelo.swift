@@ -87,7 +87,9 @@ final class HiloModelo {
         }
         guard !mensaje.isEmpty, !ocupado else { return false }
         adjunto = nil
-        return await turno(eco: mensaje, explicito: false, api: api) { sesion in
+        // Un botón (Nueva consulta, derivar…) pidió esto: el formulario que traiga la respuesta
+        // se muestra aunque «Auto» esté apagado, igual que al pedir una sección.
+        return await turno(eco: mensaje, explicito: accionExplicita, api: api) { sesion in
             try await api.chat(mensaje, sesion: sesion, explicito: accionExplicita)
         }
     }

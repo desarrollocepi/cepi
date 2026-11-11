@@ -125,7 +125,9 @@ class HiloModelo(
         }
         if (mensaje.isEmpty() || ocupado) return false
         adjunto = null
-        return turno(eco = mensaje, explicito = false) { sesion ->
+        // Un botón (Nueva consulta, derivar…) pidió esto: el formulario que traiga la respuesta
+        // se muestra aunque «Auto» esté apagado, igual que al pedir una sección.
+        return turno(eco = mensaje, explicito = accionExplicita) { sesion ->
             api.chat(mensaje, sesion, explicito = accionExplicita)
         }
     }
