@@ -3,6 +3,8 @@
     <!-- Páginas públicas (la calificación por QR, PAPER §29): sin login ni barra, con
          sesión o sin ella. -->
     <RouterView v-if="route.meta?.public" />
+    <!-- Sin aceptar la versión vigente de los términos no se ve nada más (PAPER §37). -->
+    <TermsModal v-else-if="authed && needsTerms" :user="user" :version="currentTermsVersion" @accepted="onTermsAccepted" @reject="onLogout" />
     <PendingApproval v-else-if="authed && isPending" :user="user" :switching="orgSwitching" @logout="onLogout" @switch-org="onSwitchOrg" />
     <template v-else>
     <header ref="topbarEl" class="topbar" :class="{ compact: topCompact }">
@@ -96,6 +98,8 @@ import Login from './components/Login.vue';
 import Register from './components/Register.vue';
 import VerifyEmail from './components/VerifyEmail.vue';
 import PendingApproval from './components/PendingApproval.vue';
+import TermsModal from './components/TermsModal.vue';
+import { needsTermsAcceptance, fetchCurrentTermsVersion, FALLBACK_TERMS_VERSION } from './terms.js';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import { inicioSegunHost, casosAllowedHere } from './router.js';
 import Notifications from './components/Notifications.vue';
@@ -227,6 +231,22 @@ function openConsole() {
     : (h === 'localhost' || h === '127.0.0.1' ? 'http://localhost:5175' : 'https://console.cepi.ec');
   window.open(target, '_blank', 'noopener');
 }
+// La versión vigente la dice el servidor (terminos.json), no el bundle: si cambia, se
+// vuelve a pedir aunque esta pestaña o la app sean viejas.
+const currentTermsVersion = ref(FALLBACK_TERMS_VERSION);
+const needsTerms = computed(() => needsTermsAcceptance(user.value, currentTermsVersion.value));
+async function checkTermsVersion() { currentTermsVersion.value = await fetchCurrentTermsVersion(); }
+// Una pestaña que queda abierta días también se entera al volver a ella.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && authed.value) checkTermsVersion();
+  });
+}
+// Tras aceptar, el backend devuelve el usuario con la versión ya guardada.
+function onTermsAccepted(u) {
+  if (u) user.value = u;
+  else refresh();
+}
 const isPending = computed(() => authed.value && user.value?.role === 'pendiente');
 
 // ── Notificaciones push (opt-in) ────────────────────────────────────────────
@@ -351,7 +371,7 @@ async function refresh() {
   validating.value = true;
   validationError.value = '';
   try {
-    const r = await whoami();
+    const [r] = await Promise.all([whoami(), checkTermsVersion()]);
     // Conservar/renovar el token en cada carga (sesión deslizante): así el
     // refresco NO fuerza un re-login y no se golpea el rate-limit de /login.
     if (r?.token) localStorage.setItem('cepi.jwt', r.token);

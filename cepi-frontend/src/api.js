@@ -245,6 +245,14 @@ export async function updateProfile(patch) {
   return res;
 }
 
+// Acepta los términos de uso en la versión mostrada (LOPDP, PAPER §37). Devuelve
+// { token, user } con `user.terms_version` ya actualizado.
+export async function acceptTerms(version) {
+  const res = await call('/api/auth/me/terms', { method: 'POST', body: JSON.stringify({ version }) });
+  if (res?.token) localStorage.setItem('cepi.jwt', res.token);
+  return res;
+}
+
 // Multi-tenancy: cambio de org activa. La LISTA de orgs llega en whoami()
 // (`user.orgs`); el selector del topbar lee de ahí.
 export async function switchOrg(orgId) {

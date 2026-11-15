@@ -25,6 +25,9 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api') ||
       url.pathname.startsWith('/telegram') ||
       url.pathname.startsWith('/whatsapp')) return;
+  // Los términos de uso y su versión vigente (PAPER §37): cacheados, una versión nueva
+  // nunca se volvería a pedir.
+  if (url.pathname.startsWith('/terminos')) return;
 
   // App navigations: network-first, fall back to the cached shell when offline.
   if (req.mode === 'navigate') {

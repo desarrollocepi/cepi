@@ -763,6 +763,7 @@ Mantener el streaming SSE actual. Las *tool calls* **no** se streamean al usuari
   - Consentimiento informado almacenado por paciente.
   - Derecho de acceso, rectificación, eliminación: el paciente puede pedir export/borrado.
   - Registro de tratamiento (qué se almacena, finalidad, base legal).
+  - Términos y condiciones de uso aceptados por cada usuario tras el login, con versión y prueba del consentimiento (§37).
 - **Auditoría**: cada *tool call* del bot deja entrada en `chatter` con `created_by = bot:<user_id>`. Cada uso de break-glass deja entrada en chatter de la entidad accedida.
 
 #### 13.3.1 Regla obligatoria de PII inbound vs outbound (D-4)
@@ -3494,3 +3495,51 @@ El aviso sale cuando esa fecha **cambia a una fecha de hoy o futura** (Ecuador).
   tiene ninguno.
 - El email sale por Brevo desde `desarrollo@cepi.ec` (asunto «Tu próxima cita en CEPI:
   <fecha>»), con el mismo texto que la plantilla.
+
+## 37. Términos y condiciones de uso tras el login (pedido del dueño, 2026-11-15)
+
+**Qué.** Después de iniciar sesión, quien no aceptó la versión vigente de los términos y
+condiciones ve un modal con el texto y dos salidas: «Acepto» (con la casilla «Leí y acepto»
+marcada) o «No acepto», que cierra la sesión. Hasta aceptar no se ve nada de la app ni se
+cargan datos: ni la barra, ni la lista, ni la pantalla de cuenta pendiente. Vale para la web,
+la APK, iOS y Android. Si los términos cambian a una versión nueva, se vuelven a pedir a todos.
+
+**Por qué.** La LOPDP exige un consentimiento libre, específico, informado e inequívoco (art. 8)
+y que el responsable pueda demostrarlo. Los usuarios son profesionales que, además de ser
+titulares de sus datos, tratan datos de salud de pacientes: el texto también les fija el deber
+de confidencialidad.
+
+**El texto** vive en `cepi-frontend/public/terminos.html` (público, en
+`telemedicina.cepi.ec/terminos.html`, se puede enlazar desde las tiendas) y complementa
+`privacidad.html`: responsable, datos tratados, finalidades y base legal, obligaciones del
+profesional, encargados y transferencia internacional, asistente de IA, conservación, derechos,
+revocación, seguridad, uso aceptable, cambios y ley aplicable. Lo tiene que revisar un abogado
+antes de considerarse definitivo.
+
+**Versión.** La vigente la dice `cepi-frontend/public/terminos.json` (`{"version": "AAAA-MM-DD"}`),
+que leen los cuatro clientes en cada validación de sesión (web: al cargar, al ingresar y al
+volver a la pestaña; apps: al abrir y al volver a primer plano). No vive en el código de las
+apps: si cada cliente tuviera su constante, una app vieja guardaría la versión anterior encima
+de la nueva y la web la volvería a pedir. Cambiar los términos es:
+
+1. Editar `terminos.html` (versión y fecha en el encabezado).
+2. Subir la versión en `terminos.json` y en el `<meta name="terms-version">` del html.
+3. Subir la constante de respaldo (`FALLBACK_TERMS_VERSION` en `src/terms.js`, `Terms.kt`,
+   `fallbackTermsVersion` en `TermsView.swift`) — solo se usa sin red; no hace falta publicar
+   las apps para que se pida la versión nueva.
+4. Push a `master`: con el deploy de la web, a todos se les pide de nuevo.
+
+**Backend (TodoERP, genérico).** `GET /auth/me` devuelve `terms_version` y `terms_accepted_at`.
+`POST /auth/me/terms {version}` guarda `users.data.terms = {version, accepted_at, ip, user_agent}`
+y agrega la misma entrada a `users.data.terms_history`, que es la prueba de cada aceptación.
+El backend no conoce el texto ni decide la versión vigente: es un registro de consentimiento
+reutilizable por cualquier dominio.
+
+**Clientes.** Web: `TermsModal.vue`, que `App.vue` pinta antes que todo lo demás. Android:
+estado `Sesion.Estado.Terms` y `TermsScreen` (`app/Terms.kt`). iOS: `Sesion.Estado.terms` y
+`TermsView`. Las apps muestran `terminos.html` en un WebView desde `webBase`. Los UI tests de
+iOS aceptan los términos si aparecen (`StackLocal.aceptarTerminosSiAparecen`).
+
+**Fuera de alcance.** La consola de administración (`console.cepi.ec`) y los canales de chat
+(WhatsApp, Telegram) no muestran este modal.
+

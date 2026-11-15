@@ -3,12 +3,13 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import { h, defineComponent } from 'vue';
 
-vi.mock('../src/api.js', () => ({ whoami: vi.fn(), logout: vi.fn(), switchOrg: vi.fn(), obtenerEntidad: vi.fn() }));
+vi.mock('../src/api.js', () => ({ whoami: vi.fn(), logout: vi.fn(), switchOrg: vi.fn(), obtenerEntidad: vi.fn(), acceptTerms: vi.fn() }));
 vi.mock('../src/pwa.js', () => ({ enableWebPush: vi.fn() }));
 vi.mock('../src/router.js', () => ({ inicioSegunHost: () => '/chat', casosAllowedHere: () => true }));
 import * as api from '../src/api.js';
 import { enableWebPush } from '../src/pwa.js';
 import App from '../src/App.vue';
+const TERMS_VERSION = '2026-11-15';
 
 const doble = (name, emits = [], props = []) => defineComponent({ name, props, emits, render: () => h('div', { class: 'd-' + name }) });
 const Login = doble('Login', ['logged-in', 'go-register']);
@@ -18,7 +19,7 @@ const PendingApproval = doble('PendingApproval', ['logout']);
 const Notifications = doble('Notifications', ['open'], ['user']);
 const Pantalla = doble('Pantalla', ['head', 'back', 'aviso', 'saved', 'logout'], ['user']);
 
-const USUARIO = { id: 'u1', email: 'ana@cepi.ec', role: 'medico_primario', org_id: 'o1', permissions: [], orgs: [{ id: 'o1', name: 'CEPI Telemedicina' }, { id: 'o2', name: 'CEPI Consultorio' }] };
+const USUARIO = { id: 'u1', email: 'ana@cepi.ec', role: 'medico_primario', terms_version: TERMS_VERSION, org_id: 'o1', permissions: [], orgs: [{ id: 'o1', name: 'CEPI Telemedicina' }, { id: 'o2', name: 'CEPI Consultorio' }] };
 
 async function montar({ ruta = '/chat', token = 'tok' } = {}) {
   if (token) localStorage.setItem('cepi.jwt', token);
@@ -43,6 +44,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   recargas = 0;
   Object.defineProperty(window, 'location', { value: { hostname: 'telemedicina.cepi.ec', protocol: 'https:', reload: () => { recargas++; } }, configurable: true, writable: true });
+  // terminos.json dice la versión vigente (PAPER §37).
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: TERMS_VERSION }) });
   api.whoami.mockResolvedValue({ token: 'renovado', user: USUARIO });
   api.logout.mockImplementation(() => { localStorage.removeItem('cepi.jwt'); });
 });
@@ -342,5 +345,81 @@ describe('App — instalar la app', () => {
     conUA('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36');
     const { w } = await montar();
     expect(boton(w, 'Instalar app')).toBeUndefined();
+  });
+});
+
+
+describe('App — términos y condiciones (PAPER §37)', () => {
+  it('sin términos aceptados muestra solo el modal: ni barra ni pantalla', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, terms_version: null } });
+    const { w } = await montar();
+    expect(w.find('.terminos').exists()).toBe(true);
+    expect(w.find('.topbar').exists()).toBe(false);
+    expect(w.findComponent(Pantalla).exists()).toBe(false);
+  });
+
+  it('con una versión vieja también lo pide, y avisa que cambiaron', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, terms_version: '2000-01-01' } });
+    const { w } = await montar();
+    expect(w.find('.terminos').text()).toContain('cambiaron');
+  });
+
+  it('el usuario pendiente de aprobación también tiene que aceptarlos primero', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, role: 'pendiente', terms_version: null } });
+    const { w } = await montar();
+    expect(w.find('.terminos').exists()).toBe(true);
+    expect(w.findComponent(PendingApproval).exists()).toBe(false);
+  });
+
+  it('«Acepto» guarda la versión vigente y entra a la app', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, terms_version: null } });
+    api.acceptTerms.mockResolvedValue({ token: 't2', user: USUARIO });
+    const { w } = await montar();
+    const aceptar = w.find('.terminos .aceptar');
+    expect(aceptar.attributes('disabled')).toBeDefined();
+    await w.find('.terminos input[type=checkbox]').setValue(true);
+    expect(aceptar.attributes('disabled')).toBeUndefined();
+    await aceptar.trigger('click');
+    await flushPromises();
+    expect(api.acceptTerms).toHaveBeenCalledWith(TERMS_VERSION);
+    expect(w.find('.terminos').exists()).toBe(false);
+    expect(w.findComponent(Pantalla).exists()).toBe(true);
+  });
+
+  it('si no se puede guardar, sigue en el modal con el error', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, terms_version: null } });
+    api.acceptTerms.mockRejectedValue(new Error('HTTP 500'));
+    const { w } = await montar();
+    await w.find('.terminos input[type=checkbox]').setValue(true);
+    await w.find('.terminos .aceptar').trigger('click');
+    await flushPromises();
+    expect(w.find('.terminos .error').text()).toContain('HTTP 500');
+    expect(w.findComponent(Pantalla).exists()).toBe(false);
+  });
+
+  it('«No acepto» cierra la sesión y vuelve al ingreso', async () => {
+    api.whoami.mockResolvedValue({ token: 'renovado', user: { ...USUARIO, terms_version: null } });
+    const { w } = await montar();
+    await w.find('.terminos .secundario').trigger('click');
+    await flushPromises();
+    expect(api.logout).toHaveBeenCalled();
+    expect(localStorage.getItem('cepi.jwt')).toBeNull();
+    expect(w.find('.terminos').exists()).toBe(false);
+    expect(w.findComponent(Login).exists()).toBe(true);
+  });
+
+  it('una versión nueva en terminos.json vuelve a pedirlos y se guarda esa versión', async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ version: '2027-01-01' }) });
+    {
+      api.acceptTerms.mockResolvedValue({ token: 't2', user: { ...USUARIO, terms_version: '2027-01-01' } });
+      const { w } = await montar();
+      expect(globalThis.fetch).toHaveBeenCalledWith('/terminos.json', { cache: 'no-store' });
+      expect(w.find('.terminos').text()).toContain('cambiaron');
+      await w.find('.terminos input[type=checkbox]').setValue(true);
+      await w.find('.terminos .aceptar').trigger('click');
+      await flushPromises();
+      expect(api.acceptTerms).toHaveBeenCalledWith('2027-01-01');
+      expect(w.findComponent(Pantalla).exists()).toBe(true);
+    }
   });
 });
