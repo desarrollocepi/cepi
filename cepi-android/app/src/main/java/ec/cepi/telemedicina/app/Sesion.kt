@@ -22,12 +22,16 @@ class Sesion(
     private val reloj: () -> Long = System::currentTimeMillis,
     /** Lo que se hace con la sesión todavía abierta antes de cerrarla: borrar el token de push. */
     private val antesDeSalir: suspend () -> Unit = {},
+    /** La versión vigente de los términos según `terminos.json` de la web; null = no respondió. */
+    private val termsVersionSource: suspend () -> String? = { null },
 ) {
     sealed interface Estado {
         data object Cargando : Estado
         data object SinSesion : Estado
         /** Cuenta activa pero todavía sin rol clínico (`role = 'pendiente'`). */
         data object Pendiente : Estado
+        /** Con sesión pero sin aceptar la versión vigente de los términos (PAPER §37). */
+        data object Terms : Estado
         data object Activa : Estado
         /** Hay token pero no se pudo validar (sin red, servidor caído). No es motivo para cerrar la sesión: se reintenta. */
         data class SinValidar(val motivo: String) : Estado
@@ -42,6 +46,13 @@ class Sesion(
         private set
 
     private var ultimaRenovacion = 0L
+
+    /**
+     * Versión vigente de los términos (PAPER §37). La dice el servidor, no la app: si cambia,
+     * se vuelve a pedir sin publicar otra versión de la app. Se relee en cada `renovar()`.
+     */
+    var currentTermsVersion: String by mutableStateOf(FALLBACK_TERMS_VERSION)
+        private set
 
     init {
         credenciales.alExpirar = { cerrarLocal() }
@@ -69,6 +80,7 @@ class Sesion(
     suspend fun renovar() {
         try {
             val respuesta = api.yo()
+            termsVersionSource()?.let { currentTermsVersion = it }
             credenciales.guardar(respuesta.token)
             ultimaRenovacion = reloj()
             aplicar(respuesta.user)
@@ -115,6 +127,13 @@ class Sesion(
         }
     }
 
+    /** «Acepto» en la pantalla de términos. Si falla, el error sube a la pantalla. */
+    suspend fun acceptTerms() {
+        val respuesta = api.acceptTerms(currentTermsVersion)
+        credenciales.guardar(respuesta.token)
+        aplicar(respuesta.user)
+    }
+
     suspend fun salir() {
         antesDeSalir()
         credenciales.guardar(null)
@@ -134,7 +153,11 @@ class Sesion(
 
     private fun aplicar(usuario: Usuario) {
         this.usuario = usuario
-        estado = if (usuario.role == "pendiente") Estado.Pendiente else Estado.Activa
+        estado = when {
+            usuario.termsVersion != currentTermsVersion -> Estado.Terms
+            usuario.role == "pendiente" -> Estado.Pendiente
+            else -> Estado.Activa
+        }
     }
 
     private fun cerrarLocal() {

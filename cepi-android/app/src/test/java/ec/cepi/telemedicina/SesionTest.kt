@@ -5,6 +5,7 @@ import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.Credenciales
 import ec.cepi.telemedicina.api.jsonCepi
 import ec.cepi.telemedicina.app.Sesion
+import ec.cepi.telemedicina.app.FALLBACK_TERMS_VERSION
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -25,15 +26,15 @@ class SesionTest {
     private fun me(token: String, org: String = "o1") = Respuesta.Http(
         200,
         """{"ok":true,"token":"$token","user":{"id":"u1","name":"Dra. Pérez","email":"p@cepi.ec",
-           "role":"medico_primario","permissions":[],"org_id":"$org",
+           "role":"medico_primario","permissions":[],"org_id":"$org","terms_version":"$FALLBACK_TERMS_VERSION",
            "orgs":[{"id":"o1","slug":"cepi","name":"CEPI"},{"id":"o2","slug":"cepi-testing","name":"CEPI Testing"}]}}""",
     )
 
     /** Una sesión con su propio almacén y su propio servidor falso. */
-    private class Prueba(token: String?) {
+    private class Prueba(token: String?, termsVersion: String? = null) {
         val servidor = ServidorFalso()
         val credenciales = Credenciales(AlmacenMemoria(token))
-        val sesion = Sesion(credenciales, servidor.api(credenciales))
+        val sesion = Sesion(credenciales, servidor.api(credenciales), termsVersionSource = { termsVersion })
         fun token() = runBlocking { credenciales.token() }
     }
 
@@ -118,7 +119,7 @@ class SesionTest {
         val prueba = Prueba("t0")
         prueba.servidor.fijar(
             "GET /api/auth/me",
-            Respuesta.Http(200, """{"ok":true,"token":"t1","user":{"id":"u","email":"x@cepi.ec","role":"pendiente"}}"""),
+            Respuesta.Http(200, """{"ok":true,"token":"t1","user":{"id":"u","email":"x@cepi.ec","role":"pendiente","terms_version":"$FALLBACK_TERMS_VERSION"}}"""),
         )
 
         prueba.sesion.restaurar()
@@ -234,5 +235,72 @@ class SesionTest {
 
         assertEquals("nuevo", credenciales.token())
         assertFalse(expiro)
+    }
+
+    // Términos de uso (PAPER §37): sin aceptar la versión vigente no se entra, ni siendo pendiente.
+
+    @Test
+    fun sinTerminosAceptadosPideAceptarlos() = runBlocking {
+        for (version in listOf("null", "\"2000-01-01\"")) {
+            val prueba = Prueba("t0")
+            prueba.servidor.fijar(
+                "GET /api/auth/me",
+                Respuesta.Http(200, """{"ok":true,"token":"t1","user":{"id":"u","email":"x@cepi.ec","role":"pendiente","terms_version":$version}}"""),
+            )
+            prueba.sesion.restaurar()
+            assertEquals(Sesion.Estado.Terms, prueba.sesion.estado)
+        }
+    }
+
+    @Test
+    fun aceptarLosTerminosMandaLaVersionYEntra() = runBlocking {
+        val prueba = Prueba("t0")
+        prueba.servidor.fijar(
+            "GET /api/auth/me",
+            Respuesta.Http(200, """{"ok":true,"token":"t1","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario"}}"""),
+        )
+        prueba.servidor.fijar("POST /api/auth/me/terms", me(token = "t2"))
+        prueba.sesion.restaurar()
+        assertEquals(Sesion.Estado.Terms, prueba.sesion.estado)
+
+        prueba.sesion.acceptTerms()
+
+        val cuerpo = jsonCepi.decodeFromString<JsonObject>(prueba.servidor.cuerpo("POST /api/auth/me/terms")!!)
+        assertEquals(FALLBACK_TERMS_VERSION, cuerpo["version"]!!.jsonPrimitive.content)
+        assertEquals(Sesion.Estado.Activa, prueba.sesion.estado)
+        assertEquals("t2", prueba.token())
+    }
+
+    @Test
+    fun siNoSeGuardaLaAceptacionSigueEnLosTerminos() = runBlocking {
+        val prueba = Prueba("t0")
+        prueba.servidor.fijar(
+            "GET /api/auth/me",
+            Respuesta.Http(200, """{"ok":true,"token":"t1","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario"}}"""),
+        )
+        prueba.servidor.fijar("POST /api/auth/me/terms", Respuesta.Http(500, """{"ok":false,"error":"Internal server error"}"""))
+        prueba.sesion.restaurar()
+
+        assertThrows(ApiError::class.java) { runBlocking { prueba.sesion.acceptTerms() } }
+        assertEquals(Sesion.Estado.Terms, prueba.sesion.estado)
+    }
+
+    @Test
+    fun unaVersionNuevaEnElServidorVuelveAPedirlosYSeGuardaEsa() = runBlocking {
+        val prueba = Prueba("t0", termsVersion = "2027-01-01")
+        prueba.servidor.fijar("GET /api/auth/me", me(token = "t1"))
+        prueba.servidor.fijar(
+            "POST /api/auth/me/terms",
+            Respuesta.Http(200, """{"ok":true,"token":"t2","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario","terms_version":"2027-01-01"}}"""),
+        )
+        prueba.sesion.restaurar()
+        // Había aceptado la versión anterior: se le pide la nueva.
+        assertEquals(Sesion.Estado.Terms, prueba.sesion.estado)
+
+        prueba.sesion.acceptTerms()
+
+        val cuerpo = jsonCepi.decodeFromString<JsonObject>(prueba.servidor.cuerpo("POST /api/auth/me/terms")!!)
+        assertEquals("2027-01-01", cuerpo["version"]!!.jsonPrimitive.content)
+        assertEquals(Sesion.Estado.Activa, prueba.sesion.estado)
     }
 }

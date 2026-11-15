@@ -25,6 +25,10 @@ class CepiApi(val cliente: ApiClient) {
 
     suspend fun yo(): SesionRespuesta = cliente.get("/api/auth/me")
 
+    /** Acepta los términos de uso en la versión mostrada (PAPER §37); reemite el token. */
+    suspend fun acceptTerms(version: String): SesionRespuesta =
+        cliente.post("/api/auth/me/terms", buildJsonObject { put("version", version) })
+
     suspend fun cambiarOrganizacion(id: String): TokenRespuesta =
         cliente.post("/api/orgs/switch", buildJsonObject { put("org_id", id) })
 

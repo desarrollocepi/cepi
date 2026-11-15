@@ -48,7 +48,11 @@ class Entorno(
             val imagenes = Imagenes.crear(contexto, http, config.apiBase, credenciales, api)
             val fcm = FuenteFcm(contexto)
             val registro = RegistroPush(api, fcm)
-            val sesion = Sesion(credenciales, api, antesDeSalir = { registro.olvidar() })
+            val sesion = Sesion(
+                credenciales, api,
+                antesDeSalir = { registro.olvidar() },
+                termsVersionSource = { fetchCurrentTermsVersion(http, config.webBase) },
+            )
             return Entorno(config, sesion, imagenes, registro, fcm)
         }
     }

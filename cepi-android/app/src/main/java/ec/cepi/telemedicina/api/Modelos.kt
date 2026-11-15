@@ -57,6 +57,8 @@ data class Usuario(
     val permissions: List<String> = emptyList(),
     @SerialName("org_id") val orgActiva: String? = null,
     val orgs: List<Organizacion> = emptyList(),
+    /** Última versión de los términos de uso que aceptó; null = nunca (PAPER §37). */
+    @SerialName("terms_version") val termsVersion: String? = null,
 ) {
     /** El backend es quien manda; esto solo decide si se ofrece una acción. */
     fun puede(permiso: String): Boolean = "*:*:*:*" in permissions || permiso in permissions

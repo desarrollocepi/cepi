@@ -42,6 +42,7 @@ fun Raiz(entorno: Entorno) {
         when (val estado = sesion.estado) {
             Sesion.Estado.Cargando -> Box(contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             Sesion.Estado.SinSesion -> Login(entorno)
+            Sesion.Estado.Terms -> TermsScreen(entorno)
             Sesion.Estado.Pendiente -> Pendiente(sesion)
             Sesion.Estado.Activa -> Principal(entorno)
             is Sesion.Estado.SinValidar -> SinValidar(sesion, estado.motivo)

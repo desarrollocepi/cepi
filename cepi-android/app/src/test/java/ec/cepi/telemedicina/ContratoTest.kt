@@ -35,10 +35,12 @@ class ContratoTest {
             {"ok":true,"token":"abc","user":{"id":"u1","name":"Dra. Pérez","email":"p@cepi.ec",
              "role":"medico_primario","phone":"","cedula":"","permissions":["entity:x:record:create"],
              "org_id":"o2","orgs":[{"id":"o1","slug":"cepi","name":"CEPI","role_in_org":"member"},
-             {"id":"o2","slug":"cepi-testing","name":"CEPI Testing","role_in_org":"member"}]}}
+             {"id":"o2","slug":"cepi-testing","name":"CEPI Testing","role_in_org":"member"}],
+             "terms_version":"2026-11-15","terms_accepted_at":"2026-11-15T16:40:00.000Z"}}
             """,
         )
         assertEquals("abc", respuesta.token)
+        assertEquals("2026-11-15", respuesta.user.termsVersion)
         assertEquals("o2", respuesta.user.orgActiva)
         assertEquals(listOf("CEPI", "CEPI Testing"), respuesta.user.orgs.map { it.name })
         assertEquals(listOf("entity:x:record:create"), respuesta.user.permissions)
