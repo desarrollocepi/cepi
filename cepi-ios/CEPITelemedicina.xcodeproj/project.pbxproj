@@ -341,7 +341,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -376,7 +376,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -395,7 +395,7 @@
 				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = KLR354RZKZ;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -413,7 +413,7 @@
 				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = KLR354RZKZ;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -430,7 +430,7 @@
 				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = KLR354RZKZ;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -447,7 +447,7 @@
 				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = KLR354RZKZ;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = ec.cepi.telemedicina.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
