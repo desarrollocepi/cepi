@@ -9,7 +9,7 @@ import Testing
 struct SesionTests {
     private static let usuarioJSON = """
         {"id":"u1","name":"Dra. Pérez","email":"p@cepi.ec","role":"medico_primario","permissions":[],
-         "org_id":"%@","orgs":[{"id":"o1","slug":"cepi","name":"CEPI"},{"id":"o2","slug":"cepi-testing","name":"CEPI Testing"}]}
+         "org_id":"%@","terms_version":"2026-11-15","orgs":[{"id":"o1","slug":"cepi","name":"CEPI"},{"id":"o2","slug":"cepi-testing","name":"CEPI Testing"}]}
         """
 
     private static func me(token: String, org: String = "o1") -> ServidorFalso.Respuesta {
@@ -159,6 +159,64 @@ struct SesionTests {
         #expect(await prueba.credenciales.token() == "t2")
         await prueba.cerrar()
     }
+
+    // MARK: Términos de uso (PAPER §37): sin aceptar la versión vigente no se entra.
+
+    @Test(arguments: ["null", #""2000-01-01""#])
+    func sinTerminosAceptadosPideAceptarlos(version: String) async {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", .http(200, #"{"ok":true,"token":"t1","user":{"id":"u","email":"x@cepi.ec","role":"pendiente","terms_version":"# + version + "}}"))
+
+        await prueba.sesion.restaurar()
+
+        #expect(prueba.sesion.estado == .terms)
+        await prueba.cerrar()
+    }
+
+    @Test func aceptarLosTerminosMandaLaVersionYEntra() async throws {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", .http(200, #"{"ok":true,"token":"t1","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario"}}"#))
+        prueba.servidor.fijar("POST /api/auth/me/terms", Self.me(token: "t2"))
+        await prueba.sesion.restaurar()
+        #expect(prueba.sesion.estado == .terms)
+
+        try await prueba.sesion.acceptTerms()
+
+        let cuerpo = try #require(prueba.servidor.cuerpo(de: "POST /api/auth/me/terms"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == ["version": fallbackTermsVersion])
+        #expect(prueba.sesion.estado == .activa)
+        #expect(await prueba.credenciales.token() == "t2")
+        await prueba.cerrar()
+    }
+
+    @Test func siNoSeGuardaLaAceptacionSigueEnLosTerminos() async {
+        let prueba = await Prueba(token: "t0")
+        prueba.servidor.fijar("GET /api/auth/me", .http(200, #"{"ok":true,"token":"t1","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario"}}"#))
+        prueba.servidor.fijar("POST /api/auth/me/terms", .http(500, #"{"ok":false,"error":"Internal server error"}"#))
+        await prueba.sesion.restaurar()
+
+        await #expect(throws: (any Error).self) { try await prueba.sesion.acceptTerms() }
+        #expect(prueba.sesion.estado == .terms)
+        await prueba.cerrar()
+    }
+
+    @Test func unaVersionNuevaEnElServidorVuelveAPedirlosYSeGuardaEsa() async throws {
+        let prueba = await Prueba(token: "t0", termsVersion: "2027-01-01")
+        prueba.servidor.fijar("GET /api/auth/me", Self.me(token: "t1"))
+        prueba.servidor.fijar("POST /api/auth/me/terms", .http(200, #"{"ok":true,"token":"t2","user":{"id":"u1","email":"p@cepi.ec","role":"medico_primario","terms_version":"2027-01-01"}}"#))
+        await prueba.sesion.restaurar()
+        // Había aceptado la versión anterior: se le pide la nueva.
+        #expect(prueba.sesion.estado == .terms)
+
+        try await prueba.sesion.acceptTerms()
+
+        let cuerpo = try #require(prueba.servidor.cuerpo(de: "POST /api/auth/me/terms"))
+        let json = try #require(try JSONSerialization.jsonObject(with: cuerpo) as? [String: String])
+        #expect(json == ["version": "2027-01-01"])
+        #expect(prueba.sesion.estado == .activa)
+        await prueba.cerrar()
+    }
 }
 
 private extension Sesion.Estado {
@@ -175,12 +233,12 @@ private struct Prueba {
     let credenciales = Credenciales(cuenta: "prueba-\(UUID().uuidString)")
     let sesion: Sesion
 
-    init(token: String) async {
+    init(token: String, termsVersion: String? = nil) async {
         await credenciales.guardar(token)
         let base = URL(string: "https://\(servidor.host)")!
         let red = URLSessionConfiguration.ephemeral
         red.protocolClasses = [ProtocoloFalso.self]
-        sesion = Sesion(credenciales: credenciales, base: base, baseBot: base, red: red)
+        sesion = Sesion(credenciales: credenciales, base: base, baseBot: base, red: red, termsVersionSource: { termsVersion })
     }
 
     func cerrar() async {

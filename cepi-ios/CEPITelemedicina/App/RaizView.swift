@@ -14,6 +14,8 @@ struct RaizView: View {
                     .controlSize(.large)
             case .sinSesion:
                 LoginView()
+            case .terms:
+                TermsView()
             case .pendiente:
                 PendienteView()
             case .activa:

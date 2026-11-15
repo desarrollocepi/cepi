@@ -19,6 +19,7 @@ final class OrganizacionUITests: XCTestCase {
         ]
         app.launch()
         StackLocal.descartarGuardarContrasena(en: app)
+        StackLocal.aceptarTerminosSiAparecen(en: app)
 
         // La lista es perezosa: se compara con la primera fila, que siempre está en pantalla.
         // Por el nombre, no por lo primero que haya en la fila: el círculo de iniciales también

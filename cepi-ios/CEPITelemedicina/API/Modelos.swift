@@ -120,10 +120,13 @@ struct Usuario: Decodable, Sendable, Equatable {
     let permissions: [String]
     let orgActiva: String?
     let orgs: [Organizacion]
+    /// Última versión de los términos de uso que aceptó; nil = nunca (PAPER §37).
+    let termsVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, email, role, permissions, orgs
         case orgActiva = "org_id"
+        case termsVersion = "terms_version"
     }
 
     // `/login` puede no traer `orgs` ni `org_id` (AuthResponse los declara opcionales).
@@ -136,6 +139,7 @@ struct Usuario: Decodable, Sendable, Equatable {
         permissions = try contenedor.decodeIfPresent([String].self, forKey: .permissions) ?? []
         orgActiva = try contenedor.decodeIfPresent(String.self, forKey: .orgActiva)
         orgs = try contenedor.decodeIfPresent([Organizacion].self, forKey: .orgs) ?? []
+        termsVersion = try contenedor.decodeIfPresent(String.self, forKey: .termsVersion)
     }
 }
 

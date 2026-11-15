@@ -15,6 +15,7 @@ final class DosPacientesUITests: XCTestCase {
         ]
         app.launch()
         StackLocal.descartarGuardarContrasena(en: app)
+        StackLocal.aceptarTerminosSiAparecen(en: app)
 
         for indice in 0..<3 {
             let celda = app.cells.element(boundBy: indice)

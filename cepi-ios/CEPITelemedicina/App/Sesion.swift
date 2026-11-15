@@ -15,6 +15,8 @@ final class Sesion {
         case sinSesion
         /// Cuenta activa pero todavía sin rol clínico (`role = 'pendiente'`).
         case pendiente
+        /// Con sesión pero sin aceptar la versión vigente de los términos (PAPER §37).
+        case terms
         case activa
         /// Hay token pero no se pudo validar (sin red, servidor caído). No es motivo para
         /// cerrar la sesión: se reintenta.
@@ -25,17 +27,23 @@ final class Sesion {
     private(set) var usuario: Usuario?
     /// Mientras se cambia de org: la lista muestra la espera en vez de la org anterior.
     private(set) var cambiandoOrganizacion = false
+    /// Versión vigente de los términos (PAPER §37). La dice el servidor (`terminos.json`), no
+    /// la app: si cambia, se vuelve a pedir sin publicar otra versión. Se relee en cada `renovar()`.
+    private(set) var currentTermsVersion = fallbackTermsVersion
 
     let api: CEPIAPI
     @ObservationIgnored private let credenciales: Credenciales
     @ObservationIgnored private var ultimaRenovacion: Date = .distantPast
     @ObservationIgnored private var escucha: Task<Void, Never>?
+    @ObservationIgnored private let termsVersionSource: @Sendable () async -> String?
 
     init(
         credenciales: Credenciales = .compartidas, base: URL = Config.apiBase, baseBot: URL = Config.botBase,
-        red: URLSessionConfiguration = .default
+        red: URLSessionConfiguration = .default,
+        termsVersionSource: @escaping @Sendable () async -> String? = { await fetchCurrentTermsVersion(web: Config.webBase) }
     ) {
         self.credenciales = credenciales
+        self.termsVersionSource = termsVersionSource
         api = CEPIAPI(cliente: APIClient(base: base, baseBot: baseBot, credenciales: credenciales, configuracion: red))
         escucha = Task { [weak self, credenciales] in
             for await _ in credenciales.expiraciones {
@@ -66,6 +74,7 @@ final class Sesion {
     func renovar() async {
         do {
             let respuesta = try await api.yo()
+            if let version = await termsVersionSource() { currentTermsVersion = version }
             await credenciales.guardar(respuesta.token)
             ultimaRenovacion = .now
             aplicar(respuesta.user)
@@ -109,6 +118,13 @@ final class Sesion {
         await renovar()
     }
 
+    /// «Acepto» en la pantalla de términos. Si falla, el error sube a la pantalla.
+    func acceptTerms() async throws {
+        let respuesta = try await api.acceptTerms(version: currentTermsVersion)
+        await credenciales.guardar(respuesta.token)
+        aplicar(respuesta.user)
+    }
+
     func salir() async {
         await credenciales.guardar(nil)
         cerrarLocal()
@@ -123,7 +139,11 @@ final class Sesion {
 
     private func aplicar(_ usuario: Usuario) {
         self.usuario = usuario
-        estado = usuario.role == "pendiente" ? .pendiente : .activa
+        if usuario.termsVersion != currentTermsVersion {
+            estado = .terms
+        } else {
+            estado = usuario.role == "pendiente" ? .pendiente : .activa
+        }
     }
 
     private func cerrarLocal() {

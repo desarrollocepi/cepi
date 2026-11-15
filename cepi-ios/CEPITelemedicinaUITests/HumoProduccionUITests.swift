@@ -23,6 +23,7 @@ final class HumoProduccionUITests: XCTestCase {
         app.launchEnvironment = ["CEPI_DEV_EMAIL": email, "CEPI_DEV_PASSWORD": clave]
         app.launch()
         StackLocal.descartarGuardarContrasena(en: app)
+        StackLocal.aceptarTerminosSiAparecen(en: app)
 
         // Lista de pacientes.
         XCTAssertTrue(app.buttons["Nuevo paciente"].waitForExistence(timeout: 60), "No cargó la lista de pacientes")

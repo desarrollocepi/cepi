@@ -36,7 +36,27 @@ enum StackLocal {
         ]
         app.launch()
         descartarGuardarContrasena(en: app)
+        aceptarTerminosSiAparecen(en: app)
         return app
+    }
+
+    /// Si la cuenta no aceptó la versión vigente de los términos (PAPER §37), sale esa
+    /// pantalla antes que todo: se aceptan como lo haría una persona. Si ya estaban
+    /// aceptados, vuelve en cuanto se ve la app.
+    static func aceptarTerminosSiAparecen(en app: XCUIApplication, espera: TimeInterval = 60) {
+        let acepto = app.buttons["Acepto"]
+        let dentro = [
+            app.buttons["Nuevo paciente"], app.buttons["Volver a comprobar"],
+            app.buttons["Acciones"], app.searchFields.firstMatch,
+        ]
+        let limite = Date.now.addingTimeInterval(espera)
+        while Date.now < limite, !acepto.exists, !dentro.contains(where: \.exists) {
+            RunLoop.current.run(until: .now.addingTimeInterval(0.5))
+        }
+        guard acepto.exists else { return }
+        // El Toggle ocupa todo el ancho: el interruptor está a la derecha.
+        app.switches["terminos.leido"].coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        acepto.tap()
     }
 
     /// Toca el campo hasta que tenga el teclado y reemplaza su texto. En este simulador el

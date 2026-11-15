@@ -176,14 +176,17 @@ final class RevisorUITests: XCTestCase {
         let email = app.textFields["Email"]
         let lista = app.searchFields.firstMatch
         let pendiente = app.buttons["Volver a comprobar"]
+        let terminos = app.buttons["No acepto"]
         let limite = Date.now.addingTimeInterval(60)
-        while Date.now < limite, !email.exists, !lista.exists, !pendiente.exists {
+        while Date.now < limite, !email.exists, !lista.exists, !pendiente.exists, !terminos.exists {
             RunLoop.current.run(until: .now.addingTimeInterval(0.5))
         }
         if lista.exists {
             menuCuenta(app, "Cerrar sesión")
         } else if pendiente.exists {
             app.buttons["Cerrar sesión"].tap()
+        } else if terminos.exists {
+            terminos.tap()
         }
         XCTAssertTrue(email.waitForExistence(timeout: 30), "No apareció el login")
         return app
@@ -195,6 +198,8 @@ final class RevisorUITests: XCTestCase {
         escribir(app.secureTextFields["Contraseña"], Self.clave)
         app.buttons["Ingresar"].tap()
         StackLocal.descartarGuardarContrasena(en: app)
+        // Quien revisa la app ve los términos al primer ingreso y los acepta (PAPER §37).
+        StackLocal.aceptarTerminosSiAparecen(en: app)
     }
 
     /// Toca `boton` hasta que `listo` se cumpla. Un toque perdido no debería tumbar el test:

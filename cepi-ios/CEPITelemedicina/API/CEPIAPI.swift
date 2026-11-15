@@ -22,6 +22,11 @@ struct CEPIAPI: Sendable {
         try await cliente.get("/api/auth/me")
     }
 
+    /// Acepta los términos de uso en la versión mostrada (PAPER §37); reemite el token.
+    func acceptTerms(version: String) async throws -> SesionRespuesta {
+        try await cliente.post("/api/auth/me/terms", json: ["version": version])
+    }
+
     func cambiarOrganizacion(_ id: String) async throws -> TokenRespuesta {
         try await cliente.post("/api/orgs/switch", json: ["org_id": id])
     }
