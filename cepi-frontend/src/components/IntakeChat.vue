@@ -66,7 +66,8 @@
       <!-- Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece «Marcar
            revisado»; al marcarlo queda la etiqueta «✓ Revisado» (para siempre) y vuelve
            «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra. -->
-      <span v-if="flujo.revisadoAlgunaVez" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
+      <span v-if="flujo.enRevision" class="rev-label revisando" :title="`La tomaste para revisar el ${fechaCorta(myReview.claimed_at)}`">🙋 Revisando</span>
+      <span v-else-if="flujo.revisadoAlgunaVez" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
       <button
         v-if="flujo.revisar" type="button" class="iderivado-ok tomar"
         :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Tomar el paciente para revisarlo'"
@@ -556,6 +557,7 @@ async function cargarDerivados() {
 //   1. «🙋 Revisar» toma el paciente (claim) → aparece «Marcar revisado».
 //   2. «Marcar revisado» (complete_review only_mine) → etiqueta «✓ Revisado» y vuelve «🙋 Revisar».
 //   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
+//   Mientras revisas (tomaste y no marcaste), la etiqueta dice «🙋 Revisando».
 // Estás «revisando» si la consulta es tuya y la tomaste después de tu última marca.
 const revisando = ref(false);
 const myReview = ref({ claimed_at: null, reviewed_at: null });
@@ -583,6 +585,7 @@ const flujo = computed(() => {
   const motivoRevisar = motivo || (r && !esMia && !canReassign.value ? `La tiene a cargo ${nombreResp.value}` : '');
   return {
     revisadoAlgunaVez: !!marcada,
+    enRevision,
     revisar: canClaim.value && !enRevision,
     motivo: motivoRevisar,
     // Sin permiso de tomar casos (p. ej. un especialista al que se lo derivaron) marca directo.
@@ -1311,6 +1314,7 @@ defineExpose({ openPatient, newGeneral, activarEpisodio });
 }
 .iderivado-ok:disabled { background: transparent; color: #fed7aa; opacity: .55; cursor: not-allowed; }
 .iderivado-ok.tomar:not(:disabled) { background: #0e7490; border-color: #a5f3fc; }
+.rev-label.revisando { background: rgba(249, 115, 22, .3); color: #fed7aa; border-color: #fdba74; }
 .rev-label {
   flex-shrink: 0; padding: 3px 9px; border-radius: 999px; font-weight: 700; white-space: nowrap;
   background: rgba(34, 197, 94, .25); color: #bbf7d0; border: 1px solid #86efac;
