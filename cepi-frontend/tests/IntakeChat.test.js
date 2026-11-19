@@ -5,6 +5,7 @@ vi.mock('../src/api.js', () => ({
   chat: vi.fn(), saveSessionId: vi.fn(), uploadAttachment: vi.fn(), listGroups: vi.fn(),
   listGroupMembers: vi.fn(), listEntityDerivations: vi.fn(), listBotSessions: vi.fn(),
   getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(), darDeAlta: vi.fn(),
+  markReviewed: vi.fn(),
 }));
 vi.mock('../src/native/speech.js', () => ({ dictationSupported: false, createDictation: vi.fn() }));
 import * as api from '../src/api.js';
@@ -458,8 +459,9 @@ describe('IntakeChat — derivar', () => {
   it('a quien ya está derivado se lo marca y no se lo puede volver a elegir', async () => {
     api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'u2', name: 'Dra. Colega' }] });
     const w = await abrir();
-    expect(w.find('.iderivado').text()).toContain('Derivado a Dra. Colega');
-    await w.find('.iderivado').trigger('click');
+    expect(w.find('.iderivado').text()).toContain('Derivado a');
+    expect(w.find('.iderivado').text()).toContain('Dra. Colega');
+    await w.find('.iderivado-who').trigger('click');
     await flushPromises();
     await w.findAll('.dg-expand')[1].trigger('click');
     await flushPromises();
@@ -593,6 +595,55 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
     await flushPromises();
     expect(form.find('.ri-error').text()).toBe('Esta consulta no tiene una interconsulta pendiente');
     expect(w.emitted('respondida')).toBeUndefined();
+  });
+});
+
+describe('IntakeChat — «Revisado» por médico (PAPER §38)', () => {
+  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('Marcar como revisado'));
+
+  it('con una revisión mía abierta: marca, recarga los estados y avisa a la lista', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'yo', name: 'Yo' }, { user_id: 'u2', name: 'Dra. B' }], revisados: [] });
+    api.markReviewed.mockResolvedValue({ ok: true, data: { cleared: 1, remaining: 1 } });
+    const w = await abrir();
+    const btn = w.find('.iderivado-ok');
+    expect(btn.attributes('disabled')).toBeUndefined();
+    expect(delMenu(w).attributes('disabled')).toBeUndefined();
+    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'u2', name: 'Dra. B' }], revisados: [{ user_id: 'yo', name: 'Yo' }] });
+    await btn.trigger('click');
+    await flushPromises();
+    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
+    expect(w.emitted('respondida')).toHaveLength(1);
+    expect(w.find('.rev-st.ok').text()).toBe('✓ Yo');
+    expect(w.find('.rev-st.pend').text()).toBe('Dra. B');
+    expect(w.find('.iderivado-ok').attributes('disabled')).toBeDefined();
+    expect(w.find('.iderivado-ok').attributes('title')).toBe('Ya marcaste esta consulta como revisada');
+    expect(turnos(w).some((t) => t.includes('Marcado como revisado'))).toBe(true);
+  });
+
+  it('sin revisión mía: el botón está, gris y con el motivo', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'u2', name: 'Dra. B' }] });
+    const w = await abrir();
+    const btn = w.find('.iderivado-ok');
+    expect(btn.attributes('disabled')).toBeDefined();
+    expect(btn.attributes('title')).toBe('No tienes una revisión pendiente en esta consulta');
+    expect(delMenu(w).attributes('disabled')).toBeDefined();
+  });
+
+  it('sin derivaciones no hay franja, pero el botón del menú sigue ahí, gris', async () => {
+    const w = await abrir();
+    expect(w.find('.iderivado').exists()).toBe(false);
+    expect(delMenu(w).attributes('disabled')).toBeDefined();
+    expect(delMenu(w).attributes('title')).toBe('No tienes una revisión pendiente en esta consulta');
+  });
+
+  it('si falla, lo dice en el chat y no avisa a la lista', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'yo', name: 'Yo' }] });
+    api.markReviewed.mockRejectedValue(new Error('sin red'));
+    const w = await abrir();
+    await w.find('.iderivado-ok').trigger('click');
+    await flushPromises();
+    expect(w.emitted('respondida')).toBeUndefined();
+    expect(turnos(w).some((t) => t.includes('No se pudo marcar como revisado: sin red'))).toBe(true);
   });
 });
 

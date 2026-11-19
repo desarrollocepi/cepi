@@ -105,9 +105,19 @@ export async function listGroupMembers(idOrSlug) {
   return call(`/api/groups/${encodeURIComponent(idOrSlug)}/members`, { method: 'GET' });
 }
 
-// A quién está derivado un episodio ahora mismo (revisiones pendientes).
+// A quién está derivado un episodio ahora mismo: `derivados` (revisiones abiertas) y
+// `revisados` (quién ya marcó «Revisado» en la derivación vigente, PAPER §38).
 export async function listEntityDerivations(entityId) {
   return call(`/api/review-queue/entity/${encodeURIComponent(entityId)}`, { method: 'GET' });
+}
+
+// «Revisado» de quien llama (PAPER §38): cierra solo SU revisión abierta del episodio; los
+// demás revisores siguen pendientes. Acción explícita: sin gate.
+export async function markReviewed(entityId) {
+  return call(`/api/entities/${encodeURIComponent(entityId)}/complete_review`, {
+    method: 'POST',
+    body: JSON.stringify({ only_mine: true }),
+  });
 }
 
 

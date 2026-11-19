@@ -32,6 +32,10 @@
           :title="responderMotivo || 'Responder la interconsulta: queda en la ficha y le llega al médico que envió el caso'"
         >✅ Responder interconsulta</button>
         <button
+          type="button" class="ihead-revisado" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
+          :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
+        >☑️ Marcar como revisado</button>
+        <button
           type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
           :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
         >🏁 Dar de alta</button>
@@ -43,10 +47,19 @@
     <!-- Las consultas se recorren con el navegador de episodios de arriba (ChatShell, PAPER
          §28.4.1); el chat muestra la del episodio elegido. -->
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
-    <button
-      v-if="patientName && derivados.length" type="button" class="iderivado"
-      @click="openDerivar" title="Ver o cambiar la derivación"
-    >↪️ Derivado a <b>{{ derivadosTexto }}</b></button>
+    <!-- A quién está derivada la consulta y el estado de cada uno (PAPER §38). Tocar los
+         nombres abre Derivar; «Revisado» cierra solo la revisión de quien lo toca. -->
+    <div v-if="patientName && (derivados.length || revisados.length)" class="iderivado">
+      <button type="button" class="iderivado-who" @click="openDerivar" title="Ver o cambiar la derivación">
+        ↪️ Derivado a
+        <span v-for="d in derivados" :key="'p' + d.user_id" class="rev-st pend" :title="`${d.name || d.email}: revisión pendiente`">{{ d.name || d.email }}</span>
+        <span v-for="d in revisados" :key="'r' + d.user_id" class="rev-st ok" :title="`${d.name || d.email}: ya lo revisó`">✓ {{ d.name || d.email }}</span>
+      </button>
+      <button
+        type="button" class="iderivado-ok" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
+        :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
+      >{{ revisando ? 'Guardando…' : '✓ Revisado' }}</button>
+    </div>
 
     <div class="ifeed" ref="feedEl">
       <!-- Hasta que llega el hilo guardado se dice "Cargando…": el texto de bienvenida se
@@ -230,7 +243,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
+import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, markReviewed, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
 import ResponderInterconsulta from './ResponderInterconsulta.vue';
 import DarDeAlta from './DarDeAlta.vue';
 import MessageContent from './MessageContent.vue';
@@ -485,6 +498,7 @@ const groupMembers   = ref({});          // slug → members[] (cached)
 // A quién está derivado el episodio activo (revisiones pendientes) y qué destinos marcó
 // el usuario para la próxima derivación: `circulo:<slug>` o `persona:<uuid>`.
 const derivados      = ref([]);
+const revisados      = ref([]);          // quién ya marcó «Revisado» (PAPER §38)
 const seleccion      = ref([]);
 
 const derivadosTexto = computed(() => {
@@ -501,11 +515,46 @@ function alternarSeleccion(token) {
 
 async function cargarDerivados() {
   const epId = activeEpisodeId.value;
-  if (!epId) { derivados.value = []; return; }
+  if (!epId) { derivados.value = []; revisados.value = []; return; }
   try {
     const r = await listEntityDerivations(epId);
+    if (activeEpisodeId.value !== epId) return;
     derivados.value = Array.isArray(r?.derivados) ? r.derivados : [];
-  } catch { derivados.value = []; }
+    revisados.value = Array.isArray(r?.revisados) ? r.revisados : [];
+  } catch { derivados.value = []; revisados.value = []; }
+}
+
+// «Revisado» (PAPER §38): el botón está siempre; gris con el motivo cuando no aplica.
+const revisando = ref(false);
+const revisadoMotivo = computed(() => {
+  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
+  if (!isActiveEpisode.value) return 'Es una consulta anterior: solo se revisa la vigente';
+  const yo = props.user?.id;
+  if (yo && revisados.value.some(d => d.user_id === yo)) return 'Ya marcaste esta consulta como revisada';
+  if (!yo || !derivadoIds.value.has(yo)) return 'No tienes una revisión pendiente en esta consulta';
+  return '';
+});
+async function marcarRevisado() {
+  const epId = activeEpisodeId.value;
+  if (!epId || revisadoMotivo.value || revisando.value) return;
+  revisando.value = true;
+  showMenu.value = false;
+  try {
+    await markReviewed(epId);
+    messages.value = [...messages.value, {
+      role: 'assistant', is_bot: true, episode_id: epId,
+      content: '☑️ Marcado como revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes.',
+    }];
+    await cargarDerivados();
+    emit('respondida');      // ChatShell recarga la lista: el paciente sale de «revisar»
+  } catch (e) {
+    messages.value = [...messages.value, {
+      role: 'assistant', is_bot: true, episode_id: epId,
+      content: `⚠️ No se pudo marcar como revisado: ${e?.message || 'error de red'}`,
+    }];
+  } finally {
+    revisando.value = false;
+  }
 }
 
 // Un solo envío para todo lo marcado: "derivar a <slug>, <uuid>, … [motivo]".
@@ -1165,10 +1214,22 @@ defineExpose({ openPatient, newGeneral, activarEpisodio });
 .derivar-resp:disabled { opacity: .5; cursor: not-allowed; }
 .derivar-error { margin: 6px 14px; color: #c43d3d; font-size: 0.82rem; }
 .iderivado {
-  display: block; width: 100%; text-align: left;
-  padding: 6px 12px; border: 0; border-bottom: 1px solid var(--border, #334155);
-  background: #7c2d12; color: #fed7aa; font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 4px 8px 4px 12px; border-bottom: 1px solid var(--border, #334155);
+  background: #7c2d12; color: #fed7aa; font-size: 12px;
 }
+.iderivado-who {
+  flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  text-align: left; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.rev-st { padding: 1px 7px; border-radius: 999px; font-weight: 700; white-space: nowrap; }
+.rev-st.pend { background: rgba(249, 115, 22, .25); }
+.rev-st.ok { background: rgba(34, 197, 94, .25); color: #bbf7d0; }
+.iderivado-ok {
+  flex-shrink: 0; padding: 4px 10px; border: 1px solid #fed7aa; border-radius: 999px;
+  background: #f97316; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.iderivado-ok:disabled { background: transparent; color: #fed7aa; opacity: .55; cursor: not-allowed; }
 .derivar-go {
   width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; border: 0;
   background: #6366f1; color: #fff; font-weight: 700; cursor: pointer;

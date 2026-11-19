@@ -855,6 +855,8 @@ Acción explícita del médico para que un caso lo revisen colegas. **Nunca auto
   recordatorio de revisión pendiente en el registro o quien puede pedir revisiones;
   idempotente. Antes no existía y la campana de "revisar" seguía encendida después de
   responder (feedback de las dermatólogas, ver §30).
+  Con `only_mine: true` cierra solo el recordatorio de quien llama: el «Revisado» de cada
+  revisor (§38). «Pendiente» es **abierto**: todo lo que no está `done` ni `cancelled`.
 
 ### 13.7 Registros por organización y org sandbox (D-Aux-21) — capacidad genérica
 
@@ -3542,4 +3544,54 @@ iOS aceptan los términos si aparecen (`StackLocal.aceptarTerminosSiAparecen`).
 
 **Fuera de alcance.** La consola de administración (`console.cepi.ec`) y los canales de chat
 (WhatsApp, Telegram) no muestran este modal.
+
+
+## 38. «Revisado» por médico en un caso derivado (pedido de una interna, 2026-11-19)
+
+**Pedido.** «Me sigue saliendo *revisar* cuando ya respondo.» El dueño lo precisa: cada médico
+al que se le asignó o derivó un caso tiene un estado propio en ese caso, y lo cambia con un
+botón «Revisado».
+
+**Por qué seguía saliendo.** Dos causas:
+
+1. Responder por el chat no cierra nada. La campana solo se apagaba con «Responder
+   interconsulta» (§30), que además la apaga para **todos** los revisores. Quien solo miró
+   el caso, o lo comentó por el chat, no tenía cómo decir «ya lo vi».
+2. **Bug.** `request_review` deja el recordatorio con vencimiento a 24 h; al vencer, el
+   scheduler lo pasa a `sent` (o a `failed` si el correo rebota). La campana
+   (`GET /api/review-queue`) contaba todo lo que no está `done` ni `cancelled`, pero
+   `complete_review`, el reemplazo de una derivación y la lista de derivados filtraban
+   `status = 'pending'`. Pasadas 24 h la campana quedaba encendida para siempre y el caso
+   dejaba de figurar como «Derivado a». En producción, 18 de 29 recordatorios de revisión
+   estaban en ese estado.
+
+### 38.1 Qué cambia
+
+- **Abierta = ni `done` ni `cancelled`**, en todos los lugares que leen o cierran revisiones:
+  `complete_review`, el reemplazo de `request_review`, `GET /api/review-queue/entity/:id` y
+  los `derivados` de `GET /api/patient-assignments`. Estos dos últimos, además, cuentan solo
+  recordatorios «Revisión solicitada»: un próximo control (§33) no es una derivación.
+- **«Revisado» de un revisor**: `POST /api/entities/:id/complete_review {only_mine: true}`
+  (tool `entities.complete_review` con `only_mine`). Cierra solo los recordatorios de
+  revisión de quien llama, con `result = 'Revisado'`, y anota «Revisado por X.» en el
+  chatter. Los demás revisores siguen pendientes. Sin recordatorio propio abierto responde
+  ok con `cleared = 0`. Es acción explícita del usuario: sin gate (§13.3.1). Genérico: no
+  sabe de medicina.
+- **Estado por revisor**: `GET /api/review-queue/entity/:id` devuelve, junto a `derivados`
+  (pendientes), `revisados: [{user_id, name, email, revisado_en, reminder_id}]`: quién marcó
+  «Revisado» en la derivación vigente (el último lote de `request_review`, que comparte
+  `created_at`). Una derivación nueva arranca con todos pendientes.
+- «Responder interconsulta» (§30) sigue cerrando a todos: responder es cerrar el caso;
+  revisar es decir «lo vi».
+
+### 38.2 Interfaz (web, iOS y Android)
+
+- En la franja «Derivado a …» del paciente, cada revisor con su estado: pendiente o
+  ✓ revisado. A la derecha, el botón **«Revisado»**: habilitado si quien mira tiene una
+  revisión abierta en la consulta; si no, gris con el motivo («No tienes una revisión
+  pendiente en esta consulta»). Mientras haya derivados o revisados, la franja se ve.
+- El mismo «Marcar como revisado» en el menú de acciones del paciente: ahí está siempre,
+  gris con el motivo cuando no aplica (nunca se oculta un botón).
+- Al marcarlo, la lista se recarga y el paciente sale de «revisar» para quien lo marcó; para
+  los otros revisores sigue igual.
 
