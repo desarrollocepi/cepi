@@ -66,7 +66,6 @@
       <!-- Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece «Marcar
            revisado»; al marcarlo queda la etiqueta «✓ Revisado» (para siempre) y vuelve
            «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra. -->
-      <span v-if="flujo.revisadoAlgunaVez && !flujo.marcar" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
       <button
         v-if="flujo.revisar" type="button" class="iderivado-ok tomar"
         :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Tomar el paciente para revisarlo'"
@@ -75,6 +74,7 @@
         v-if="flujo.marcar" type="button" class="iderivado-ok"
         :disabled="busy || revisando || !!flujo.motivoMarcar" @click="marcarRevisado" :title="flujo.motivoMarcar || 'Marcar que ya lo revisaste'"
       >{{ revisando ? 'Guardando…' : '☑️ Marcar revisado' }}</button>
+      <span v-if="flujo.revisadoAlgunaVez && !flujo.marcar" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
     </div>
 
     <div class="ifeed" ref="feedEl">

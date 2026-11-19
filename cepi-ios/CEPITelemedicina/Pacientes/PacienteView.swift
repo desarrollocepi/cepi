@@ -111,15 +111,6 @@ struct PacienteView: View {
                     // Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece
                     // «☑️ Marcar revisado»; al marcarlo queda la etiqueta «✓ Revisado» y vuelve
                     // «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra.
-                    if reviewFlow.showReviewedLabel {
-                        Text("✓ Revisado")
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.green.opacity(0.22), in: Capsule())
-                            .foregroundStyle(Color.green)
-                            .help(reviewedOnHint)
-                            .accessibilityHint(reviewedOnHint)
-                    }
                     if reviewFlow.showReview {
                         Button {
                             requestReview()
@@ -145,6 +136,16 @@ struct PacienteView: View {
                         .disabled(reviewing || modelo.ocupado || reviewFlow.markBlockReason != nil)
                         .help(reviewFlow.markBlockReason ?? ReviewStatus.markHint)
                         .accessibilityHint(reviewFlow.markBlockReason ?? ReviewStatus.markHint)
+                    }
+                    // La etiqueta va a la derecha, después de los botones.
+                    if reviewFlow.showReviewedLabel {
+                        Text("✓ Revisado")
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.green.opacity(0.22), in: Capsule())
+                            .foregroundStyle(Color.green)
+                            .help(reviewedOnHint)
+                            .accessibilityHint(reviewedOnHint)
                     }
                 }
                 .font(.caption.weight(.semibold))

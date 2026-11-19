@@ -713,16 +713,6 @@ private fun ReviewStrip(
                 }
                 reasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
             }
-            // La etiqueta «✓ Revisado» si la marqué al menos una vez y no se ve «Marcar revisado».
-            when (reviewFlow.badge) {
-                CaseReview.Badge.Reviewed -> ReviewBadge(
-                    text = "✓ Revisado",
-                    background = Color(0x4022C55E),
-                    textColor = color,
-                    description = shortDate(myReview.reviewedAt)?.let { "Lo revisaste el $it" } ?: "Ya lo revisaste",
-                )
-                null -> Unit
-            }
             // Sin permiso de tomar casos «🙋 Revisar» no se muestra (excepción por permisos).
             if (reviewFlow.showClaim) {
                 TextButton(
@@ -745,6 +735,17 @@ private fun ReviewStrip(
                 ) {
                     if (reviewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("☑️ Marcar revisado")
                 }
+            }
+            // La etiqueta, a la derecha de los botones: «✓ Revisado» si la marqué al menos una vez
+            // y no se ve «Marcar revisado».
+            when (reviewFlow.badge) {
+                CaseReview.Badge.Reviewed -> ReviewBadge(
+                    text = "✓ Revisado",
+                    background = Color(0x4022C55E),
+                    textColor = color,
+                    description = shortDate(myReview.reviewedAt)?.let { "Lo revisaste el $it" } ?: "Ya lo revisaste",
+                )
+                null -> Unit
             }
         }
     }
