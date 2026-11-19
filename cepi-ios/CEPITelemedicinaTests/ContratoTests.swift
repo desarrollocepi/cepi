@@ -416,6 +416,14 @@ struct ContratoTests {
         #expect(!otraRonda.showReviewedLabel)
         #expect(!otraRonda.showReview)
         #expect(otraRonda.showMark)
+        // Derivada a mí sin permiso de tomar, después de haberla marcado: con «☑️ Marcar revisado» a
+        // la vista no se muestra «✓ Revisado».
+        let derivadaOtraVez = flujo(
+            derivados: [Derivado(usuario: "u1", nombre: "Yo", email: nil)],
+            myReview: MyReview(reviewedAt: "2026-11-19T11:00:00.000Z"), canClaim: false
+        )
+        #expect(derivadaOtraVez.showMark)
+        #expect(!derivadaOtraVez.showReviewedLabel)
         // Se comparan fechas, no textos: con y sin milisegundos.
         #expect(ReviewStatus.isReviewing(isMine: true, myReview: MyReview(
             claimedAt: "2026-11-19T11:00:00.500Z", reviewedAt: "2026-11-19T11:00:00Z"

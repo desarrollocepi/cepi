@@ -336,16 +336,18 @@ object CaseReview {
         val othersOwner = owner?.takeIf { !isMine }?.comoSeLlama
         val claimReason = reason
             ?: if (othersOwner != null && !referrals.canReassign) "La tiene a cargo $othersOwner" else null
+        val showMark = inReview || (open && !referrals.canClaim)
         return Flow(
             reviewedOnce = reviewed != null,
+            // Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
             badge = when {
                 inReview -> Badge.Reviewing
-                reviewed != null -> Badge.Reviewed
+                reviewed != null && !showMark -> Badge.Reviewed
                 else -> null
             },
             showClaim = referrals.canClaim && !inReview,
             claimReason = claimReason,
-            showMark = inReview || (open && !referrals.canClaim),
+            showMark = showMark,
             markReason = reason,
             confirmOwner = othersOwner,
             inReview = inReview,

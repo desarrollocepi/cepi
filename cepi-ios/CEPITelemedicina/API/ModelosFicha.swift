@@ -339,7 +339,8 @@ enum ReviewStatus {
         let markBlockReason: String?
 
         /// La etiqueta «✓ Revisado» (texto, no botón): nunca junto con «🙋 Revisando».
-        var showReviewedLabel: Bool { !inReview && reviewedOnce }
+        /// Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
+        var showReviewedLabel: Bool { !inReview && reviewedOnce && !showMark }
     }
 
     static let noEpisodeReason = "Elige un paciente con una consulta abierta"

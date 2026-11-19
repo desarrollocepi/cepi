@@ -350,6 +350,10 @@ class ContratoTest {
         assertFalse(specialistDone.showClaim)
         assertFalse(specialistDone.showMark)
         assertEquals(CaseReview.Badge.Reviewed, specialistDone.badge)
+        // Derivada otra vez tras haberla marcado: con «Marcar revisado» a la vista no hay «✓ Revisado».
+        val specialistAgain = flow(refs(derivados = listOf("yo"), owner = "otro", reviewedAt = t11))
+        assertTrue(specialistAgain.showMark)
+        assertNull(specialistAgain.badge)
 
         // Sin nada: ni permiso ni derivación, nada se ve.
         val nothing = flow(refs())
