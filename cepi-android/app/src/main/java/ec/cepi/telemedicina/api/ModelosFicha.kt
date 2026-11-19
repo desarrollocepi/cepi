@@ -196,8 +196,50 @@ data class Derivado(
     val comoSeLlama: String get() = nombre ?: email ?: "Profesional"
 }
 
+/**
+ * Quién marcó «Revisado» en la derivación vigente (PAPER §38.1). Una derivación nueva arranca
+ * con todos pendientes.
+ */
 @Serializable
-data class Derivaciones(val derivados: List<Derivado> = emptyList())
+data class Revisado(
+    @SerialName("user_id") val usuario: String,
+    @SerialName("name") val nombre: String? = null,
+    val email: String? = null,
+    @SerialName("revisado_en") val reviewedAt: String? = null,
+) {
+    val comoSeLlama: String get() = nombre ?: email ?: "Profesional"
+}
+
+/**
+ * `derivados` = revisiones abiertas; `revisados` = las que su revisor cerró con «Revisado»
+ * (PAPER §38.1). Un servidor anterior a §38 no manda `revisados`.
+ */
+@Serializable
+data class Derivaciones(
+    val derivados: List<Derivado> = emptyList(),
+    val revisados: List<Revisado> = emptyList(),
+)
+
+/** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */
+@Serializable
+data class ReviewCompletion(
+    @SerialName("entity_id") val entityId: String? = null,
+    val cleared: Int = 0,
+    val remaining: Int = 0,
+)
+
+/**
+ * Cuándo se puede marcar «Revisado» (PAPER §38.2): solo quien tiene una revisión abierta en la
+ * consulta. Sin UI, para poder probarlo.
+ */
+object CaseReview {
+    const val NO_PENDING_REVIEW = "No tienes una revisión pendiente en esta consulta"
+    const val CONFIRMATION = "Marcado como revisado."
+
+    /** Por qué hoy no se puede marcar, o `null` si se puede. */
+    fun disabledReason(userId: String?, pending: List<Derivado>): String? =
+        if (userId != null && pending.any { it.usuario == userId }) null else NO_PENDING_REVIEW
+}
 
 @Serializable
 data class MiembroGrupo(

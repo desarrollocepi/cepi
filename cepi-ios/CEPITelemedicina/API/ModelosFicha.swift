@@ -190,8 +190,90 @@ struct Derivado: Decodable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// Un revisor que ya marcó «Revisado» en la derivación vigente (PAPER §38.1).
+struct Revisado: Decodable, Sendable, Hashable, Identifiable {
+    let usuario: String
+    let nombre: String?
+    let email: String?
+    let reviewedAt: String?
+
+    var id: String { usuario }
+    var comoSeLlama: String { nombre ?? email ?? "Profesional" }
+
+    enum CodingKeys: String, CodingKey {
+        case usuario = "user_id"
+        case nombre = "name"
+        case email
+        case reviewedAt = "revisado_en"
+    }
+}
+
+/// `GET /api/review-queue/entity/:id`: los pendientes (`derivados`) y quienes ya marcaron
+/// «Revisado» (`revisados`). Un servidor anterior a PAPER §38 no manda `revisados`.
 struct Derivaciones: Decodable, Sendable {
     let derivados: [Derivado]
+    let revisados: [Revisado]
+
+    init(derivados: [Derivado] = [], revisados: [Revisado] = []) {
+        self.derivados = derivados
+        self.revisados = revisados
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case derivados, revisados
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        derivados = try c.decodeIfPresent([Derivado].self, forKey: .derivados) ?? []
+        revisados = try c.decodeIfPresent([Revisado].self, forKey: .revisados) ?? []
+    }
+}
+
+/// «Revisado» de quien llama (PAPER §38.1): `POST /api/entities/:id/complete_review`.
+struct ReviewCompleteRequest: Encodable, Sendable {
+    let onlyMine: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case onlyMine = "only_mine"
+    }
+}
+
+/// La respuesta de `complete_review`: cuántas revisiones cerró y cuántas quedan abiertas.
+struct ReviewCompleteResult: Decodable, Sendable {
+    let entityId: String?
+    let cleared: Int
+    let remaining: Int
+
+    enum CodingKeys: String, CodingKey {
+        case entityId = "entity_id"
+        case cleared, remaining
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entityId = try c.decodeIfPresent(String.self, forKey: .entityId)
+        cleared = try c.decodeIfPresent(Int.self, forKey: .cleared) ?? 0
+        remaining = try c.decodeIfPresent(Int.self, forKey: .remaining) ?? 0
+    }
+}
+
+/// Lo que decide el botón «Revisado» y lo que dice la franja (PAPER §38.2).
+enum ReviewStatus {
+    static let noPendingReason = "No tienes una revisión pendiente en esta consulta"
+
+    /// nil si quien mira tiene una revisión abierta en la consulta; si no, el motivo.
+    static func blockReason(derivados: [Derivado], userId: String?) -> String? {
+        guard let userId, derivados.contains(where: { $0.usuario == userId }) else { return noPendingReason }
+        return nil
+    }
+
+    /// «Dra. B · pendiente, Dr. A ✓ revisado».
+    static func summary(derivados: [Derivado], revisados: [Revisado]) -> String {
+        let pending = derivados.map { "\($0.comoSeLlama) · pendiente" }
+        let done = revisados.map { "\($0.comoSeLlama) ✓ revisado" }
+        return (pending + done).joined(separator: ", ")
+    }
 }
 
 struct MiembroGrupo: Decodable, Sendable, Hashable, Identifiable {

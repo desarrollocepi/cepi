@@ -194,10 +194,21 @@ struct CEPIAPI: Sendable {
         return lista.data
     }
 
-    /// A quién está derivado el episodio ahora mismo.
-    func derivaciones(episodio id: String) async throws -> [Derivado] {
-        let r: Derivaciones = try await cliente.get("/api/review-queue/entity/\(id)")
-        return r.derivados
+    /// A quién está derivado el episodio ahora mismo (pendientes) y quién ya marcó
+    /// «Revisado» en la derivación vigente (PAPER §38.1).
+    func derivaciones(episodio id: String) async throws -> Derivaciones {
+        try await cliente.get("/api/review-queue/entity/\(id)")
+    }
+
+    /// «Revisado» (PAPER §38.1): cierra solo la revisión abierta de quien llama; los demás
+    /// revisores siguen pendientes. Acción explícita: sin gate. Sin revisión propia abierta
+    /// responde ok con `cleared = 0`.
+    @discardableResult
+    func markReviewed(episode id: String) async throws -> ReviewCompleteResult {
+        let r: Uno<ReviewCompleteResult> = try await cliente.post(
+            "/api/entities/\(id)/complete_review", json: ReviewCompleteRequest(onlyMine: true)
+        )
+        return r.data
     }
 
     // MARK: Turnos (PAPER §32)

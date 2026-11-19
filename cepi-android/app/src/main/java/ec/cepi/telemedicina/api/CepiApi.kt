@@ -263,9 +263,17 @@ class CepiApi(val cliente: ApiClient) {
         cliente.delete<Confirmacion>("/api/groups/$group/shifts/$id")
     }
 
-    /** A quién está derivado el episodio ahora mismo. */
-    suspend fun derivaciones(episodio: String): List<Derivado> =
-        cliente.get<Derivaciones>("/api/review-queue/entity/$episodio").derivados
+    /** A quién está derivado el episodio ahora mismo, y quién ya lo marcó revisado (PAPER §38). */
+    suspend fun derivaciones(episodio: String): Derivaciones =
+        cliente.get("/api/review-queue/entity/$episodio")
+
+    /**
+     * «Revisado» (PAPER §38.1): cierra solo la revisión abierta de quien llama; los demás
+     * revisores siguen pendientes. Acción explícita: sin sí/no. Sin revisión propia abierta
+     * responde ok con `cleared = 0`.
+     */
+    suspend fun markReviewed(episode: String): ReviewCompletion =
+        cliente.post<Uno<ReviewCompletion>>("/api/entities/$episode/complete_review", markReviewedBody()).data
 
     // Galería y adjuntos
 
@@ -350,6 +358,9 @@ class CepiApi(val cliente: ApiClient) {
             put("observaciones", observaciones)
             put("prioridad", prioridad)
         }
+
+        /** El cuerpo de `POST /api/entities/:id/complete_review` para «Revisado». Sin red, para probarlo. */
+        fun markReviewedBody(): JsonObject = buildJsonObject { put("only_mine", true) }
 
         /** El cuerpo de `POST /api/bot/episodio/alta`. Sin red, para probarlo. */
         fun dischargeBody(episodio: String, nota: String): JsonObject = buildJsonObject {

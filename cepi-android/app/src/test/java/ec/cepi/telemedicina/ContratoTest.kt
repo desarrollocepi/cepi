@@ -2,7 +2,10 @@ package ec.cepi.telemedicina
 
 import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.Asignaciones
+import ec.cepi.telemedicina.api.CaseReview
 import ec.cepi.telemedicina.api.Derivaciones
+import ec.cepi.telemedicina.api.ReviewCompletion
+import ec.cepi.telemedicina.api.Uno
 import ec.cepi.telemedicina.api.CepiApi
 import ec.cepi.telemedicina.api.ClinicalPriority
 import ec.cepi.telemedicina.api.ColaRevision
@@ -160,6 +163,42 @@ class ContratoTest {
             """{"ok":true,"entity_id":"e1","derivados":[{"user_id":"u1","name":"Dra. Ramon","email":"r@cepi.ec"}]}""",
         )
         assertEquals("Dra. Ramon", derivaciones.derivados.single().comoSeLlama)
+    }
+
+    @Test
+    fun revisadoPorMedico() {
+        // GET /api/review-queue/entity/:id con el estado de cada revisor (PAPER §38.1).
+        val conRevisados = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[{"reminder_id":"r2","user_id":"u2","name":"Dra. B","email":"b@x.ec","desde":"2026-11-19T10:00:00.000Z"}],"revisados":[{"reminder_id":"r1","user_id":"u1","name":"Dr. A","email":"a@x.ec","revisado_en":"2026-11-19T11:00:00.000Z"}]}""",
+        )
+        assertEquals(listOf("u2"), conRevisados.derivados.map { it.usuario })
+        assertEquals("Dra. B", conRevisados.derivados.single().comoSeLlama)
+        val revisado = conRevisados.revisados.single()
+        assertEquals("u1", revisado.usuario)
+        assertEquals("Dr. A", revisado.comoSeLlama)
+        assertEquals("2026-11-19T11:00:00.000Z", revisado.reviewedAt)
+
+        // Un servidor anterior a §38 no manda `revisados`.
+        val sinRevisados = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[{"reminder_id":"r2","user_id":"u2","name":"Dra. B","email":"b@x.ec","desde":"2026-11-19T10:00:00.000Z"}]}""",
+        )
+        assertEquals(1, sinRevisados.derivados.size)
+        assertTrue(sinRevisados.revisados.isEmpty())
+
+        // El botón: habilitado solo con una revisión abierta propia.
+        assertNull(CaseReview.disabledReason("u2", conRevisados.derivados))
+        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason("u1", conRevisados.derivados))
+        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason(null, conRevisados.derivados))
+        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason("u2", emptyList()))
+
+        // POST /api/entities/:id/complete_review: cuerpo y respuesta.
+        assertEquals("""{"only_mine":true}""", CepiApi.markReviewedBody().toString())
+        val cierre = decodificar<Uno<ReviewCompletion>>(
+            """{"ok":true,"data":{"entity_id":"e1","cleared":1,"remaining":2}}""",
+        ).data
+        assertEquals("e1", cierre.entityId)
+        assertEquals(1, cierre.cleared)
+        assertEquals(2, cierre.remaining)
     }
 
     @Test

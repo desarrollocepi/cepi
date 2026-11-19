@@ -249,6 +249,40 @@ struct ContratoTests {
         #expect(derivaciones.derivados.first?.comoSeLlama == "Dra. Ramon")
     }
 
+    @Test func derivacionesConRevisados() throws {
+        // GET /api/review-queue/entity/:id (PAPER §38.1): pendientes y quienes ya marcaron
+        // «Revisado» en la derivación vigente.
+        let r = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[{"reminder_id":"r2","user_id":"u2","name":"Dra. B","email":"b@x.ec","desde":"2026-11-19T10:00:00.000Z"}],"revisados":[{"reminder_id":"r1","user_id":"u1","name":"Dr. A","email":"a@x.ec","revisado_en":"2026-11-19T11:00:00.000Z"}]}
+        """)
+        #expect(r.derivados.map(\.usuario) == ["u2"])
+        #expect(r.revisados.map(\.usuario) == ["u1"])
+        #expect(r.revisados.first?.comoSeLlama == "Dr. A")
+        #expect(r.revisados.first?.reviewedAt == "2026-11-19T11:00:00.000Z")
+        #expect(ReviewStatus.summary(derivados: r.derivados, revisados: r.revisados)
+            == "Dra. B · pendiente, Dr. A ✓ revisado")
+        // «Revisado» solo para quien tiene la revisión abierta.
+        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: "u2") == nil)
+        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: "u1") == ReviewStatus.noPendingReason)
+        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: nil) == ReviewStatus.noPendingReason)
+
+        // Servidor anterior a §38: sin `revisados`.
+        let viejo = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[{"reminder_id":"r2","user_id":"u2","name":"Dra. B","email":"b@x.ec","desde":"2026-11-19T10:00:00.000Z"}]}
+        """)
+        #expect(viejo.derivados.count == 1)
+        #expect(viejo.revisados.isEmpty)
+
+        // POST /api/entities/:id/complete_review {only_mine: true}.
+        let cuerpo = try JSONEncoder().encode(ReviewCompleteRequest(onlyMine: true))
+        #expect(String(decoding: cuerpo, as: UTF8.self) == #"{"only_mine":true}"#)
+        let hecho = try decodificar(Uno<ReviewCompleteResult>.self, """
+        {"ok":true,"data":{"entity_id":"e1","cleared":1,"remaining":2}}
+        """).data
+        #expect(hecho.cleared == 1)
+        #expect(hecho.remaining == 2)
+    }
+
     @Test func urlCodificaElMas() {
         let url = APIClient.url(
             base: URL(string: "https://telemedicina.cepi.ec")!,

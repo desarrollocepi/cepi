@@ -7,7 +7,9 @@ import ec.cepi.telemedicina.api.AccionPendiente
 import ec.cepi.telemedicina.api.Adjunto
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CepiApi
+import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.Derivado
+import ec.cepi.telemedicina.api.Revisado
 import ec.cepi.telemedicina.api.FormularioBot
 import ec.cepi.telemedicina.api.Marcador
 import ec.cepi.telemedicina.api.MensajeHilo
@@ -47,6 +49,10 @@ class HiloModelo(
 
     /** A quién está derivada la consulta activa ahora mismo (revisiones pendientes). */
     var derivados: List<Derivado> by mutableStateOf(emptyList())
+        private set
+
+    /** Quién ya marcó «Revisado» en la derivación vigente (PAPER §38). */
+    var revisados: List<Revisado> by mutableStateOf(emptyList())
         private set
     var pagina: PaginaHilo by mutableStateOf(PaginaHilo.MasNueva)
         private set
@@ -246,11 +252,13 @@ class HiloModelo(
      */
     suspend fun releerDerivaciones() {
         val episodio = episodioActivo
-        derivados = if (episodio == null) emptyList() else try {
+        val leidas = if (episodio == null) Derivaciones() else try {
             api.derivaciones(episodio)
         } catch (_: ApiError) {
-            emptyList()
+            Derivaciones()
         }
+        derivados = leidas.derivados
+        revisados = leidas.revisados
     }
 
     fun volverALaActual() {

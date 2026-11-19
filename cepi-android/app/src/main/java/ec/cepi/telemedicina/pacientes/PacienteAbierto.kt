@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +52,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.api.ApiError
+import ec.cepi.telemedicina.api.CaseReview
+import ec.cepi.telemedicina.api.Derivado
+import ec.cepi.telemedicina.api.Revisado
 import ec.cepi.telemedicina.app.Entorno
 import ec.cepi.telemedicina.chat.HiloModelo
 import ec.cepi.telemedicina.chat.HiloVista
@@ -180,6 +185,35 @@ fun PacienteAbierto(
             null
         }
     }
+    var markingReviewed by remember { mutableStateOf(false) }
+    // «Revisado» (PAPER §38.2): solo quien tiene una revisión abierta en la consulta.
+    val reviewReason = when {
+        markingReviewed -> "Marcando como revisado…"
+        modelo.episodioActivo == null -> "Elige un paciente con una consulta abierta"
+        else -> CaseReview.disabledReason(entorno.sesion.usuario?.id, modelo.derivados)
+    }
+
+    /**
+     * Cierra la revisión propia; los demás revisores siguen pendientes. Después se releen
+     * derivados y revisados, y la lista de pacientes, para que el caso salga de "revisar".
+     */
+    fun markReviewed() {
+        val episode = modelo.episodioActivo ?: return
+        if (markingReviewed) return
+        markingReviewed = true
+        alcance.launch {
+            try {
+                api.markReviewed(episode)
+                modelo.releerDerivaciones()
+                onConsultationAnswered()
+                snackbar.showSnackbar(CaseReview.CONFIRMATION)
+            } catch (e: ApiError) {
+                snackbar.showSnackbar("No se pudo marcar como revisado: ${e.mensaje}")
+            } finally {
+                markingReviewed = false
+            }
+        }
+    }
     val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
     val dischargeReason = PatientDischarge.disabledReason(modelo.episodioActivo, activeEpisode)
     LaunchedEffect(pacienteId) {
@@ -252,6 +286,8 @@ fun PacienteAbierto(
                             onAnswer = { answering = true },
                             dischargeReason = dischargeReason,
                             onDischarge = { discharging = true },
+                            reviewReason = reviewReason,
+                            onMarkReviewed = { markReviewed() },
                         )
                     }
                 },
@@ -265,24 +301,18 @@ fun PacienteAbierto(
                 .imePadding()
                 .fillMaxSize(),
         ) {
-            // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
-            // abre Derivar para sumar o cambiar destinos.
-            if (modelo.derivados.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { derivar = true },
-                ) {
-                    Text(
-                        "↪ Derivado a " + modelo.derivados.joinToString(", ") { it.comoSeLlama },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                }
+            // A quién está derivada la consulta y el estado de cada revisor (PAPER §38.2),
+            // mientras haya derivados o revisados. Tocar los nombres abre Derivar para sumar o
+            // cambiar destinos; el botón «Revisado» cierra solo la revisión propia.
+            if (modelo.derivados.isNotEmpty() || modelo.revisados.isNotEmpty()) {
+                ReviewStrip(
+                    pending = modelo.derivados,
+                    reviewed = modelo.revisados,
+                    reviewReason = reviewReason,
+                    marking = markingReviewed,
+                    onOpenReferral = { derivar = true },
+                    onMarkReviewed = { markReviewed() },
+                )
             }
             PrimaryTabRow(selectedTabIndex = paginas.currentPage) {
                 secciones.forEachIndexed { indice, titulo ->
@@ -424,6 +454,9 @@ private fun Acciones(
     /** Por qué no se puede dar el alta; `null` si se puede (PAPER §35). */
     dischargeReason: String?,
     onDischarge: () -> Unit,
+    /** Por qué no se puede marcar «Revisado»; `null` si se puede (PAPER §38). */
+    reviewReason: String?,
+    onMarkReviewed: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -497,6 +530,14 @@ private fun Acciones(
             },
         )
         DropdownMenuItem(
+            text = { Explicado("✓ Marcar como revisado", reviewReason) },
+            enabled = reviewReason == null,
+            onClick = {
+                alCerrar()
+                onMarkReviewed()
+            },
+        )
+        DropdownMenuItem(
             text = { Explicado("🏁 Dar de alta", dischargeReason) },
             enabled = libre && dischargeReason == null,
             onClick = {
@@ -512,6 +553,57 @@ private fun Acciones(
                 alDerivar()
             },
         )
+    }
+}
+
+/**
+ * La franja «Derivado a …» (PAPER §38.2): cada revisor con su estado, pendiente o ✓ revisado,
+ * y a la derecha «Revisado». Sin revisión propia abierta el botón queda gris y el motivo se lee
+ * debajo de los nombres.
+ */
+@Composable
+private fun ReviewStrip(
+    pending: List<Derivado>,
+    reviewed: List<Revisado>,
+    reviewReason: String?,
+    marking: Boolean,
+    onOpenReferral: () -> Unit,
+    onMarkReviewed: () -> Unit,
+) {
+    val pendingIds = pending.map { it.usuario }.toSet()
+    val reviewers = pending.map { "${it.comoSeLlama} (pendiente)" } +
+        reviewed.filter { it.usuario !in pendingIds }.map { "${it.comoSeLlama} (✓ revisado)" }
+    val color = MaterialTheme.colorScheme.onTertiaryContainer
+    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenReferral)
+                    .padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 8.dp),
+            ) {
+                Text(
+                    "↪ Derivado a " + reviewers.joinToString(", "),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = color,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // El motivo, salvo mientras se marca (ahí el botón ya muestra el progreso).
+                if (reviewReason != null && !marking) {
+                    Text(reviewReason, style = MaterialTheme.typography.bodySmall, color = color)
+                }
+            }
+            TextButton(
+                onClick = onMarkReviewed,
+                enabled = reviewReason == null,
+                modifier = Modifier
+                    .padding(end = 4.dp)
+                    .semantics { contentDescription = reviewReason ?: "Marcar como revisado" },
+            ) {
+                if (marking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Revisado")
+            }
+        }
     }
 }
 

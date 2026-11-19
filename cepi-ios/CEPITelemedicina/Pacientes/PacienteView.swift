@@ -12,8 +12,8 @@ struct PacienteView: View {
     let fila: FilaPaciente
     /// Cierra el paciente (tras derivar, el médico pasa al siguiente).
     let alTerminar: () -> Void
-    /// Vuelve a pedir la lista: tras responder, el paciente sale de "revisar"; tras el alta,
-    /// pasa a «Alta».
+    /// Vuelve a pedir la lista: tras responder o marcar «Revisado», el paciente sale de
+    /// "revisar"; tras el alta, pasa a «Alta».
     let onListChanged: () async -> Void
 
     @Environment(Sesion.self) private var sesion
@@ -34,6 +34,9 @@ struct PacienteView: View {
     @State private var answerConfirmation: String?
     @State private var showDischarge = false
     @State private var dischargeDone = false
+    /// «Revisado» en vuelo (PAPER §38.2): el botón queda gris hasta que vuelve.
+    @State private var markingReviewed = false
+    @State private var reviewError: String?
 
     enum Seccion: String, CaseIterable, Identifiable {
         case chat, ficha, evolucion, imagenes
@@ -76,26 +79,47 @@ struct PacienteView: View {
                 onNext: { navigator.goNext() }
             )
 
-            // A quién está derivada la consulta, mientras haya alguien pendiente. Se toca y
-            // abre Derivar para sumar o cambiar destinos.
-            if !modelo.derivados.isEmpty {
-                Button {
-                    mostrarDerivar = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.turn.up.right")
-                        Text("Derivado a \(modelo.derivados.map(\.comoSeLlama).joined(separator: ", "))")
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
+            // A quién está derivada la consulta y el estado de cada revisor (PAPER §38.2),
+            // mientras haya derivados o revisados. El texto se toca y abre Derivar para sumar o
+            // cambiar destinos; a la derecha, «Revisado» cierra solo la revisión propia.
+            if !modelo.derivados.isEmpty || !modelo.revisados.isEmpty {
+                HStack(spacing: 8) {
+                    Button {
+                        mostrarDerivar = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.turn.up.right")
+                            Text("Derivado a \(ReviewStatus.summary(derivados: modelo.derivados, revisados: modelo.revisados))")
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .background(Marca.revisar.opacity(0.18))
-                    .foregroundStyle(Marca.revisar)
+                    .buttonStyle(.plain)
+
+                    Button {
+                        Task { await markReviewed() }
+                    } label: {
+                        if markingReviewed {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Label("Revisado", systemImage: "checkmark.circle")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(Marca.revisar)
+                    .disabled(markingReviewed || modelo.ocupado || reviewBlockReason != nil)
+                    .help(reviewBlockReason ?? "Marca que ya revisaste este caso; los demás revisores siguen pendientes")
+                    .accessibilityHint(reviewBlockReason ?? "Marca que ya revisaste este caso")
                 }
-                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+                .background(Marca.revisar.opacity(0.18))
+                .foregroundStyle(Marca.revisar)
             }
 
             TabView(selection: $seccion) {
@@ -203,6 +227,14 @@ struct PacienteView: View {
         } message: {
             Text(PatientDischarge.confirmation)
         }
+        .alert("No se pudo marcar como revisado", isPresented: Binding(
+            get: { reviewError != nil },
+            set: { if !$0 { reviewError = nil } }
+        )) {
+            Button("Aceptar", role: .cancel) {}
+        } message: {
+            Text(reviewError ?? "")
+        }
         .alert("Interconsulta respondida", isPresented: Binding(
             get: { answerConfirmation != nil },
             set: { if !$0 { answerConfirmation = nil } }
@@ -263,6 +295,27 @@ struct PacienteView: View {
         )
     }
 
+    /// «Revisado» solo aplica a quien tiene una revisión abierta en la consulta (PAPER §38.2).
+    private var reviewBlockReason: String? {
+        ReviewStatus.blockReason(derivados: modelo.derivados, userId: sesion.usuario?.id)
+    }
+
+    /// Cierra la revisión propia, relee derivados/revisados y la lista: el paciente sale de
+    /// «revisar» para quien lo marcó. Sin gate: es una acción explícita (PAPER §38.1).
+    private func markReviewed() async {
+        guard let episodio = modelo.episodioActivo, !markingReviewed else { return }
+        markingReviewed = true
+        defer { markingReviewed = false }
+        do {
+            try await sesion.api.markReviewed(episode: episodio)
+        } catch {
+            reviewError = error.localizedDescription
+            return
+        }
+        await modelo.releerDerivaciones(api: sesion.api)
+        await onListChanged()
+    }
+
     private var dischargeBlockReason: String? {
         PatientDischarge.blockReason(episode: modelo.episodioActivo, episodeData: episodeRecord)
     }
@@ -315,6 +368,13 @@ struct PacienteView: View {
                 Text(answerBlockReason ?? "Queda en la ficha y le llega al médico que envió el caso")
             }
             .disabled(modelo.ocupado || answerBlockReason != nil)
+            Button {
+                Task { await markReviewed() }
+            } label: {
+                Label("Marcar como revisado", systemImage: "checkmark.circle")
+                Text(reviewBlockReason ?? "Los demás revisores siguen pendientes")
+            }
+            .disabled(markingReviewed || modelo.ocupado || reviewBlockReason != nil)
             Button {
                 showDischarge = true
             } label: {
