@@ -5,7 +5,7 @@ vi.mock('../src/api.js', () => ({
   chat: vi.fn(), saveSessionId: vi.fn(), uploadAttachment: vi.fn(), listGroups: vi.fn(),
   listGroupMembers: vi.fn(), listEntityDerivations: vi.fn(), listBotSessions: vi.fn(),
   getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(), darDeAlta: vi.fn(),
-  markReviewed: vi.fn(),
+  markReviewed: vi.fn(), claimEpisode: vi.fn(),
 }));
 vi.mock('../src/native/speech.js', () => ({ dictationSupported: false, createDictation: vi.fn() }));
 import * as api from '../src/api.js';
@@ -629,9 +629,9 @@ describe('IntakeChat — «Revisado» por médico (PAPER §38)', () => {
     expect(delMenu(w).attributes('disabled')).toBeDefined();
   });
 
-  it('sin derivaciones no hay franja, pero el botón del menú sigue ahí, gris', async () => {
+  it('sin derivaciones la franja dice «Sin responsable» y el botón del menú sigue ahí, gris', async () => {
     const w = await abrir();
-    expect(w.find('.iderivado').exists()).toBe(false);
+    expect(w.find('.acargo-linea').text()).toBe('Sin responsable');
     expect(delMenu(w).attributes('disabled')).toBeDefined();
     expect(delMenu(w).attributes('title')).toBe('No tienes una revisión pendiente en esta consulta');
   });
@@ -644,6 +644,63 @@ describe('IntakeChat — «Revisado» por médico (PAPER §38)', () => {
     await flushPromises();
     expect(w.emitted('respondida')).toBeUndefined();
     expect(turnos(w).some((t) => t.includes('No se pudo marcar como revisado: sin red'))).toBe(true);
+  });
+});
+
+describe('IntakeChat — «Lo tomo» (PAPER §38.3)', () => {
+  const tomar = (w) => w.find('.iderivado-ok.tomar');
+  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('Tomar la consulta'));
+
+  it('sin responsable: toma la consulta; si estaba enviada pasa a en_triage', async () => {
+    preparar({ episodio: { estado: 'enviada' } });
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: null, can_claim: true, can_reassign: false });
+    api.claimEpisode.mockResolvedValue({ ok: true });
+    const w = await abrir();
+    expect(tomar(w).attributes('disabled')).toBeUndefined();
+    expect(delMenu(w).attributes('disabled')).toBeUndefined();
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'yo', name: 'Yo' }, can_claim: true });
+    await tomar(w).trigger('click');
+    await flushPromises();
+    expect(api.claimEpisode).toHaveBeenCalledWith('ep2', 'en_triage');
+    expect(w.emitted('respondida')).toHaveLength(1);
+    expect(w.find('.acargo-linea').text()).toBe('A cargo: tú');
+    expect(tomar(w).attributes('title')).toBe('Ya está a tu cargo');
+  });
+
+  it('en otro estado no cambia el estado', async () => {
+    preparar({ episodio: { estado: 'derivada' } });
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], can_claim: true });
+    api.claimEpisode.mockResolvedValue({ ok: true });
+    const w = await abrir();
+    await tomar(w).trigger('click');
+    await flushPromises();
+    expect(api.claimEpisode).toHaveBeenCalledWith('ep2', null);
+  });
+
+  it('la tiene otro y no puedo reasignar: gris con su nombre', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'u2', name: 'Dra. B' }, can_claim: true, can_reassign: false });
+    const w = await abrir();
+    expect(w.find('.acargo-linea').text()).toBe('A cargo: Dra. B');
+    expect(tomar(w).attributes('disabled')).toBeDefined();
+    expect(tomar(w).attributes('title')).toBe('La tiene a cargo Dra. B');
+  });
+
+  it('la tiene otro y puedo reasignar: pide confirmación; si cancelo no hace nada', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'u2', name: 'Dra. B' }, can_claim: true, can_reassign: true });
+    const conf = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const w = await abrir();
+    await tomar(w).trigger('click');
+    expect(conf).toHaveBeenCalledWith('Dra. B la tiene a cargo. ¿La tomas tú?');
+    expect(api.claimEpisode).not.toHaveBeenCalled();
+    conf.mockRestore();
+  });
+
+  it('sin permiso de reclamar, «Lo tomo» no aparece (ni en el menú)', async () => {
+    api.listEntityDerivations.mockResolvedValue({ derivados: [], can_claim: false });
+    const w = await abrir();
+    expect(tomar(w).exists()).toBe(false);
+    expect(delMenu(w)).toBeUndefined();
+    expect(w.find('.iderivado-ok').text()).toContain('Revisado');
   });
 });
 

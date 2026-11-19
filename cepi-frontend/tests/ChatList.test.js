@@ -31,10 +31,12 @@ const ASIGNACIONES = {
   p6: { estado: 'estado_que_no_existe' },
 };
 
-function preparar({ cola = {}, asignaciones = ASIGNACIONES, pacientes = PACIENTES } = {}) {
+// `mine` por defecto: todos los pacientes, para que las pruebas de estado no dependan del
+// alcance (que por defecto es «Mis pacientes», PAPER §39).
+function preparar({ cola = {}, asignaciones = ASIGNACIONES, pacientes = PACIENTES, mine = pacientes.map((p) => p.id) } = {}) {
   api.listPatients.mockResolvedValue({ data: pacientes });
   api.getReviewQueue.mockResolvedValue({ by_patient: cola });
-  api.getPatientAssignments.mockResolvedValue({ assignments: asignaciones });
+  api.getPatientAssignments.mockResolvedValue({ assignments: asignaciones, mine });
 }
 async function montar(props = {}) {
   const w = mount(ChatList, { props });
@@ -46,6 +48,47 @@ const filtro = (w, texto) => w.findAll('.filtro').find((b) => b.text().startsWit
 
 beforeEach(() => { vi.useFakeTimers(); preparar(); });
 afterEach(() => { vi.useRealTimers(); });
+
+describe('ChatList — «Mis pacientes» (PAPER §39)', () => {
+  const alcance = (w, texto) => w.findAll('.alcance').find((b) => b.text().includes(texto));
+
+  it('por defecto muestra solo los míos; «Todos» muestra la org entera', async () => {
+    preparar({ mine: ['p2', 'p4'] });
+    const w = await montar();
+    expect(alcance(w, 'Mis pacientes').attributes('aria-pressed')).toBe('true');
+    expect(alcance(w, 'Mis pacientes').text()).toBe('👤 Mis pacientes · 2');
+    expect(alcance(w, 'Todos').text()).toBe('Todos · 6');
+    expect(nombres(w)).toEqual(['Marta Derivada', 'José Curso']);
+    await alcance(w, 'Todos').trigger('click');
+    expect(nombres(w)).toHaveLength(6);
+  });
+
+  it('las cuentas de estado son dentro del alcance y los filtros se combinan', async () => {
+    preparar({ mine: ['p2', 'p4'] });
+    const w = await montar();
+    expect(filtro(w, 'Cualquier estado').text()).toBe('Cualquier estado · 2');
+    expect(filtro(w, 'En curso').text()).toBe('En curso · 1');
+    await filtro(w, 'En curso').trigger('click');
+    expect(nombres(w)).toEqual(['José Curso']);
+    await alcance(w, 'Todos').trigger('click');
+    expect(filtro(w, 'En curso').text()).toBe('En curso · 2');
+    expect(nombres(w)).toEqual(['José Curso', 'Raúl Curso']);
+  });
+
+  it('buscando, encuentra también a los que no son míos', async () => {
+    preparar({ mine: ['p2'] });
+    const w = await montar();
+    await w.find('.search').setValue('Raúl');
+    expect(nombres(w)).toEqual(['Raúl Curso']);
+  });
+
+  it('sin pacientes míos lo dice y apunta a «Todos»', async () => {
+    preparar({ mine: [] });
+    const w = await montar();
+    expect(alcance(w, 'Mis pacientes').text()).toBe('👤 Mis pacientes · 0');
+    expect(w.find('.empty').text()).toBe('Todavía no tienes pacientes a tu cargo. Mira «Todos».');
+  });
+});
 
 describe('ChatList — estado de la ficha', () => {
   it('ordena por estado: derivada, en curso, cerrada, otro, sin consulta', async () => {
@@ -79,8 +122,8 @@ describe('ChatList — estado de la ficha', () => {
 
   it('los filtros muestran el conteo y los vacíos quedan deshabilitados, no ocultos', async () => {
     const w = await montar();
-    expect(w.findAll('.filtro')).toHaveLength(12);   // Todos + los 11 estados, siempre
-    expect(filtro(w, 'Todos').text()).toBe('Todos · 6');
+    expect(w.findAll('.filtro')).toHaveLength(12);   // Cualquier estado + los 11 estados, siempre
+    expect(filtro(w, 'Cualquier estado').text()).toBe('Cualquier estado · 6');
     expect(filtro(w, 'En curso').text()).toBe('En curso · 2');
     expect(filtro(w, 'En curso').element.disabled).toBe(false);
     expect(filtro(w, 'Respondida').text()).toBe('Respondida · 0');
@@ -93,7 +136,7 @@ describe('ChatList — estado de la ficha', () => {
     await filtro(w, 'En curso').trigger('click');
     expect(nombres(w)).toEqual(['José Curso', 'Raúl Curso']);
     expect(filtro(w, 'En curso').attributes('aria-pressed')).toBe('true');
-    expect(filtro(w, 'Todos').attributes('aria-pressed')).toBe('false');
+    expect(filtro(w, 'Cualquier estado').attributes('aria-pressed')).toBe('false');
     await filtro(w, 'En curso').trigger('click');
     expect(nombres(w)).toHaveLength(6);
   });

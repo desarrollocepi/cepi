@@ -36,6 +36,10 @@
           :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
         >☑️ Marcar como revisado</button>
         <button
+          v-if="canClaim" type="button" class="ihead-tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
+          :title="tomarMotivo || 'Tomar la consulta: queda a tu cargo'"
+        >🙋 Tomar la consulta</button>
+        <button
           type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
           :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
         >🏁 Dar de alta</button>
@@ -47,14 +51,23 @@
     <!-- Las consultas se recorren con el navegador de episodios de arriba (ChatShell, PAPER
          §28.4.1); el chat muestra la del episodio elegido. -->
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
-    <!-- A quién está derivada la consulta y el estado de cada uno (PAPER §38). Tocar los
-         nombres abre Derivar; «Revisado» cierra solo la revisión de quien lo toca. -->
-    <div v-if="patientName && (derivados.length || revisados.length)" class="iderivado">
+    <!-- Quién tiene la consulta a cargo, a quién está derivada y el estado de cada uno
+         (PAPER §38). Se ve siempre que haya una consulta. Tocar los nombres abre Derivar;
+         «Lo tomo» la deja a tu cargo y «Revisado» cierra solo tu revisión. -->
+    <div v-if="patientName && activeEpisodeId" class="iderivado">
       <button type="button" class="iderivado-who" @click="openDerivar" title="Ver o cambiar la derivación">
-        ↪️ Derivado a
-        <span v-for="d in derivados" :key="'p' + d.user_id" class="rev-st pend" :title="`${d.name || d.email}: revisión pendiente`">{{ d.name || d.email }}</span>
-        <span v-for="d in revisados" :key="'r' + d.user_id" class="rev-st ok" :title="`${d.name || d.email}: ya lo revisó`">✓ {{ d.name || d.email }}</span>
+        <span class="acargo-linea">{{ acargoTexto }}</span>
+        <template v-if="derivados.length || revisados.length">
+          <span class="sep">·</span> ↪️ Derivado a
+          <span v-for="d in derivados" :key="'p' + d.user_id" class="rev-st pend" :title="`${d.name || d.email}: revisión pendiente`">{{ d.name || d.email }}</span>
+          <span v-for="d in revisados" :key="'r' + d.user_id" class="rev-st ok" :title="`${d.name || d.email}: ya lo revisó`">✓ {{ d.name || d.email }}</span>
+        </template>
       </button>
+      <!-- Sin permiso de reclamar (primario, especialista) no se muestra: excepción por permisos. -->
+      <button
+        v-if="canClaim" type="button" class="iderivado-ok tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
+        :title="tomarMotivo || 'Tomar la consulta: queda a tu cargo'"
+      >{{ tomando ? 'Tomando…' : '🙋 Lo tomo' }}</button>
       <button
         type="button" class="iderivado-ok" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
         :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
@@ -243,7 +256,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, markReviewed, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
+import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, markReviewed, claimEpisode, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
 import ResponderInterconsulta from './ResponderInterconsulta.vue';
 import DarDeAlta from './DarDeAlta.vue';
 import MessageContent from './MessageContent.vue';
@@ -499,6 +512,9 @@ const groupMembers   = ref({});          // slug → members[] (cached)
 // el usuario para la próxima derivación: `circulo:<slug>` o `persona:<uuid>`.
 const derivados      = ref([]);
 const revisados      = ref([]);          // quién ya marcó «Revisado» (PAPER §38)
+const responsable    = ref(null);        // quién tiene la consulta a cargo (PAPER §38.3)
+const canClaim       = ref(false);
+const canReassign    = ref(false);
 const seleccion      = ref([]);
 
 const derivadosTexto = computed(() => {
@@ -515,13 +531,62 @@ function alternarSeleccion(token) {
 
 async function cargarDerivados() {
   const epId = activeEpisodeId.value;
-  if (!epId) { derivados.value = []; revisados.value = []; return; }
+  const vaciar = () => {
+    derivados.value = []; revisados.value = []; responsable.value = null;
+    canClaim.value = false; canReassign.value = false;
+  };
+  if (!epId) { vaciar(); return; }
   try {
     const r = await listEntityDerivations(epId);
     if (activeEpisodeId.value !== epId) return;
     derivados.value = Array.isArray(r?.derivados) ? r.derivados : [];
     revisados.value = Array.isArray(r?.revisados) ? r.revisados : [];
-  } catch { derivados.value = []; revisados.value = []; }
+    responsable.value = r?.responsable || null;
+    canClaim.value = !!r?.can_claim;
+    canReassign.value = !!r?.can_reassign;
+  } catch { vaciar(); }
+}
+
+// «Lo tomo» (PAPER §38.3): gris con el motivo cuando no aplica.
+const tomando = ref(false);
+const nombreResp = computed(() => responsable.value?.name || responsable.value?.email || 'otro médico');
+const acargoTexto = computed(() => {
+  if (!responsable.value) return 'Sin responsable';
+  return responsable.value.user_id === props.user?.id ? 'A cargo: tú' : `A cargo: ${nombreResp.value}`;
+});
+const tomarMotivo = computed(() => {
+  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
+  if (!isActiveEpisode.value) return 'Es una consulta anterior: solo se toma la vigente';
+  if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
+  if (episodioInfo.value.estado === 'alta') return 'El paciente está de alta: si vuelve, abre una consulta nueva';
+  const r = responsable.value;
+  if (r && r.user_id === props.user?.id) return 'Ya está a tu cargo';
+  if (r && !canReassign.value) return `La tiene a cargo ${nombreResp.value}`;
+  return '';
+});
+async function tomarConsulta() {
+  const epId = activeEpisodeId.value;
+  if (!epId || tomarMotivo.value || tomando.value) return;
+  const r = responsable.value;
+  if (r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La tomas tú?`)) return;
+  tomando.value = true;
+  showMenu.value = false;
+  try {
+    await claimEpisode(epId, episodioInfo.value?.estado === 'enviada' ? 'en_triage' : null);
+    messages.value = [...messages.value, {
+      role: 'assistant', is_bot: true, episode_id: epId,
+      content: '🙋 Ahora tienes esta consulta a cargo.',
+    }];
+    await Promise.all([cargarDerivados(), cargarEpisodioInfo()]);
+    emit('respondida');      // la lista se recarga: la fila pasa a «a cargo: tú»
+  } catch (e) {
+    messages.value = [...messages.value, {
+      role: 'assistant', is_bot: true, episode_id: epId,
+      content: `⚠️ No se pudo tomar la consulta: ${e?.message || 'error de red'}`,
+    }];
+  } finally {
+    tomando.value = false;
+  }
 }
 
 // «Revisado» (PAPER §38): el botón está siempre; gris con el motivo cuando no aplica.
@@ -1230,6 +1295,9 @@ defineExpose({ openPatient, newGeneral, activarEpisodio });
   background: #f97316; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .iderivado-ok:disabled { background: transparent; color: #fed7aa; opacity: .55; cursor: not-allowed; }
+.iderivado-ok.tomar:not(:disabled) { background: #0e7490; border-color: #a5f3fc; }
+.acargo-linea { font-weight: 700; }
+.iderivado .sep { opacity: .6; }
 .derivar-go {
   width: 100%; margin-top: 10px; padding: 10px; border-radius: 8px; border: 0;
   background: #6366f1; color: #fff; font-weight: 700; cursor: pointer;

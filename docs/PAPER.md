@@ -3595,3 +3595,62 @@ botón «Revisado».
 - Al marcarlo, la lista se recarga y el paciente sale de «revisar» para quien lo marcó; para
   los otros revisores sigue igual.
 
+### 38.3 «Lo tomo»: tomar la consulta para uno mismo (pedido del dueño, 2026-11-19)
+
+Hasta ahora, tomar un caso era escribir `reclamar` en el chat: no había botón en la web ni en
+las apps. Se agrega **«Lo tomo»** al lado de «Revisado».
+
+- **Qué hace**: `POST /api/entities/:id/claim` (§13.6 hermana; genérico). Quien toca queda
+  como `responsable_actual_id` de la consulta. Si estaba `enviada`, pasa a `en_triage`, igual
+  que el comando `reclamar`; en cualquier otro estado, el estado no cambia. Acción explícita:
+  sin gate.
+- **Qué lee el botón**: `GET /api/review-queue/entity/:id` agrega `responsable: {user_id,
+  name, email} | null` (quién la tiene a cargo) y `can_claim` / `can_reassign` (si quien
+  consulta tiene `entities:claim` / `entities:assign`). Una sola llamada para la franja.
+- **La franja de la consulta se ve siempre** que haya una consulta abierta: «A cargo: X» (o
+  «Sin responsable»), los derivados con su estado, y los botones «Lo tomo» y «Revisado».
+- **Estados del botón** (nunca se oculta, salvo por permiso):
+  - sin `can_claim` (médico primario, especialista): no se muestra — es un permiso que el
+    rol nunca tendrá (excepción de la regla de botones);
+  - consulta anterior o de alta: gris con el motivo;
+  - ya es tuya: gris, «Ya está a tu cargo»;
+  - la tiene otro y no puedes reasignar: gris, «La tiene a cargo X»;
+  - la tiene otro y puedes reasignar (supermédico): habilitado, pide confirmación («X la
+    tiene a cargo. ¿La tomas tú?»);
+  - sin responsable: habilitado.
+- Al tomarla se recarga la franja y la lista (la fila pasa a «a cargo: tú»).
+
+
+## 39. «Mis pacientes»: la lista arranca en lo mío (pedido del dueño, 2026-11-19)
+
+**Pedido.** En la lista de pacientes, al lado de «Todos», un filtro **«Mis pacientes»**, y que
+sea el elegido por defecto: los pacientes asignados a mí y los que alguna vez me fueron
+asignados. Dos filtros independientes: uno de alcance (Mis pacientes / Todos) y otro de estado.
+
+**Qué es «mío».** Un paciente es mío si en **alguna** de sus consultas (no solo la última):
+
+- soy o fui responsable: `responsable_actual_id` o `turno_claimed_by` (también quien abrió la
+  consulta, que queda como responsable);
+- la ingresé o soy su médico: `created_by`, `medico_primario_id`, `medico_id`;
+- me la derivaron: un recordatorio «Revisión solicitada» a mi nombre, abierto o cerrado;
+- la reclamé o me la asignaron: una nota `claim` / `assign` en el chatter (el responsable
+  actual cambia; el chatter guarda la historia);
+- una relación del episodio me apunta (los médicos del episodio).
+
+Siempre dentro de la org activa y solo pacientes activos.
+
+**Backend.** `GET /api/patient-assignments` agrega `mine: [patient_id]` (la misma llamada que
+la lista ya hace; sin pedido extra).
+
+**Interfaz (web, iOS y Android).**
+
+- Fila 1, alcance: **«Mis pacientes · N»** (por defecto) y **«Todos · M»**. Uno siempre está
+  elegido.
+- Fila 2, estado: «Cualquier estado» y los estados de la ficha con su LED y su cuenta. Las
+  cuentas son **dentro del alcance elegido**; un estado sin pacientes se ve gris.
+- Los dos se combinan (Y). Buscar por nombre o cédula busca en **todos** los pacientes,
+  aunque esté elegido «Mis pacientes»: a un paciente que no es mío se lo tiene que poder
+  encontrar.
+- Sin pacientes míos, «Mis pacientes · 0» sigue elegible y el vacío lo dice: «Todavía no
+  tienes pacientes a tu cargo. Mira «Todos».»
+

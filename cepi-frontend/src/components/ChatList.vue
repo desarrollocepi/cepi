@@ -8,11 +8,25 @@
     <!-- Los estados de la ficha como filtro, debajo del buscador (PAPER §24.2.1). Cada botón
          lleva su LED y cuántos pacientes hay: es también la leyenda de los colores. Un estado
          sin pacientes se ve gris, no se esconde. Tocar el elegido lo suelta. -->
+    <!-- Alcance (PAPER §39): «Mis pacientes» —los que tengo o tuve a cargo— es lo que se ve al
+         abrir; «Todos», la org entera. Independiente del filtro de estado de abajo. -->
+    <div class="alcances" role="group" aria-label="Qué pacientes ver">
+      <button
+        type="button" class="alcance" :class="{ on: alcance === 'mios' }" :disabled="!cargado || verArchivados"
+        :aria-pressed="alcance === 'mios'" @click="alcance = 'mios'"
+        title="Los pacientes que tienes o tuviste a cargo alguna vez"
+      >👤 Mis pacientes · {{ misPacientes.length }}</button>
+      <button
+        type="button" class="alcance" :class="{ on: alcance === 'todos' }" :disabled="!cargado || verArchivados"
+        :aria-pressed="alcance === 'todos'" @click="alcance = 'todos'"
+        title="Todos los pacientes de la organización"
+      >Todos · {{ all.length }}</button>
+    </div>
     <div class="filtros" role="group" aria-label="Filtrar por estado de la ficha">
       <button
         type="button" class="filtro" :class="{ on: !estadoElegido }" :disabled="!cargado || verArchivados"
         :aria-pressed="!estadoElegido" @click="estadoElegido = ''"
-      >Todos · {{ all.length }}</button>
+      >Cualquier estado · {{ enAlcance.length }}</button>
       <button
         v-for="e in ESTADOS_FICHA" :key="e.id" type="button" class="filtro"
         :class="{ on: estadoElegido === e.id }" :aria-pressed="estadoElegido === e.id"
@@ -274,18 +288,26 @@ const all = ref([]);
 const reviewQueue = ref({});   // { patientId: { pending, earliest_due } } — derived to me
 const assignments = ref({});   // { patientId: { assignee_name, source, estado, ... } } — a cargo
 const estadoElegido = ref(''); // id de ESTADOS_FICHA, o '' = todos
+const mine = ref([]);          // ids de «Mis pacientes» (patient-assignments.mine, PAPER §39)
+const alcance = ref('mios');   // 'mios' (por defecto) | 'todos'
+const mineSet = computed(() => new Set(mine.value));
+const misPacientes = computed(() => all.value.filter((p) => mineSet.value.has(p.id)));
+/** Los pacientes del alcance elegido: sobre ellos se cuentan y filtran los estados. */
+const enAlcance = computed(() => (alcance.value === 'mios' ? misPacientes.value : all.value));
 
 function estadoDe(p) { return estadoFicha(assignments.value[p.id]?.estado); }
 /** Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos. */
 const conteo = computed(() => {
   const c = {};
-  for (const p of all.value) { const id = estadoDe(p).id; c[id] = (c[id] || 0) + 1; }
+  for (const p of enAlcance.value) { const id = estadoDe(p).id; c[id] = (c[id] || 0) + 1; }
   return c;
 });
 const vacio = computed(() => {
   if (q.value.trim()) return 'Sin coincidencias';
   const e = ESTADOS_FICHA.find((x) => x.id === estadoElegido.value);
-  return e ? `Ningún paciente en «${e.etiqueta}». Elige otro estado o «Todos».` : 'No hay pacientes';
+  if (e) return `Ningún paciente en «${e.etiqueta}». Elige otro estado o «Cualquier estado».`;
+  if (alcance.value === 'mios' && all.value.length) return 'Todavía no tienes pacientes a tu cargo. Mira «Todos».';
+  return 'No hay pacientes';
 });
 
 // Icono, texto y tooltip de "a cargo". Si el caso está derivado a varias personas se
@@ -368,10 +390,13 @@ const filtered = computed(() => {
   const t = normalizar(q.value.trim());
   const elegido = estadoElegido.value;
   const rq = reviewQueue.value;
+  // Buscando se busca en todos: a un paciente que no es mío se lo tiene que poder encontrar.
+  const mios = !t && alcance.value === 'mios' ? mineSet.value : null;
   return all.value
     .map((p, i) => ({ p, i, estado: estadoDe(p) }))
     .filter(({ p, estado }) =>
-      (!t || normalizar(`${fullName(p)} ${p.data?.cedula || ''}`).includes(t))
+      (!mios || mios.has(p.id))
+      && (!t || normalizar(`${fullName(p)} ${p.data?.cedula || ''}`).includes(t))
       && (!elegido || estado.id === elegido)
       // De alta desde antes de hoy: solo buscándolo o en el filtro «Alta» (PAPER §35).
       && (t || elegido === 'alta' || !altaVencida(assignments.value[p.id])))
@@ -401,7 +426,10 @@ async function load(silent = false) {
       getPatientAssignments().catch(() => null),
     ]);
     if (rq) reviewQueue.value = rq.by_patient || {};
-    if (as) assignments.value = as.assignments || {};
+    if (as) {
+      assignments.value = as.assignments || {};
+      mine.value = Array.isArray(as.mine) ? as.mine : [];
+    }
     all.value = Array.isArray(r?.data) ? r.data : [];
     cargado.value = true;
   } catch (e) {
@@ -450,6 +478,13 @@ defineExpose({ reload: load });
 }
 .search:focus { border-color: var(--accent); }
 .reload { width: 36px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--accent); cursor: pointer; }
+.alcances { display: flex; gap: 6px; padding: 0 10px 6px; }
+.alcance {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text); font-size: 0.82rem; font-weight: 700; cursor: pointer;
+}
+.alcance.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.alcance:disabled { opacity: .45; cursor: not-allowed; }
 .filtros {
   display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto; flex-shrink: 0;
   border-bottom: 1px solid var(--border); scrollbar-width: thin;
