@@ -33,7 +33,7 @@
         >✅ Responder interconsulta</button>
         <button
           v-if="flujo.revisar" type="button" class="ihead-revisar"
-          :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Tomar el paciente para revisarlo'"
+          :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Empezar a revisar: no le quita la consulta ni la derivación a nadie'"
         >🙋 Revisar</button>
         <button
           v-if="flujo.marcar" type="button" class="ihead-marcar"
@@ -63,12 +63,12 @@
           <span v-for="d in revisados" :key="'r' + d.user_id" class="rev-st ok" :title="`${d.name || d.email}: ya lo revisó`">✓ {{ d.name || d.email }}</span>
         </template>
       </button>
-      <!-- Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece «Marcar
-           revisado»; al marcarlo queda la etiqueta «✓ Revisado» (para siempre) y vuelve
-           «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra. -->
+      <!-- Flujo de revisión (PAPER §38.5, §38.6): «🙋 Revisar» empieza tu revisión (sin quitarle
+           la consulta a nadie) y aparece «Marcar revisado»; al marcarlo vuelve «🙋 Revisar» y,
+           a la derecha, la etiqueta «✓ Revisado». -->
       <button
         v-if="flujo.revisar" type="button" class="iderivado-ok tomar"
-        :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Tomar el paciente para revisarlo'"
+        :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Empezar a revisar: no le quita la consulta ni la derivación a nadie'"
       >{{ revisando ? 'Guardando…' : '🙋 Revisar' }}</button>
       <button
         v-if="flujo.marcar" type="button" class="iderivado-ok"
@@ -259,7 +259,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, markReviewed, claimEpisode, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
+import { chat, saveSessionId, uploadAttachment, listGroups, listGroupMembers, listEntityDerivations, markReviewed, startReview, listBotSessions, getPatientThread, obtenerEntidad } from '../api.js';
 import ResponderInterconsulta from './ResponderInterconsulta.vue';
 import DarDeAlta from './DarDeAlta.vue';
 import MessageContent from './MessageContent.vue';
@@ -537,7 +537,7 @@ async function cargarDerivados() {
   const vaciar = () => {
     derivados.value = []; revisados.value = []; responsable.value = null;
     canClaim.value = false; canReassign.value = false;
-    myReview.value = { claimed_at: null, reviewed_at: null };
+    myReview.value = { started_at: null, reviewed_at: null };
   };
   if (!epId) { vaciar(); return; }
   try {
@@ -548,18 +548,19 @@ async function cargarDerivados() {
     responsable.value = r?.responsable || null;
     canClaim.value = !!r?.can_claim;
     canReassign.value = !!r?.can_reassign;
-    myReview.value = r?.my_review || { claimed_at: null, reviewed_at: null };
+    myReview.value = r?.my_review || { started_at: null, reviewed_at: null };
   } catch { vaciar(); }
 }
 
-// Flujo de revisión (PAPER §38.5):
-//   1. «🙋 Revisar» toma el paciente (claim) → aparece «Marcar revisado».
+// Flujo de revisión (PAPER §38.5, §38.6):
+//   1. «🙋 Revisar» anota que empezaste a revisar (start_review) → aparece «Marcar revisado».
+//      No le quita la consulta ni la derivación a nadie: varios médicos revisan a la vez.
 //   2. «Marcar revisado» (complete_review only_mine) → etiqueta «✓ Revisado» y vuelve «🙋 Revisar».
 //   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
 //   Mientras se ve «Marcar revisado», «✓ Revisado» no se muestra.
-// Estás «revisando» si la consulta es tuya y la tomaste después de tu última marca.
+// Estás «revisando» si empezaste después de tu última marca.
 const revisando = ref(false);
-const myReview = ref({ claimed_at: null, reviewed_at: null });
+const myReview = ref({ started_at: null, reviewed_at: null });
 const nombreResp = computed(() => responsable.value?.name || responsable.value?.email || 'otro médico');
 const acargoTexto = computed(() => {
   if (!responsable.value) return 'Sin responsable';
@@ -571,46 +572,41 @@ function fechaCorta(iso) {
 }
 const flujo = computed(() => {
   const yo = props.user?.id;
-  const r = responsable.value;
-  const esMia = !!r && r.user_id === yo;
   const abierta = !!yo && derivadoIds.value.has(yo);
-  const { claimed_at: tomada, reviewed_at: marcada } = myReview.value || {};
-  const enRevision = esMia && !!tomada && (!marcada || new Date(tomada) > new Date(marcada));
+  const { started_at: empezada, reviewed_at: marcada } = myReview.value || {};
+  const enRevision = !!empezada && (!marcada || new Date(empezada) > new Date(marcada));
   let motivo = '';
   if (!activeEpisodeId.value) motivo = 'Elige un paciente con una consulta abierta';
   else if (!isActiveEpisode.value) motivo = 'Es una consulta anterior: solo se revisa la vigente';
   else if (!episodioInfo.value) motivo = 'Cargando el estado de la consulta…';
   else if (episodioInfo.value.estado === 'alta') motivo = 'El paciente está de alta: si vuelve, abre una consulta nueva';
-  const motivoRevisar = motivo || (r && !esMia && !canReassign.value ? `La tiene a cargo ${nombreResp.value}` : '');
   return {
     revisadoAlgunaVez: !!marcada,
     enRevision,
-    revisar: canClaim.value && !enRevision,
-    motivo: motivoRevisar,
-    // Sin permiso de tomar casos (p. ej. un especialista al que se lo derivaron) marca directo.
-    marcar: enRevision || (abierta && !canClaim.value),
+    // Revisa quien puede tomar casos o a quien se lo derivaron (excepción por permisos).
+    revisar: (canClaim.value || abierta) && !enRevision,
+    motivo,
+    marcar: enRevision,
     motivoMarcar: motivo,
   };
 });
 async function tomarParaRevisar() {
   const epId = activeEpisodeId.value;
   if (!epId || flujo.value.motivo || revisando.value) return;
-  const r = responsable.value;
-  if (r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La revisas tú?`)) return;
   revisando.value = true;
   showMenu.value = false;
   try {
-    await claimEpisode(epId, episodioInfo.value?.estado === 'enviada' ? 'en_triage' : null);
+    await startReview(epId);
     messages.value = [...messages.value, {
       role: 'assistant', is_bot: true, episode_id: epId,
-      content: '🙋 Tomaste el paciente para revisarlo. Cuando termines, toca «Marcar revisado».',
+      content: '🙋 Empezaste a revisar este paciente. Cuando termines, toca «Marcar revisado».',
     }];
-    await Promise.all([cargarDerivados(), cargarEpisodioInfo()]);
-    emit('respondida');      // la lista se recarga: «a cargo: tú»
+    await cargarDerivados();
+    emit('respondida');      // la lista se recarga: entra en «Mis pacientes»
   } catch (e) {
     messages.value = [...messages.value, {
       role: 'assistant', is_bot: true, episode_id: epId,
-      content: `⚠️ No se pudo tomar el paciente: ${e?.message || 'error de red'}`,
+      content: `⚠️ No se pudo empezar la revisión: ${e?.message || 'error de red'}`,
     }];
   } finally {
     revisando.value = false;

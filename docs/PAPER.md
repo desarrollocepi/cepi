@@ -3704,3 +3704,23 @@ por X.» en el chatter — esa nota es la marca. Si había recordatorios propios
   dueño la quitó: basta con que se vea «Marcar revisado».)
 - Mientras se ve «Marcar revisado», la etiqueta «✓ Revisado» no se muestra.
 
+### 38.6 Revisar no le quita la consulta a nadie (pedido del dueño, 2026-11-19)
+
+Probando, «🙋 Revisar» pedía «X la tiene a cargo. ¿La revisas tú?». El dueño: **que yo lo revise
+no significa que se le quita la derivación a otro médico ni que él ya no tenga que revisarlo.**
+Varios médicos revisan la misma consulta a la vez, cada uno por su cuenta.
+
+- «🙋 Revisar» ya no usa `claim`: llama a **`POST /api/entities/:id/start_review`** (genérico),
+  que solo anota en el chatter «En revisión por X.» (`action: start_review`). No cambia el
+  responsable, ni el estado, ni las revisiones o derivaciones de otros. Sin confirmación.
+- Lo pueden usar quien tiene una revisión abierta en la consulta, quien puede tomar casos
+  (`entities:claim`) o quien puede pedir revisiones. Por eso un especialista derivado también
+  ve «🙋 Revisar» (antes marcaba directo).
+- `my_review` pasa a ser `{started_at, reviewed_at}`: `started_at` es la última `start_review`.
+  Estás revisando si `started_at` es posterior a `reviewed_at`. Ya no hace falta que la consulta
+  sea tuya.
+- «Marcar revisado» se ve mientras estás revisando, y nada más.
+- «Mis pacientes» (§39) incluye los pacientes que empezaste a revisar o marcaste revisados.
+- Tomar la consulta para uno mismo (cambiar el responsable) queda en el comando `reclamar` del
+  chat; los botones de §38.3 dejan de hacerlo.
+

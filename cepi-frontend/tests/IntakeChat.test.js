@@ -5,7 +5,7 @@ vi.mock('../src/api.js', () => ({
   chat: vi.fn(), saveSessionId: vi.fn(), uploadAttachment: vi.fn(), listGroups: vi.fn(),
   listGroupMembers: vi.fn(), listEntityDerivations: vi.fn(), listBotSessions: vi.fn(),
   getPatientThread: vi.fn(), obtenerEntidad: vi.fn(), responderInterconsulta: vi.fn(), darDeAlta: vi.fn(),
-  markReviewed: vi.fn(), claimEpisode: vi.fn(),
+  markReviewed: vi.fn(), claimEpisode: vi.fn(), startReview: vi.fn(),
 }));
 vi.mock('../src/native/speech.js', () => ({ dictationSupported: false, createDictation: vi.fn() }));
 import * as api from '../src/api.js';
@@ -598,87 +598,68 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
   });
 });
 
-describe('IntakeChat — flujo de revisión (PAPER §38.5)', () => {
+describe('IntakeChat — flujo de revisión (PAPER §38.5, §38.6)', () => {
   const revisar = (w) => w.findAll('.iderivado button').find((b) => b.text().includes('Revisar'));
   const marcar = (w) => w.findAll('.iderivado button').find((b) => b.text().includes('Marcar revisado'));
   const etiqueta = (w) => w.find('.rev-label');
-  const NADA = { claimed_at: null, reviewed_at: null };
+  const NADA = { started_at: null, reviewed_at: null };
   const deriv = (extra) => api.listEntityDerivations.mockResolvedValue({
     derivados: [], revisados: [], responsable: null, can_claim: true, can_reassign: false, my_review: NADA, ...extra,
   });
 
-  it('1) «🙋 Revisar» toma el paciente y aparece «Marcar revisado»', async () => {
-    preparar({ episodio: { estado: 'enviada' } });
-    deriv({});
-    api.claimEpisode.mockResolvedValue({ ok: true });
+  it('1) «🙋 Revisar» empieza la revisión sin reclamar ni confirmar, aunque la tenga otro', async () => {
+    deriv({ responsable: { user_id: 'u2', name: 'Dr. Otro' }, derivados: [{ user_id: 'u2', name: 'Dr. Otro' }] });
+    api.startReview.mockResolvedValue({ ok: true });
+    const conf = vi.spyOn(window, 'confirm');
     const w = await abrir();
     expect(revisar(w).attributes('disabled')).toBeUndefined();
     expect(marcar(w)).toBeUndefined();
-    expect(etiqueta(w).exists()).toBe(false);
-    deriv({ responsable: { user_id: 'yo', name: 'Yo' }, my_review: { claimed_at: '2026-11-19T10:00:00Z', reviewed_at: null } });
+    deriv({ responsable: { user_id: 'u2', name: 'Dr. Otro' }, derivados: [{ user_id: 'u2', name: 'Dr. Otro' }],
+      my_review: { started_at: '2026-11-19T10:00:00Z', reviewed_at: null } });
     await revisar(w).trigger('click');
     await flushPromises();
-    expect(api.claimEpisode).toHaveBeenCalledWith('ep2', 'en_triage');
+    expect(conf).not.toHaveBeenCalled();
+    expect(api.startReview).toHaveBeenCalledWith('ep2');
+    expect(api.claimEpisode).not.toHaveBeenCalled();
     expect(w.emitted('respondida')).toHaveLength(1);
     expect(revisar(w)).toBeUndefined();
     expect(marcar(w).attributes('disabled')).toBeUndefined();
-    expect(w.find('.acargo-linea').text()).toBe('A cargo: tú');
-    expect(etiqueta(w).exists()).toBe(false);             // tomarlo NO lo deja revisado
+    expect(etiqueta(w).exists()).toBe(false);
+    expect(w.find('.acargo-linea').text()).toBe('A cargo: Dr. Otro');     // sigue siendo de él
+    expect(w.find('.rev-st.pend').text()).toBe('Dr. Otro');               // y su derivación sigue
+    conf.mockRestore();
   });
 
-  it('2) «Marcar revisado» deja la etiqueta «✓ Revisado» y vuelve «🙋 Revisar»', async () => {
-    deriv({ responsable: { user_id: 'yo', name: 'Yo' }, my_review: { claimed_at: '2026-11-19T10:00:00Z', reviewed_at: null } });
+  it('2) «Marcar revisado» deja la etiqueta «✓ Revisado» a la derecha y vuelve «🙋 Revisar»', async () => {
+    deriv({ my_review: { started_at: '2026-11-19T10:00:00Z', reviewed_at: null } });
     api.markReviewed.mockResolvedValue({ ok: true });
     const w = await abrir();
-    deriv({ responsable: { user_id: 'yo', name: 'Yo' }, my_review: { claimed_at: '2026-11-19T10:00:00Z', reviewed_at: '2026-11-19T10:05:00Z' } });
+    deriv({ my_review: { started_at: '2026-11-19T10:00:00Z', reviewed_at: '2026-11-19T10:05:00Z' } });
     await marcar(w).trigger('click');
     await flushPromises();
     expect(api.markReviewed).toHaveBeenCalledWith('ep2');
     expect(etiqueta(w).text()).toBe('✓ Revisado');
     expect(revisar(w).exists()).toBe(true);
     expect(marcar(w)).toBeUndefined();
+    const hijos = [...w.find('.iderivado').element.children];
+    expect(hijos[hijos.length - 1].classList.contains('rev-label')).toBe(true);
   });
 
-  it('3) al volver a tomarlo se ve «Marcar revisado» y no la etiqueta', async () => {
-    deriv({ responsable: { user_id: 'yo', name: 'Yo' }, my_review: { claimed_at: '2026-11-19T11:00:00Z', reviewed_at: '2026-11-19T10:05:00Z' } });
+  it('3) al empezar otra vez se ve «Marcar revisado» y no la etiqueta', async () => {
+    deriv({ my_review: { started_at: '2026-11-19T11:00:00Z', reviewed_at: '2026-11-19T10:05:00Z' } });
     const w = await abrir();
     expect(etiqueta(w).exists()).toBe(false);
-    expect(marcar(w).exists()).toBe(true);     // en revisión otra vez
+    expect(marcar(w).exists()).toBe(true);
     expect(revisar(w)).toBeUndefined();
   });
 
-  it('la tiene otro y no puedo reasignar: «🙋 Revisar» gris con su nombre', async () => {
-    deriv({ responsable: { user_id: 'u2', name: 'Dra. B' } });
-    const w = await abrir();
-    expect(revisar(w).attributes('disabled')).toBeDefined();
-    expect(revisar(w).attributes('title')).toBe('La tiene a cargo Dra. B');
-  });
-
-  it('la tiene otro y puedo reasignar: confirma; si cancelo no hace nada', async () => {
-    deriv({ responsable: { user_id: 'u2', name: 'Dra. B' }, can_reassign: true });
-    const conf = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('sin permiso de tomar casos pero derivada a mí: también puede revisar', async () => {
+    deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }] });
+    api.startReview.mockResolvedValue({ ok: true });
     const w = await abrir();
     await revisar(w).trigger('click');
-    expect(conf).toHaveBeenCalledWith('Dra. B la tiene a cargo. ¿La revisas tú?');
-    expect(api.claimEpisode).not.toHaveBeenCalled();
-    conf.mockRestore();
-  });
-
-  it('con «Marcar revisado» a la vista no se muestra «✓ Revisado»', async () => {
-    deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }], my_review: { claimed_at: null, reviewed_at: '2026-11-18T10:00:00Z' } });
-    const w = await abrir();
-    expect(marcar(w).exists()).toBe(true);
-    expect(etiqueta(w).exists()).toBe(false);
-  });
-
-  it('sin permiso de tomar casos pero derivada a mí: solo «Marcar revisado»', async () => {
-    deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }] });
-    api.markReviewed.mockResolvedValue({ ok: true });
-    const w = await abrir();
-    expect(revisar(w)).toBeUndefined();
-    await marcar(w).trigger('click');
     await flushPromises();
-    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
+    expect(api.startReview).toHaveBeenCalledWith('ep2');
   });
 
   it('sin permiso y sin nada para mí: ningún botón; el menú tampoco los tiene', async () => {
@@ -688,14 +669,22 @@ describe('IntakeChat — flujo de revisión (PAPER §38.5)', () => {
     expect(w.findAll('.ihead-actions button').some((b) => /Revisar|Marcar revisado/.test(b.text()))).toBe(false);
   });
 
-  it('si falla tomar, lo dice en el chat y no avisa a la lista', async () => {
+  it('de alta: «🙋 Revisar» gris con el motivo', async () => {
+    preparar({ episodio: { estado: 'alta' } });
     deriv({});
-    api.claimEpisode.mockRejectedValue(new Error('sin red'));
+    const w = await abrir();
+    expect(revisar(w).attributes('disabled')).toBeDefined();
+    expect(revisar(w).attributes('title')).toBe('El paciente está de alta: si vuelve, abre una consulta nueva');
+  });
+
+  it('si falla, lo dice en el chat y no avisa a la lista', async () => {
+    deriv({});
+    api.startReview.mockRejectedValue(new Error('sin red'));
     const w = await abrir();
     await revisar(w).trigger('click');
     await flushPromises();
     expect(w.emitted('respondida')).toBeUndefined();
-    expect(turnos(w).some((t) => t.includes('No se pudo tomar el paciente: sin red'))).toBe(true);
+    expect(turnos(w).some((t) => t.includes('No se pudo empezar la revisión: sin red'))).toBe(true);
   });
 });
 

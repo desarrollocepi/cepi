@@ -111,13 +111,10 @@ export async function listEntityDerivations(entityId) {
   return call(`/api/review-queue/entity/${encodeURIComponent(entityId)}`, { method: 'GET' });
 }
 
-// «Revisar» (PAPER §38.3): quien llama queda como responsable de la consulta. `statusValue`
-// solo si la consulta estaba `enviada` (pasa a `en_triage`, como el comando `reclamar`).
-export async function claimEpisode(entityId, statusValue = null) {
-  return call(`/api/entities/${encodeURIComponent(entityId)}/claim`, {
-    method: 'POST',
-    body: JSON.stringify(statusValue ? { status_value: statusValue } : {}),
-  });
+// «🙋 Revisar» (PAPER §38.6): anota que quien llama empezó a revisar. No cambia el responsable
+// ni el estado ni las derivaciones de otros.
+export async function startReview(entityId) {
+  return call(`/api/entities/${encodeURIComponent(entityId)}/start_review`, { method: 'POST', body: '{}' });
 }
 
 // «Revisado» de quien llama (PAPER §38): cierra solo SU revisión abierta del episodio; los
