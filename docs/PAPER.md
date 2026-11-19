@@ -3671,3 +3671,33 @@ ya lo revisé. Reemplaza lo dicho en §38.2 y §38.3 sobre los botones (los endp
   tomar casos.
 - El mismo botón en la franja y en el menú de acciones.
 
+### 38.5 Flujo de revisión en tres pasos (pedido del dueño, 2026-11-19)
+
+El botón único de §38.4 no era el flujo esperado. Reemplaza lo de §38.4 sobre los botones:
+
+1. **«🙋 Revisar»** toma el paciente (`claim`; si estaba `enviada`, pasa a `en_triage`) y
+   aparece **«Marcar revisado»**.
+2. **«Marcar revisado»** (`complete_review {only_mine}`) apaga tu «revisar» y deja la
+   etiqueta **«✓ Revisado»**; vuelve a aparecer «🙋 Revisar» para otra ronda.
+3. La etiqueta «✓ Revisado» se ve siempre que la hayas marcado al menos una vez en esa
+   consulta (no es un botón).
+
+**Cómo se sabe en qué paso estás.** `GET /api/review-queue/entity/:id` devuelve
+`my_review: {claimed_at, reviewed_at}`: la última nota `claim` de quien consulta en el
+chatter y la última `complete_review` con scope `mine`. Estás **revisando** si la consulta es
+tuya y `claimed_at` es posterior a `reviewed_at` (o no marcaste nunca). La etiqueta sale si hay
+`reviewed_at`.
+
+**Marcar sin derivación.** `complete_review {only_mine}` ya no exige un recordatorio abierto:
+lo puede llamar el revisor o quien puede reclamar (`entities:claim`), y siempre anota «Revisado
+por X.» en el chatter — esa nota es la marca. Si había recordatorios propios, los cierra.
+
+**Quién ve qué.**
+- «🙋 Revisar»: quien puede tomar casos, mientras no esté revisando. Gris con el motivo si la
+  tiene otro y no puedes reasignar, en una consulta anterior, de alta o mientras carga; si la
+  tiene otro y puedes reasignar, confirma.
+- «Marcar revisado»: mientras estás revisando, o directo si te la derivaron y no puedes tomar
+  casos (un especialista).
+- En la franja y en el menú de acciones, los mismos.
+- Marcar no suelta la consulta: sigue a tu cargo.
+
