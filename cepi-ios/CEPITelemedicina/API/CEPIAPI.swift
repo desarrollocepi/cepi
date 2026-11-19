@@ -211,7 +211,7 @@ struct CEPIAPI: Sendable {
         return r.data
     }
 
-    /// «Lo tomo» (PAPER §38.3): quien llama queda a cargo de la consulta. Acción explícita:
+    /// «Revisar» (PAPER §38.3): quien llama queda a cargo de la consulta. Acción explícita:
     /// sin gate. Un 409 (la tiene otro y no se puede reasignar) llega como `APIError` con el
     /// motivo del backend.
     @discardableResult

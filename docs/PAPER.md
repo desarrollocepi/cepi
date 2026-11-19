@@ -3595,10 +3595,11 @@ botón «Revisado».
 - Al marcarlo, la lista se recarga y el paciente sale de «revisar» para quien lo marcó; para
   los otros revisores sigue igual.
 
-### 38.3 «Lo tomo»: tomar la consulta para uno mismo (pedido del dueño, 2026-11-19)
+### 38.3 «🙋 Revisar»: tomar la consulta para uno mismo (pedido del dueño, 2026-11-19)
 
 Hasta ahora, tomar un caso era escribir `reclamar` en el chat: no había botón en la web ni en
-las apps. Se agrega **«Lo tomo»** al lado de «Revisado».
+las apps. Se agrega **«🙋 Revisar»** al lado de «✓ Revisado» (primero se llamó «Lo tomo»; el
+dueño prefirió «Revisar», con el mismo emoji).
 
 - **Qué hace**: `POST /api/entities/:id/claim` (§13.6 hermana; genérico). Quien toca queda
   como `responsable_actual_id` de la consulta. Si estaba `enviada`, pasa a `en_triage`, igual
@@ -3608,7 +3609,7 @@ las apps. Se agrega **«Lo tomo»** al lado de «Revisado».
   name, email} | null` (quién la tiene a cargo) y `can_claim` / `can_reassign` (si quien
   consulta tiene `entities:claim` / `entities:assign`). Una sola llamada para la franja.
 - **La franja de la consulta se ve siempre** que haya una consulta abierta: «A cargo: X» (o
-  «Sin responsable»), los derivados con su estado, y los botones «Lo tomo» y «Revisado».
+  «Sin responsable»), los derivados con su estado, y los botones «🙋 Revisar» y «✓ Revisado».
 - **Estados del botón** (nunca se oculta, salvo por permiso):
   - sin `can_claim` (médico primario, especialista): no se muestra — es un permiso que el
     rol nunca tendrá (excepción de la regla de botones);
@@ -3616,7 +3617,7 @@ las apps. Se agrega **«Lo tomo»** al lado de «Revisado».
   - ya es tuya: gris, «Ya está a tu cargo»;
   - la tiene otro y no puedes reasignar: gris, «La tiene a cargo X»;
   - la tiene otro y puedes reasignar (supermédico): habilitado, pide confirmación («X la
-    tiene a cargo. ¿La tomas tú?»);
+    tiene a cargo. ¿La revisas tú?»);
   - sin responsable: habilitado.
 - Al tomarla se recarga la franja y la lista (la fila pasa a «a cargo: tú»).
 

@@ -264,7 +264,7 @@ class ContratoTest {
         assertEquals("Sin responsable", CaseClaim.ownerLabel(null, "u1"))
         assertEquals("A cargo: tú", CaseClaim.ownerLabel(conResponsable.responsable, "u9"))
         assertEquals("A cargo: Dra. Paz", CaseClaim.ownerLabel(conResponsable.responsable, "u1"))
-        assertEquals("Dra. Paz la tiene a cargo. ¿La tomas tú?", CaseClaim.confirmQuestion("Dra. Paz"))
+        assertEquals("Dra. Paz la tiene a cargo. ¿La revisas tú?", CaseClaim.confirmQuestion("Dra. Paz"))
     }
 
     @Test

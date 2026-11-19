@@ -267,7 +267,7 @@ class CepiApi(val cliente: ApiClient) {
         cliente.get("/api/review-queue/entity/$episodio")
 
     /**
-     * «Lo tomo» (PAPER §38.3): quien llama queda como responsable. Una consulta `enviada` pasa a
+     * «Revisar» (PAPER §38.3): quien llama queda como responsable. Una consulta `enviada` pasa a
      * `en_triage`, como el comando `reclamar`; en otro estado no cambia. Un 409 (la tiene otro
      * y no puedes reasignar) llega como `ApiError` con el mensaje del servidor.
      */

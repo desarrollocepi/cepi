@@ -647,9 +647,9 @@ describe('IntakeChat — «Revisado» por médico (PAPER §38)', () => {
   });
 });
 
-describe('IntakeChat — «Lo tomo» (PAPER §38.3)', () => {
+describe('IntakeChat — «Revisar» (PAPER §38.3)', () => {
   const tomar = (w) => w.find('.iderivado-ok.tomar');
-  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('Tomar la consulta'));
+  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('🙋 Revisar'));
 
   it('sin responsable: toma la consulta; si estaba enviada pasa a en_triage', async () => {
     preparar({ episodio: { estado: 'enviada' } });
@@ -690,12 +690,12 @@ describe('IntakeChat — «Lo tomo» (PAPER §38.3)', () => {
     const conf = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const w = await abrir();
     await tomar(w).trigger('click');
-    expect(conf).toHaveBeenCalledWith('Dra. B la tiene a cargo. ¿La tomas tú?');
+    expect(conf).toHaveBeenCalledWith('Dra. B la tiene a cargo. ¿La revisas tú?');
     expect(api.claimEpisode).not.toHaveBeenCalled();
     conf.mockRestore();
   });
 
-  it('sin permiso de reclamar, «Lo tomo» no aparece (ni en el menú)', async () => {
+  it('sin permiso de reclamar, «Revisar» no aparece (ni en el menú)', async () => {
     api.listEntityDerivations.mockResolvedValue({ derivados: [], can_claim: false });
     const w = await abrir();
     expect(tomar(w).exists()).toBe(false);

@@ -307,7 +307,7 @@ enum ReviewStatus {
     }
 }
 
-/// «Lo tomo» (PAPER §38.3): `POST /api/entities/:id/claim`. Sin `status_value` el cuerpo
+/// «Revisar» (PAPER §38.3): `POST /api/entities/:id/claim`. Sin `status_value` el cuerpo
 /// sale `{}` (la síntesis de `Encodable` omite los opcionales en nil).
 struct ClaimRequest: Encodable, Sendable, Equatable {
     let statusValue: String?
@@ -330,7 +330,7 @@ struct ClaimResult: Decodable, Sendable {
     }
 }
 
-/// Lo que decide el botón «Lo tomo» y la línea «A cargo» de la franja (PAPER §38.3).
+/// Lo que decide el botón «Revisar» y la línea «A cargo» de la franja (PAPER §38.3).
 enum ClaimStatus {
     enum State: Equatable {
         /// Sin `entities:claim`: el rol nunca podrá tomarla, así que no se muestra.
@@ -368,7 +368,7 @@ enum ClaimStatus {
         guard let responsable else { return .allowed }
         if let userId, responsable.usuario == userId { return .blocked(alreadyMineReason) }
         guard canReassign else { return .blocked("La tiene a cargo \(responsable.comoSeLlama)") }
-        return .confirm("\(responsable.comoSeLlama) la tiene a cargo. ¿La tomas tú?")
+        return .confirm("\(responsable.comoSeLlama) la tiene a cargo. ¿La revisas tú?")
     }
 
     /// `enviada` pasa a `en_triage`, como el comando `reclamar`; otro estado no cambia.

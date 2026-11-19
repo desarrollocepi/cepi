@@ -219,9 +219,9 @@ fun PacienteAbierto(
     var claiming by remember { mutableStateOf(false) }
     // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
     var claimConfirmOwner by remember { mutableStateOf<String?>(null) }
-    // «Lo tomo» (PAPER §38.3), con el estado del registro del episodio activo.
+    // «Revisar» (PAPER §38.3), con el estado del registro del episodio activo.
     val claimState = if (claiming) {
-        CaseClaim.State.Disabled("Tomando la consulta…")
+        CaseClaim.State.Disabled("Guardando…")
     } else {
         CaseClaim.state(
             referrals = modelo.referrals,
@@ -251,7 +251,7 @@ fun PacienteAbierto(
         }
     }
 
-    /** Tocar «Lo tomo»: si se la quita a otro, primero confirma. */
+    /** Tocar «Revisar»: si se la quita a otro, primero confirma. */
     fun requestClaim() {
         val state = claimState as? CaseClaim.State.Enabled ?: return
         if (state.currentOwner != null) claimConfirmOwner = state.currentOwner else claim()
@@ -346,7 +346,7 @@ fun PacienteAbierto(
                 .fillMaxSize(),
         ) {
             // La franja de la consulta activa (PAPER §38.2–38.3), siempre que haya una: quién la
-            // tiene a cargo, a quién está derivada con el estado de cada revisor, «Lo tomo» y
+            // tiene a cargo, a quién está derivada con el estado de cada revisor, «Revisar» y
             // «Revisado». Tocar los nombres abre Derivar para sumar o cambiar destinos.
             if (modelo.episodioActivo != null) {
                 ReviewStrip(
@@ -437,13 +437,13 @@ fun PacienteAbierto(
     claimConfirmOwner?.let { owner ->
         AlertDialog(
             onDismissRequest = { claimConfirmOwner = null },
-            title = { Text("Tomar la consulta") },
+            title = { Text("Revisar el caso") },
             text = { Text(CaseClaim.confirmQuestion(owner)) },
             confirmButton = {
                 TextButton(onClick = {
                     claimConfirmOwner = null
                     claim()
-                }) { Text("La tomo") }
+                }) { Text("La reviso") }
             },
             dismissButton = { TextButton(onClick = { claimConfirmOwner = null }) { Text("Cancelar") } },
         )
@@ -519,7 +519,7 @@ private fun Acciones(
     /** Por qué no se puede marcar «Revisado»; `null` si se puede (PAPER §38). */
     reviewReason: String?,
     onMarkReviewed: () -> Unit,
-    /** «Lo tomo» (PAPER §38.3); `Hidden` solo por permiso. */
+    /** «Revisar» (PAPER §38.3); `Hidden` solo por permiso. */
     claimState: CaseClaim.State,
     onClaim: () -> Unit,
 ) {
@@ -597,7 +597,7 @@ private fun Acciones(
         // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
         if (claimState !is CaseClaim.State.Hidden) {
             DropdownMenuItem(
-                text = { Explicado("Tomar la consulta", (claimState as? CaseClaim.State.Disabled)?.reason) },
+                text = { Explicado("🙋 Revisar", (claimState as? CaseClaim.State.Disabled)?.reason) },
                 enabled = claimState is CaseClaim.State.Enabled,
                 onClick = {
                     alCerrar()
@@ -634,7 +634,7 @@ private fun Acciones(
 
 /**
  * La franja de la consulta activa (PAPER §38.2–38.3): quién la tiene a cargo, los derivados con
- * su estado (pendiente o ✓ revisado) y, a la derecha, «Lo tomo» y «Revisado». Un botón que no
+ * su estado (pendiente o ✓ revisado) y, a la derecha, «Revisar» y «Revisado». Un botón que no
  * aplica queda gris y su motivo se lee debajo de los nombres.
  */
 @Composable
@@ -682,7 +682,7 @@ private fun ReviewStrip(
                 }
                 // Los motivos, salvo mientras se hace la acción (ahí el botón muestra el progreso).
                 if (claimReason != null && !claiming) {
-                    Text("Lo tomo: $claimReason", style = MaterialTheme.typography.bodySmall, color = color)
+                    Text("Revisar: $claimReason", style = MaterialTheme.typography.bodySmall, color = color)
                 }
                 if (reviewReason != null && !marking) {
                     Text("Revisado: $reviewReason", style = MaterialTheme.typography.bodySmall, color = color)
@@ -693,9 +693,9 @@ private fun ReviewStrip(
                 TextButton(
                     onClick = onClaim,
                     enabled = claimState is CaseClaim.State.Enabled,
-                    modifier = Modifier.semantics { contentDescription = claimReason ?: "Tomar la consulta" },
+                    modifier = Modifier.semantics { contentDescription = claimReason ?: "Revisar este caso" },
                 ) {
-                    if (claiming) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Lo tomo")
+                    if (claiming) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("🙋 Revisar")
                 }
             }
             TextButton(

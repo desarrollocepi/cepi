@@ -245,7 +245,7 @@ data class ClaimResult(
 )
 
 /**
- * «Lo tomo» (PAPER §38.3): qué muestra el botón. Sin UI, para poder probarlo.
+ * «Revisar» (PAPER §38.3): qué muestra el botón. Sin UI, para poder probarlo.
  */
 object CaseClaim {
     const val CONFIRMATION = "Ahora tienes esta consulta a cargo."
@@ -293,7 +293,7 @@ object CaseClaim {
     }
 
     /** La pregunta antes de quitársela a otro. */
-    fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La tomas tú?"
+    fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La revisas tú?"
 }
 
 /** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */

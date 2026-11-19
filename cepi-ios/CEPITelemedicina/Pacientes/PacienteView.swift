@@ -36,11 +36,11 @@ struct PacienteView: View {
     @State private var dischargeDone = false
     /// «Revisado» en vuelo (PAPER §38.2): el botón queda gris hasta que vuelve.
     @State private var markingReviewed = false
-    /// «Lo tomo» en vuelo (PAPER §38.3).
+    /// «Revisar» en vuelo (PAPER §38.3).
     @State private var claiming = false
     /// La tiene otro y quien mira puede reasignar: el texto del diálogo de confirmación.
     @State private var claimConfirmation: String?
-    /// Un fallo de «Revisado» o «Lo tomo»: una sola alerta con su título.
+    /// Un fallo de «Revisado» o «Revisar»: una sola alerta con su título.
     @State private var stripError: StripError?
 
     enum Seccion: String, CaseIterable, Identifiable {
@@ -86,7 +86,7 @@ struct PacienteView: View {
 
             // La franja de la consulta (PAPER §38.2–38.3), siempre que haya una consulta
             // activa: quién la tiene a cargo, los derivados con su estado y, a la derecha,
-            // «Lo tomo» y «Revisado». El texto se toca y abre Derivar para sumar o cambiar
+            // «Revisar» y «Revisado». El texto se toca y abre Derivar para sumar o cambiar
             // destinos.
             if modelo.episodioActivo != nil {
                 HStack(spacing: 8) {
@@ -118,7 +118,7 @@ struct PacienteView: View {
                             if claiming {
                                 ProgressView().controlSize(.mini)
                             } else {
-                                Label("Lo tomo", systemImage: "hand.raised")
+                                Text("🙋 Revisar")
                             }
                         }
                         .buttonStyle(.bordered)
@@ -266,11 +266,11 @@ struct PacienteView: View {
         } message: {
             Text(stripError?.message ?? "")
         }
-        .confirmationDialog("Tomar la consulta", isPresented: Binding(
+        .confirmationDialog("Revisar el caso", isPresented: Binding(
             get: { claimConfirmation != nil },
             set: { if !$0 { claimConfirmation = nil } }
         ), titleVisibility: .visible) {
-            Button("La tomo") { Task { await claim() } }
+            Button("La reviso") { Task { await claim() } }
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text(claimConfirmation ?? "")
@@ -356,7 +356,7 @@ struct PacienteView: View {
         await onListChanged()
     }
 
-    /// «Lo tomo» (PAPER §38.3). El estado de la consulta sale del registro del episodio.
+    /// «Revisar» (PAPER §38.3). El estado de la consulta sale del registro del episodio.
     private var claimState: ClaimStatus.State {
         ClaimStatus.state(
             episode: modelo.episodioActivo,
@@ -469,7 +469,7 @@ struct PacienteView: View {
                 Button {
                     requestClaim()
                 } label: {
-                    Label("Tomar la consulta", systemImage: "hand.raised")
+                    Text("🙋 Revisar")
                     Text(claimState.blockReason ?? "Quedas a cargo de esta consulta")
                 }
                 .disabled(claimDisabled)
@@ -489,7 +489,7 @@ struct PacienteView: View {
     }
 }
 
-/// El fallo de una acción de la franja («Revisado», «Lo tomo»).
+/// El fallo de una acción de la franja («Revisado», «Revisar»).
 private struct StripError: Equatable {
     let title: String
     let message: String

@@ -359,7 +359,7 @@ struct ContratoTests {
         #expect(estado(responsable: Responsable(usuario: "u1", nombre: "Yo", email: nil))
             == .blocked(ClaimStatus.alreadyMineReason))
         #expect(estado(responsable: otra) == .blocked("La tiene a cargo Dra. C"))
-        #expect(estado(responsable: otra, canReassign: true) == .confirm("Dra. C la tiene a cargo. ¿La tomas tú?"))
+        #expect(estado(responsable: otra, canReassign: true) == .confirm("Dra. C la tiene a cargo. ¿La revisas tú?"))
         #expect(estado() == .allowed)
         #expect(estado().blockReason == nil)
         #expect(estado(status: "alta").blockReason == ClaimStatus.dischargedReason)

@@ -37,8 +37,8 @@
         >☑️ Marcar como revisado</button>
         <button
           v-if="canClaim" type="button" class="ihead-tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
-          :title="tomarMotivo || 'Tomar la consulta: queda a tu cargo'"
-        >🙋 Tomar la consulta</button>
+          :title="tomarMotivo || 'Revisar este caso: queda a tu cargo'"
+        >🙋 Revisar</button>
         <button
           type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
           :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
@@ -53,7 +53,7 @@
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
     <!-- Quién tiene la consulta a cargo, a quién está derivada y el estado de cada uno
          (PAPER §38). Se ve siempre que haya una consulta. Tocar los nombres abre Derivar;
-         «Lo tomo» la deja a tu cargo y «Revisado» cierra solo tu revisión. -->
+         «Revisar» la deja a tu cargo y «Revisado» cierra solo tu revisión. -->
     <div v-if="patientName && activeEpisodeId" class="iderivado">
       <button type="button" class="iderivado-who" @click="openDerivar" title="Ver o cambiar la derivación">
         <span class="acargo-linea">{{ acargoTexto }}</span>
@@ -66,8 +66,8 @@
       <!-- Sin permiso de reclamar (primario, especialista) no se muestra: excepción por permisos. -->
       <button
         v-if="canClaim" type="button" class="iderivado-ok tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
-        :title="tomarMotivo || 'Tomar la consulta: queda a tu cargo'"
-      >{{ tomando ? 'Tomando…' : '🙋 Lo tomo' }}</button>
+        :title="tomarMotivo || 'Revisar este caso: queda a tu cargo'"
+      >{{ tomando ? 'Guardando…' : '🙋 Revisar' }}</button>
       <button
         type="button" class="iderivado-ok" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
         :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
@@ -547,7 +547,7 @@ async function cargarDerivados() {
   } catch { vaciar(); }
 }
 
-// «Lo tomo» (PAPER §38.3): gris con el motivo cuando no aplica.
+// «Revisar» (PAPER §38.3): gris con el motivo cuando no aplica.
 const tomando = ref(false);
 const nombreResp = computed(() => responsable.value?.name || responsable.value?.email || 'otro médico');
 const acargoTexto = computed(() => {
@@ -568,7 +568,7 @@ async function tomarConsulta() {
   const epId = activeEpisodeId.value;
   if (!epId || tomarMotivo.value || tomando.value) return;
   const r = responsable.value;
-  if (r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La tomas tú?`)) return;
+  if (r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La revisas tú?`)) return;
   tomando.value = true;
   showMenu.value = false;
   try {

@@ -111,7 +111,7 @@ export async function listEntityDerivations(entityId) {
   return call(`/api/review-queue/entity/${encodeURIComponent(entityId)}`, { method: 'GET' });
 }
 
-// «Lo tomo» (PAPER §38.3): quien llama queda como responsable de la consulta. `statusValue`
+// «Revisar» (PAPER §38.3): quien llama queda como responsable de la consulta. `statusValue`
 // solo si la consulta estaba `enviada` (pasa a `en_triage`, como el comando `reclamar`).
 export async function claimEpisode(entityId, statusValue = null) {
   return call(`/api/entities/${encodeURIComponent(entityId)}/claim`, {
