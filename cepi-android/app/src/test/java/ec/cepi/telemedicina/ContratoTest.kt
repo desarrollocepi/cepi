@@ -6,8 +6,8 @@ import ec.cepi.telemedicina.api.CaseReview
 import ec.cepi.telemedicina.api.ClaimResult
 import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.Derivado
+import ec.cepi.telemedicina.api.MyReview
 import ec.cepi.telemedicina.api.Responsable
-import ec.cepi.telemedicina.api.Revisado
 import ec.cepi.telemedicina.api.ReviewCompletion
 import ec.cepi.telemedicina.api.Uno
 import ec.cepi.telemedicina.api.CepiApi
@@ -249,62 +249,123 @@ class ContratoTest {
         assertEquals("Dra. Paz la tiene a cargo. ¿La revisas tú?", CaseReview.confirmQuestion("Dra. Paz"))
     }
 
-    /** PAPER §38.4: el único botón «🙋 Revisar» / «✓ Revisado», en el orden de `IntakeChat.vue`. */
+    /** PAPER §38.5: `my_review` en GET /api/review-queue/entity/:id. */
     @Test
-    fun unSoloBotonRevisar() {
+    fun miRevisionEnLaFranja() {
+        val con = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[],"revisados":[],"responsable":null,"can_claim":true,"can_reassign":false,
+               "my_review":{"claimed_at":"2026-11-19T10:00:00.000Z","reviewed_at":null}}""",
+        )
+        assertEquals("2026-11-19T10:00:00.000Z", con.myReview.claimedAt)
+        assertNull(con.myReview.reviewedAt)
+        val sin = decodificar<Derivaciones>("""{"ok":true,"entity_id":"e1","derivados":[]}""")
+        assertNull(sin.myReview.claimedAt)
+        assertNull(sin.myReview.reviewedAt)
+    }
+
+    /** PAPER §38.5: el flujo en tres pasos, igual que `flujo` de `IntakeChat.vue`. */
+    @Test
+    fun flujoDeRevisionEnTresPasos() {
         fun refs(
             derivados: List<String> = emptyList(),
-            revisados: List<String> = emptyList(),
             owner: String? = null,
             canClaim: Boolean = false,
             canReassign: Boolean = false,
+            claimedAt: String? = null,
+            reviewedAt: String? = null,
         ) = Derivaciones(
             derivados = derivados.map { Derivado(it, "Dr. $it") },
-            revisados = revisados.map { Revisado(it, "Dr. $it") },
             responsable = owner?.let { Responsable(it, "Dr. $it") },
             canClaim = canClaim,
             canReassign = canReassign,
+            myReview = MyReview(claimedAt, reviewedAt),
         )
-        fun st(r: Derivaciones, user: String? = "yo", episode: String? = "e1", active: Boolean = true, status: String? = "derivada") =
-            CaseReview.state(r, user, episode, active, status)
+        fun flow(r: Derivaciones, user: String? = "yo", episode: String? = "e1", active: Boolean = true, status: String? = "derivada") =
+            CaseReview.flow(r, user, episode, active, status)
+        val t10 = "2026-11-19T10:00:00.000Z"
+        val t11 = "2026-11-19T11:00:00.000Z"
 
-        // 1. Sin consulta activa. 2. Consulta anterior.
-        assertEquals(CaseReview.State.Disabled(CaseReview.NO_EPISODE), st(refs(derivados = listOf("yo")), episode = null))
-        assertEquals(CaseReview.State.Disabled(CaseReview.NOT_ACTIVE), st(refs(derivados = listOf("yo")), active = false))
-        // 3. Hecho: ya lo revisé, o es mía sin revisión abierta (aunque no tenga can_claim).
-        assertEquals(CaseReview.State.Done(), st(refs(revisados = listOf("yo"))))
-        assertEquals(CaseReview.State.Done(), st(refs(owner = "yo", canClaim = true)))
-        // Con revisión abierta y mía, no está hecho: se apaga mi «revisar» sin tomar.
-        assertEquals(CaseReview.State.Action(take = false, close = true, confirmOwner = null), st(refs(derivados = listOf("yo"), owner = "yo", canClaim = true)))
-        // 4. Sin revisión abierta ni permiso de tomar: oculto.
-        assertEquals(CaseReview.State.Hidden, st(refs(owner = "otro")))
-        assertEquals(CaseReview.State.Hidden, st(refs()))
-        // 5. Cargando. 6. Alta.
-        assertEquals(CaseReview.State.Disabled(CaseReview.LOADING), st(refs(canClaim = true), status = null))
-        assertEquals(CaseReview.State.Disabled(CaseReview.DISCHARGED), st(refs(derivados = listOf("yo")), status = "alta"))
-        // 7. La tiene otro, no es para mí y no puedo reasignar.
-        assertEquals(CaseReview.State.Disabled("La tiene a cargo Dr. otro"), st(refs(owner = "otro", canClaim = true)))
-        // 8. Acciones.
-        assertEquals(CaseReview.State.Action(take = true, close = false, confirmOwner = null), st(refs(canClaim = true), status = "enviada"))
-        assertEquals(
-            CaseReview.State.Action(take = true, close = false, confirmOwner = "Dr. otro"),
-            st(refs(owner = "otro", canClaim = true, canReassign = true)),
-        )
-        assertEquals(
-            CaseReview.State.Action(take = true, close = true, confirmOwner = null),
-            st(refs(derivados = listOf("yo"), canClaim = true)),
-        )
-        // Revisión abierta sin permiso de tomar, la tiene otro: solo se apaga mi «revisar».
-        assertEquals(
-            CaseReview.State.Action(take = false, close = true, confirmOwner = null),
-            st(refs(derivados = listOf("yo"), owner = "otro")),
-        )
-        // Sin usuario no hay nada mío.
-        assertEquals(CaseReview.State.Hidden, st(refs(derivados = listOf("yo")), user = null))
+        // Paso 1: sin responsable, con permiso de tomar: «🙋 Revisar» habilitado, sin confirmar.
+        val start = flow(refs(canClaim = true), status = "enviada")
+        assertTrue(start.showClaim)
+        assertNull(start.claimReason)
+        assertNull(start.confirmOwner)
+        assertFalse(start.showMark)
+        assertFalse(start.reviewedOnce)
+        assertNull(start.badge)
 
-        // Los avisos al terminar.
-        assertEquals(CaseReview.CONFIRMATION_TAKEN, CaseReview.confirmation(true))
-        assertEquals(CaseReview.CONFIRMATION_CLOSED, CaseReview.confirmation(false))
+        // Paso 2: la tomé (es mía, claimed sin marca): «☑️ Marcar revisado», sin «🙋 Revisar».
+        val reviewing = flow(refs(owner = "yo", canClaim = true, claimedAt = t10))
+        assertTrue(reviewing.inReview)
+        assertFalse(reviewing.showClaim)
+        assertTrue(reviewing.showMark)
+        assertNull(reviewing.markReason)
+        assertFalse(reviewing.reviewedOnce)
+        // Después de tomar: «🙋 Revisando».
+        assertEquals(CaseReview.Badge.Reviewing, reviewing.badge)
+
+        // Paso 3: marcada después de tomarla: etiqueta y vuelve «🙋 Revisar» (sigue siendo mía).
+        val done = flow(refs(owner = "yo", canClaim = true, claimedAt = t10, reviewedAt = t11))
+        assertFalse(done.inReview)
+        assertTrue(done.reviewedOnce)
+        assertTrue(done.showClaim)
+        assertNull(done.claimReason)
+        assertNull(done.confirmOwner)
+        assertFalse(done.showMark)
+        // Después de marcar: «✓ Revisado».
+        assertEquals(CaseReview.Badge.Reviewed, done.badge)
+
+        // Otra ronda: la volví a tomar después de marcar; la etiqueta sigue.
+        val again = flow(refs(owner = "yo", canClaim = true, claimedAt = t11, reviewedAt = t10))
+        assertTrue(again.inReview)
+        assertTrue(again.reviewedOnce)
+        assertTrue(again.showMark)
+        assertFalse(again.showClaim)
+        // Al volver a tomar: «🙋 Revisando» otra vez, nunca las dos.
+        assertEquals(CaseReview.Badge.Reviewing, again.badge)
+        // Se comparan instantes, no textos: con otro formato sigue siendo posterior.
+        assertTrue(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T11:00:00Z", reviewedAt = "2026-11-19T10:30:00.000Z")).inReview)
+        assertFalse(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T06:00:00-05:00", reviewedAt = t11)).inReview)
+
+        // Tomada por mí pero ya no es mía (la tiene otro): no estoy revisando.
+        assertFalse(flow(refs(owner = "otro", canClaim = true, canReassign = true, claimedAt = t10)).inReview)
+
+        // La tiene otro y no puedo reasignar: «🙋 Revisar» gris con su nombre.
+        val othersNoReassign = flow(refs(owner = "otro", canClaim = true))
+        assertTrue(othersNoReassign.showClaim)
+        assertEquals("La tiene a cargo Dr. otro", othersNoReassign.claimReason)
+        // La tiene otro y puedo reasignar: habilitado, confirma con su nombre.
+        val othersReassign = flow(refs(owner = "otro", canClaim = true, canReassign = true))
+        assertNull(othersReassign.claimReason)
+        assertEquals("Dr. otro", othersReassign.confirmOwner)
+
+        // Especialista derivado sin permiso de tomar: «☑️ Marcar revisado» directo, sin «🙋 Revisar».
+        val specialist = flow(refs(derivados = listOf("yo"), owner = "otro"))
+        assertFalse(specialist.showClaim)
+        assertTrue(specialist.showMark)
+        assertNull(specialist.markReason)
+        // Y después de marcar (ya no está en derivados): solo la etiqueta.
+        val specialistDone = flow(refs(owner = "otro", reviewedAt = t11))
+        assertTrue(specialistDone.reviewedOnce)
+        assertFalse(specialistDone.showClaim)
+        assertFalse(specialistDone.showMark)
+        assertEquals(CaseReview.Badge.Reviewed, specialistDone.badge)
+
+        // Sin nada: ni permiso ni derivación, nada se ve.
+        val nothing = flow(refs())
+        assertFalse(nothing.showClaim)
+        assertFalse(nothing.showMark)
+        assertFalse(nothing.reviewedOnce)
+        assertNull(nothing.badge)
+
+        // Motivos que bloquean los dos botones, en orden.
+        val r = refs(owner = "yo", canClaim = true, claimedAt = t10)
+        assertEquals(CaseReview.NO_EPISODE, flow(r, episode = null).markReason)
+        assertEquals(CaseReview.NOT_ACTIVE, flow(r, active = false).markReason)
+        assertEquals(CaseReview.LOADING, flow(r, status = null).markReason)
+        assertEquals(CaseReview.DISCHARGED, flow(r, status = "alta").markReason)
+        assertEquals(CaseReview.NOT_ACTIVE, flow(refs(owner = "otro", canClaim = true), active = false).claimReason)
+        assertEquals(CaseReview.DISCHARGED, flow(refs(canClaim = true), status = "alta").claimReason)
     }
 
     @Test

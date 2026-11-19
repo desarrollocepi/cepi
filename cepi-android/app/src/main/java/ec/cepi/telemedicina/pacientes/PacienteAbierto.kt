@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.api.ApiError
 import ec.cepi.telemedicina.api.CaseReview
+import ec.cepi.telemedicina.api.Fechas
+import ec.cepi.telemedicina.api.MyReview
+import ec.cepi.telemedicina.app.Marca
 import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.Revisado
 import ec.cepi.telemedicina.app.Entorno
@@ -75,6 +79,8 @@ import ec.cepi.telemedicina.galeria.ConsentModel
 import ec.cepi.telemedicina.galeria.GaleriaModelo
 import ec.cepi.telemedicina.galeria.ImagenesPaciente
 import kotlinx.coroutines.launch
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private val secciones = listOf("Chat", "Ficha", "Evolución", "Imágenes")
 
@@ -189,8 +195,8 @@ fun PacienteAbierto(
     var reviewing by remember { mutableStateOf(false) }
     // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
     var reviewConfirmOwner by remember { mutableStateOf<String?>(null) }
-    // «🙋 Revisar» (PAPER §38.4), con el estado del registro del episodio activo.
-    val reviewState = CaseReview.state(
+    // El flujo de revisión (PAPER §38.5), con el estado del registro del episodio activo.
+    val reviewFlow = CaseReview.flow(
         referrals = modelo.referrals,
         userId = entorno.sesion.usuario?.id,
         episodeId = modelo.episodioActivo,
@@ -199,36 +205,56 @@ fun PacienteAbierto(
     )
 
     /**
-     * Toma la consulta y/o apaga la revisión propia, según el estado. Después se releen la franja
-     * y el registro, y la lista de pacientes: el caso sale de "revisar" y queda «a cargo: tú».
+     * Paso 1: «🙋 Revisar» toma el paciente. Después se releen la franja y el registro, y la lista
+     * de pacientes («a cargo: tú»); aparece «☑️ Marcar revisado».
      */
-    fun review(state: CaseReview.State.Action) {
+    fun claimForReview() {
         val episode = modelo.episodioActivo ?: return
-        if (reviewing) return
+        if (reviewing || reviewFlow.claimReason != null) return
         reviewing = true
         val status = activeEpisode?.takeIf { it.id == episode }?.get("estado")
         alcance.launch {
             try {
-                if (state.take) api.claimConsultation(episode, status)
-                if (state.close) api.markReviewed(episode)
+                api.claimConsultation(episode, status)
                 modelo.releerDerivaciones()
                 episodeReload++
                 onConsultationAnswered()
-                snackbar.showSnackbar(CaseReview.confirmation(state.take))
+                snackbar.showSnackbar(CaseReview.CLAIMED)
             } catch (e: ApiError) {
-                modelo.releerDerivaciones()
-                snackbar.showSnackbar("No se pudo marcar como revisado: ${e.mensaje}")
+                snackbar.showSnackbar("No se pudo tomar el paciente: ${e.mensaje}")
             } finally {
                 reviewing = false
             }
         }
     }
 
-    /** Tocar «🙋 Revisar»: si se la quita a otro, primero confirma. */
-    fun requestReview() {
-        val state = reviewState as? CaseReview.State.Action ?: return
-        if (reviewing) return
-        if (state.take && state.confirmOwner != null) reviewConfirmOwner = state.confirmOwner else review(state)
+    /** Tocar «🙋 Revisar»: si la tiene otro, primero confirma. */
+    fun requestClaim() {
+        if (reviewing || reviewFlow.claimReason != null) return
+        val owner = reviewFlow.confirmOwner
+        if (owner != null) reviewConfirmOwner = owner else claimForReview()
+    }
+
+    /**
+     * Paso 2: «☑️ Marcar revisado» apaga mi «revisar» y deja la etiqueta «✓ Revisado». Sigue a mi
+     * cargo. Después se relee la franja y la lista (el paciente sale de «revisar»).
+     */
+    fun markReviewed() {
+        val episode = modelo.episodioActivo ?: return
+        if (reviewing || reviewFlow.markReason != null) return
+        reviewing = true
+        alcance.launch {
+            try {
+                api.markReviewed(episode)
+                modelo.releerDerivaciones()
+                onConsultationAnswered()
+                snackbar.showSnackbar(CaseReview.MARKED)
+            } catch (e: ApiError) {
+                snackbar.showSnackbar("No se pudo marcar como revisado: ${e.mensaje}")
+            } finally {
+                reviewing = false
+            }
+        }
     }
     val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
     val dischargeReason = PatientDischarge.disabledReason(modelo.episodioActivo, activeEpisode)
@@ -302,9 +328,10 @@ fun PacienteAbierto(
                             onAnswer = { answering = true },
                             dischargeReason = dischargeReason,
                             onDischarge = { discharging = true },
-                            reviewState = reviewState,
+                            reviewFlow = reviewFlow,
                             reviewing = reviewing,
-                            onReview = { requestReview() },
+                            onClaim = { requestClaim() },
+                            onMarkReviewed = { markReviewed() },
                         )
                     }
                 },
@@ -318,18 +345,20 @@ fun PacienteAbierto(
                 .imePadding()
                 .fillMaxSize(),
         ) {
-            // La franja de la consulta activa (PAPER §38.4), siempre que haya una: quién la tiene
-            // a cargo, a quién está derivada con el estado de cada revisor, y el único botón
-            // «🙋 Revisar» / «✓ Revisado». Tocar los nombres abre Derivar.
+            // La franja de la consulta activa (PAPER §38.5), siempre que haya una: quién la tiene
+            // a cargo, a quién está derivada con el estado de cada revisor, la etiqueta
+            // «✓ Revisado» y «🙋 Revisar» / «☑️ Marcar revisado». Tocar los nombres abre Derivar.
             if (modelo.episodioActivo != null) {
                 ReviewStrip(
                     ownerLabel = CaseReview.ownerLabel(modelo.referrals.responsable, entorno.sesion.usuario?.id),
                     pending = modelo.derivados,
                     reviewed = modelo.revisados,
-                    reviewState = reviewState,
+                    reviewFlow = reviewFlow,
+                    myReview = modelo.referrals.myReview,
                     reviewing = reviewing,
                     onOpenReferral = { derivar = true },
-                    onReview = { requestReview() },
+                    onClaim = { requestClaim() },
+                    onMarkReviewed = { markReviewed() },
                 )
             }
             PrimaryTabRow(selectedTabIndex = paginas.currentPage) {
@@ -412,7 +441,7 @@ fun PacienteAbierto(
             confirmButton = {
                 TextButton(onClick = {
                     reviewConfirmOwner = null
-                    (reviewState as? CaseReview.State.Action)?.let(::review)
+                    claimForReview()
                 }) { Text("La reviso") }
             },
             dismissButton = { TextButton(onClick = { reviewConfirmOwner = null }) { Text("Cancelar") } },
@@ -486,10 +515,11 @@ private fun Acciones(
     /** Por qué no se puede dar el alta; `null` si se puede (PAPER §35). */
     dischargeReason: String?,
     onDischarge: () -> Unit,
-    /** «🙋 Revisar» / «✓ Revisado» (PAPER §38.4); `Hidden` solo por permiso. */
-    reviewState: CaseReview.State,
+    /** «🙋 Revisar» y «☑️ Marcar revisado» (PAPER §38.5). */
+    reviewFlow: CaseReview.Flow,
     reviewing: Boolean,
-    onReview: () -> Unit,
+    onClaim: () -> Unit,
+    onMarkReviewed: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -562,14 +592,24 @@ private fun Acciones(
                 onAnswer()
             },
         )
-        // Sin revisión abierta ni permiso de tomar casos no se muestra (excepción por permisos).
-        if (reviewState !is CaseReview.State.Hidden) {
+        // Sin permiso de tomar casos «🙋 Revisar» no se muestra (excepción por permisos).
+        if (reviewFlow.showClaim) {
             DropdownMenuItem(
-                text = { Explicado(reviewLabel(reviewState), reviewReason(reviewState, reviewing)) },
-                enabled = reviewState is CaseReview.State.Action && !reviewing,
+                text = { Explicado("🙋 Revisar", if (reviewing) "Guardando…" else reviewFlow.claimReason) },
+                enabled = reviewFlow.claimReason == null && !reviewing,
                 onClick = {
                     alCerrar()
-                    onReview()
+                    onClaim()
+                },
+            )
+        }
+        if (reviewFlow.showMark) {
+            DropdownMenuItem(
+                text = { Explicado("☑️ Marcar revisado", if (reviewing) "Guardando…" else reviewFlow.markReason) },
+                enabled = reviewFlow.markReason == null && !reviewing,
+                onClick = {
+                    alCerrar()
+                    onMarkReviewed()
                 },
             )
         }
@@ -592,37 +632,59 @@ private fun Acciones(
     }
 }
 
-/** «✓ Revisado» si ya está hecho; si no, «🙋 Revisar». */
-private fun reviewLabel(state: CaseReview.State): String =
-    if (state is CaseReview.State.Done) "✓ Revisado" else "🙋 Revisar"
+private val reviewedFormat = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm")
 
-/** El motivo visible del botón; `null` cuando se puede tocar. */
-private fun reviewReason(state: CaseReview.State, reviewing: Boolean): String? = when {
-    reviewing -> "Guardando…"
-    state is CaseReview.State.Done -> state.reason
-    state is CaseReview.State.Disabled -> state.reason
-    else -> null
+/** Fecha corta local de un ISO 8601, como `fechaCorta` de la web; null si no se puede leer. */
+private fun shortDate(iso: String?): String? =
+    Fechas.iso(iso)?.atZone(ZoneId.systemDefault())?.format(reviewedFormat)
+
+/** Una etiqueta en cápsula de la franja (no es un botón). */
+@Composable
+private fun ReviewBadge(text: String, background: Color, textColor: Color, description: String) {
+    Surface(
+        color = background,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier.semantics { contentDescription = description },
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+    }
 }
 
 /**
- * La franja de la consulta activa (PAPER §38.4): quién la tiene a cargo, los derivados con su
- * estado (pendiente o ✓ revisado) y, a la derecha, el único botón «🙋 Revisar» / «✓ Revisado».
- * Gris, su motivo se lee debajo de los nombres.
+ * La franja de la consulta activa (PAPER §38.5): quién la tiene a cargo, los derivados con su
+ * estado (pendiente o ✓ revisado) y, a la derecha, la etiqueta «✓ Revisado» (no es un botón) y
+ * «🙋 Revisar» o «☑️ Marcar revisado». Un botón gris lleva su motivo debajo de los nombres.
  */
 @Composable
 private fun ReviewStrip(
     ownerLabel: String,
     pending: List<Derivado>,
     reviewed: List<Revisado>,
-    reviewState: CaseReview.State,
+    reviewFlow: CaseReview.Flow,
+    myReview: MyReview,
     reviewing: Boolean,
     onOpenReferral: () -> Unit,
-    onReview: () -> Unit,
+    onClaim: () -> Unit,
+    onMarkReviewed: () -> Unit,
 ) {
     val pendingIds = pending.map { it.usuario }.toSet()
     val reviewers = pending.map { "${it.comoSeLlama} (pendiente)" } +
         reviewed.filter { it.usuario !in pendingIds }.map { "${it.comoSeLlama} (✓ revisado)" }
-    val reason = reviewReason(reviewState, reviewing)
+    // Los motivos de los botones que se ven, salvo mientras guarda (el botón muestra el progreso).
+    val reasons = if (reviewing) {
+        emptyList()
+    } else {
+        listOfNotNull(
+            reviewFlow.claimReason?.takeIf { reviewFlow.showClaim },
+            reviewFlow.markReason?.takeIf { reviewFlow.showMark },
+        ).distinct()
+    }
     val color = MaterialTheme.colorScheme.onTertiaryContainer
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -649,27 +711,47 @@ private fun ReviewStrip(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                // El motivo del botón gris, salvo mientras guarda (el botón muestra el progreso).
-                if (reason != null && !reviewing && reviewState !is CaseReview.State.Hidden) {
-                    Text(reason, style = MaterialTheme.typography.bodySmall, color = color)
+                reasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
+            }
+            // La etiqueta: «🙋 Revisando» mientras la tengo tomada sin marcar; si no, «✓ Revisado»
+            // si la marqué al menos una vez. Nunca las dos.
+            when (reviewFlow.badge) {
+                CaseReview.Badge.Reviewing -> ReviewBadge(
+                    text = "🙋 Revisando",
+                    background = Marca.revisar,
+                    textColor = Color.White,
+                    description = shortDate(myReview.claimedAt)
+                        ?.let { "La tomaste para revisar el $it" } ?: "La tomaste para revisar",
+                )
+                CaseReview.Badge.Reviewed -> ReviewBadge(
+                    text = "✓ Revisado",
+                    background = Color(0x4022C55E),
+                    textColor = color,
+                    description = shortDate(myReview.reviewedAt)?.let { "Lo revisaste el $it" } ?: "Ya lo revisaste",
+                )
+                null -> Unit
+            }
+            // Sin permiso de tomar casos «🙋 Revisar» no se muestra (excepción por permisos).
+            if (reviewFlow.showClaim) {
+                TextButton(
+                    onClick = onClaim,
+                    enabled = reviewFlow.claimReason == null && !reviewing,
+                    modifier = Modifier.semantics {
+                        contentDescription = reviewFlow.claimReason ?: "Tomar el paciente para revisarlo"
+                    },
+                ) {
+                    if (reviewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("🙋 Revisar")
                 }
             }
-            // Sin revisión abierta ni permiso de tomar casos no se muestra (excepción por permisos).
-            if (reviewState !is CaseReview.State.Hidden) {
+            if (reviewFlow.showMark) {
                 TextButton(
-                    onClick = onReview,
-                    enabled = reviewState is CaseReview.State.Action && !reviewing,
-                    modifier = Modifier
-                        .padding(end = 4.dp)
-                        .semantics {
-                            contentDescription = reason ?: (reviewState as? CaseReview.State.Action)?.description ?: ""
-                        },
+                    onClick = onMarkReviewed,
+                    enabled = reviewFlow.markReason == null && !reviewing,
+                    modifier = Modifier.semantics {
+                        contentDescription = reviewFlow.markReason ?: "Marcar que ya lo revisaste"
+                    },
                 ) {
-                    if (reviewing) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(reviewLabel(reviewState))
-                    }
+                    if (reviewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("☑️ Marcar revisado")
                 }
             }
         }

@@ -224,6 +224,18 @@ data class Derivaciones(
     @SerialName("can_claim") val canClaim: Boolean = false,
     /** Si quien consulta tiene `entities:assign`: puede quitársela a otro. */
     @SerialName("can_reassign") val canReassign: Boolean = false,
+    /** Mi última toma y mi última marca en esta consulta (PAPER §38.5). */
+    @SerialName("my_review") val myReview: MyReview = MyReview(),
+)
+
+/**
+ * `my_review` (PAPER §38.5): la última nota `claim` de quien consulta y su última
+ * `complete_review` con scope `mine`, en ISO 8601. Un servidor viejo no la manda.
+ */
+@Serializable
+data class MyReview(
+    @SerialName("claimed_at") val claimedAt: String? = null,
+    @SerialName("reviewed_at") val reviewedAt: String? = null,
 )
 
 /** El responsable actual de una consulta (`responsable` de `GET /api/review-queue/entity/:id`). */
@@ -253,69 +265,98 @@ data class ReviewCompletion(
 )
 
 /**
- * El único botón de la consulta (PAPER §38.4): «🙋 Revisar» toma la consulta (si puedes y no es
- * tuya) y apaga tu «revisar» (si tienes una revisión abierta); hecho, queda «✓ Revisado», gris,
- * como estado. Igual que `revisar` / `revisarCaso()` de `IntakeChat.vue`. Sin UI, para probarlo.
+ * El flujo de revisión en tres pasos (PAPER §38.5), igual que `flujo` de `IntakeChat.vue`:
+ *   1. «🙋 Revisar» toma el paciente (claim) y aparece «☑️ Marcar revisado».
+ *   2. «☑️ Marcar revisado» (complete_review only_mine) deja la etiqueta «✓ Revisado» y vuelve
+ *      «🙋 Revisar» para otra ronda.
+ *   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
+ * Sin UI, para poder probarlo.
  */
 object CaseReview {
     const val NO_EPISODE = "Elige un paciente con una consulta abierta"
     const val NOT_ACTIVE = "Es una consulta anterior: solo se revisa la vigente"
-    const val DONE = "Ya lo revisaste: está a tu cargo"
     const val LOADING = "Cargando el estado de la consulta…"
     const val DISCHARGED = "El paciente está de alta: si vuelve, abre una consulta nueva"
-    const val CONFIRMATION_TAKEN = "🙋 Revisado: la consulta quedó a tu cargo."
-    const val CONFIRMATION_CLOSED = "✓ Revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes."
-
-    sealed interface State {
-        /** Sin revisión abierta ni permiso de tomar casos: no se muestra (excepción por permisos). */
-        data object Hidden : State
-
-        /** «✓ Revisado», gris: es un estado, no una acción. */
-        data class Done(val reason: String = DONE) : State
-
-        /** «🙋 Revisar», gris, con el motivo. */
-        data class Disabled(val reason: String) : State
-
-        /**
-         * «🙋 Revisar» habilitado. `take` = se toma la consulta; `close` = se apaga mi revisión.
-         * `confirmOwner` no nulo: la tiene otro y antes se confirma.
-         */
-        data class Action(val take: Boolean, val close: Boolean, val confirmOwner: String?) : State {
-            val description: String
-                get() = if (take) {
-                    "Revisar este caso: queda a tu cargo y se apaga tu «revisar»"
-                } else {
-                    "Marcar que ya revisaste el caso: se apaga tu «revisar»"
-                }
-        }
-    }
+    const val CLAIMED = "🙋 Tomaste el paciente para revisarlo. Cuando termines, toca «Marcar revisado»."
+    const val MARKED = "✓ Marcado como revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes."
 
     /**
-     * El estado del botón, en el orden de la web. `episodeId` = consulta activa del chat;
-     * `isActive` = es la que se está mirando; `status` = `estado` del registro del episodio
-     * activo, `null` mientras se carga.
+     * Qué se ve en la franja y en el menú. Un motivo no nulo deja el botón gris con ese texto.
      */
-    fun state(
+    /** La etiqueta de la franja: nunca salen las dos. */
+    enum class Badge {
+        /** «🙋 Revisando»: la tomé y todavía no la marqué. */
+        Reviewing,
+
+        /** «✓ Revisado»: no estoy revisando y la marqué al menos una vez. */
+        Reviewed,
+    }
+
+    data class Flow(
+        /** Lo marqué al menos una vez (`reviewed_at`). */
+        val reviewedOnce: Boolean,
+        /** Qué etiqueta va en la franja, o ninguna. */
+        val badge: Badge?,
+        /** «🙋 Revisar»: solo con permiso de tomar casos y mientras no estoy revisando. */
+        val showClaim: Boolean,
+        val claimReason: String?,
+        /** «☑️ Marcar revisado»: revisando, o derivado sin permiso de tomar casos. */
+        val showMark: Boolean,
+        val markReason: String?,
+        /** La tiene otro: antes de tomarla se confirma con su nombre. */
+        val confirmOwner: String?,
+        /** Estoy revisando: la tomé después de mi última marca. */
+        val inReview: Boolean,
+    )
+
+    /**
+     * `episodeId` = consulta activa del chat; `isActive` = es la que se está mirando; `status` =
+     * `estado` del registro del episodio activo, `null` mientras se carga.
+     */
+    fun flow(
         referrals: Derivaciones,
         userId: String?,
         episodeId: String?,
         isActive: Boolean,
         status: String?,
-    ): State {
+    ): Flow {
         val owner = referrals.responsable
-        val open = userId != null && referrals.derivados.any { it.usuario == userId }
-        val reviewed = userId != null && referrals.revisados.any { it.usuario == userId }
         val isMine = owner != null && owner.usuario == userId
-        val canTake = referrals.canClaim && !isMine && (owner == null || referrals.canReassign)
-        if (episodeId == null) return State.Disabled(NO_EPISODE)
-        if (!isActive) return State.Disabled(NOT_ACTIVE)
-        if (!open && (reviewed || isMine)) return State.Done()
-        if (!open && !referrals.canClaim) return State.Hidden
-        if (status == null) return State.Disabled(LOADING)
-        if (status == "alta") return State.Disabled(DISCHARGED)
-        if (!open && !canTake) return State.Disabled("La tiene a cargo ${owner?.comoSeLlama ?: "otro médico"}")
-        val confirmOwner = if (canTake && owner != null && owner.usuario != userId) owner.comoSeLlama else null
-        return State.Action(take = canTake, close = open, confirmOwner = confirmOwner)
+        val open = userId != null && referrals.derivados.any { it.usuario == userId }
+        val claimed = referrals.myReview.claimedAt
+        val reviewed = referrals.myReview.reviewedAt
+        val inReview = isMine && claimed != null && (reviewed == null || isAfter(claimed, reviewed))
+        val reason = when {
+            episodeId == null -> NO_EPISODE
+            !isActive -> NOT_ACTIVE
+            status == null -> LOADING
+            status == "alta" -> DISCHARGED
+            else -> null
+        }
+        val othersOwner = owner?.takeIf { !isMine }?.comoSeLlama
+        val claimReason = reason
+            ?: if (othersOwner != null && !referrals.canReassign) "La tiene a cargo $othersOwner" else null
+        return Flow(
+            reviewedOnce = reviewed != null,
+            badge = when {
+                inReview -> Badge.Reviewing
+                reviewed != null -> Badge.Reviewed
+                else -> null
+            },
+            showClaim = referrals.canClaim && !inReview,
+            claimReason = claimReason,
+            showMark = inReview || (open && !referrals.canClaim),
+            markReason = reason,
+            confirmOwner = othersOwner,
+            inReview = inReview,
+        )
+    }
+
+    /** Compara instantes, no textos. Una fecha ilegible no cuenta como posterior (como `new Date` de la web). */
+    private fun isAfter(a: String, b: String): Boolean {
+        val first = Fechas.iso(a) ?: return false
+        val second = Fechas.iso(b) ?: return false
+        return first.isAfter(second)
     }
 
     /** «A cargo: X», «A cargo: tú» o «Sin responsable». */
@@ -327,9 +368,6 @@ object CaseReview {
 
     /** La pregunta antes de quitársela a otro. */
     fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La revisas tú?"
-
-    /** El aviso al terminar. */
-    fun confirmation(taken: Boolean): String = if (taken) CONFIRMATION_TAKEN else CONFIRMATION_CLOSED
 }
 
 @Serializable

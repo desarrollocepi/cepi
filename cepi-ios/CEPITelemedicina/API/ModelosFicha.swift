@@ -233,22 +233,26 @@ struct Derivaciones: Decodable, Sendable {
     let responsable: Responsable?
     let canClaim: Bool
     let canReassign: Bool
+    /// En qué paso de la revisión está quien consulta (PAPER §38.5).
+    let myReview: MyReview
 
     init(
         derivados: [Derivado] = [], revisados: [Revisado] = [], responsable: Responsable? = nil,
-        canClaim: Bool = false, canReassign: Bool = false
+        canClaim: Bool = false, canReassign: Bool = false, myReview: MyReview = MyReview()
     ) {
         self.derivados = derivados
         self.revisados = revisados
         self.responsable = responsable
         self.canClaim = canClaim
         self.canReassign = canReassign
+        self.myReview = myReview
     }
 
     enum CodingKeys: String, CodingKey {
         case derivados, revisados, responsable
         case canClaim = "can_claim"
         case canReassign = "can_reassign"
+        case myReview = "my_review"
     }
 
     init(from decoder: Decoder) throws {
@@ -258,6 +262,30 @@ struct Derivaciones: Decodable, Sendable {
         responsable = try c.decodeIfPresent(Responsable.self, forKey: .responsable)
         canClaim = try c.decodeIfPresent(Bool.self, forKey: .canClaim) ?? false
         canReassign = try c.decodeIfPresent(Bool.self, forKey: .canReassign) ?? false
+        myReview = try c.decodeIfPresent(MyReview.self, forKey: .myReview) ?? MyReview()
+    }
+}
+
+/// `my_review` (PAPER §38.5): la última vez que quien consulta tomó la consulta (`claim`) y la
+/// última que marcó «Revisado». Fechas ISO; un servidor anterior no lo manda.
+struct MyReview: Decodable, Sendable, Hashable {
+    let claimedAt: String?
+    let reviewedAt: String?
+
+    init(claimedAt: String? = nil, reviewedAt: String? = nil) {
+        self.claimedAt = claimedAt
+        self.reviewedAt = reviewedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case claimedAt = "claimed_at"
+        case reviewedAt = "reviewed_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        claimedAt = try c.decodeIfPresent(String.self, forKey: .claimedAt)
+        reviewedAt = try c.decodeIfPresent(String.self, forKey: .reviewedAt)
     }
 }
 
@@ -289,80 +317,93 @@ struct ReviewCompleteResult: Decodable, Sendable {
     }
 }
 
-/// El botón único «🙋 Revisar» → «✓ Revisado» y lo que dice la franja (PAPER §38.4). Copia
-/// `revisar` / `revisarCaso()` de IntakeChat.vue: toma la consulta (si puedes y no es tuya) y
-/// apaga tu «revisar» (si tienes una revisión abierta). Hecho, queda «✓ Revisado» como estado.
+/// El flujo de revisión en tres pasos (PAPER §38.5). Copia `flujo` de IntakeChat.vue:
+///   1. «🙋 Revisar» toma el paciente (`claim`) y aparece «☑️ Marcar revisado».
+///   2. «☑️ Marcar revisado» (`complete_review {only_mine}`) deja la etiqueta «✓ Revisado» y
+///      vuelve «🙋 Revisar» para otra ronda.
+///   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
+/// Estás «revisando» si la consulta es tuya y la tomaste después de tu última marca.
 enum ReviewStatus {
-    enum State: Equatable {
-        /// Sin revisión abierta ni permiso de tomar casos: no se muestra (excepción por permiso).
-        case hidden
-        /// «✓ Revisado», gris: es un estado, no una acción. Lleva el texto de ayuda.
-        case done(String)
-        /// «🙋 Revisar», gris con el motivo.
-        case blocked(String)
-        /// «🙋 Revisar» habilitado: `take` = toma la consulta (`claim`), `close` = apaga la
-        /// revisión propia (`complete_review {only_mine}`).
-        case action(take: Bool, close: Bool, hint: String)
+    struct Flow: Equatable {
+        /// Marqué «Revisado» al menos una vez en esta consulta (`reviewed_at`).
+        let reviewedOnce: Bool
+        /// La tomé y todavía no la marqué: etiqueta «🙋 Revisando».
+        let inReview: Bool
+        /// «🙋 Revisar» se muestra (sin permiso de tomar casos, no: excepción por permiso).
+        let showReview: Bool
+        /// Por qué «🙋 Revisar» está gris; nil = habilitado.
+        let reviewBlockReason: String?
+        /// «☑️ Marcar revisado» se muestra.
+        let showMark: Bool
+        /// Por qué «☑️ Marcar revisado» está gris; nil = habilitado.
+        let markBlockReason: String?
 
-        /// El texto de ayuda: el motivo si está gris, qué hace si está habilitado.
-        var hint: String {
-            switch self {
-            case .hidden: ""
-            case .done(let text), .blocked(let text): text
-            case .action(_, _, let text): text
-            }
-        }
-
-        var isEnabled: Bool {
-            if case .action = self { return true }
-            return false
-        }
-
-        var isDone: Bool {
-            if case .done = self { return true }
-            return false
-        }
+        /// La etiqueta «✓ Revisado» (texto, no botón): nunca junto con «🙋 Revisando».
+        var showReviewedLabel: Bool { !inReview && reviewedOnce }
     }
 
     static let noEpisodeReason = "Elige un paciente con una consulta abierta"
     static let previousEpisodeReason = "Es una consulta anterior: solo se revisa la vigente"
-    static let doneHint = "Ya lo revisaste: está a tu cargo"
     static let loadingReason = "Cargando el estado de la consulta…"
     static let dischargedReason = "El paciente está de alta: si vuelve, abre una consulta nueva"
-    static let takeHint = "Revisar este caso: queda a tu cargo y se apaga tu «revisar»"
-    static let closeHint = "Marcar que ya revisaste el caso: se apaga tu «revisar»"
+    static let reviewHint = "Tomar el paciente para revisarlo"
+    static let markHint = "Marcar que ya lo revisaste"
 
     /// El nombre de quien la tiene a cargo, como `nombreResp` de la web.
     static func ownerName(_ responsable: Responsable?) -> String {
         responsable?.nombre ?? responsable?.email ?? "otro médico"
     }
 
-    /// `viewingActive`: la consulta a la vista es la vigente. `episodeLoaded`: llegó el
-    /// registro del episodio; `episodeStatus`, su `estado`.
-    static func state(
-        episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
-        derivados: [Derivado], revisados: [Revisado], responsable: Responsable?,
-        canClaim: Bool, canReassign: Bool, userId: String?
-    ) -> State {
-        let open = userId.map { me in derivados.contains { $0.usuario == me } } ?? false
-        let reviewed = userId.map { me in revisados.contains { $0.usuario == me } } ?? false
-        let isMine = responsable != nil && responsable?.usuario == userId
-        let canTake = canClaim && !isMine && (responsable == nil || canReassign)
-        guard episode != nil else { return .blocked(noEpisodeReason) }
-        guard viewingActive else { return .blocked(previousEpisodeReason) }
-        if !open && (reviewed || isMine) { return .done(doneHint) }
-        if !open && !canClaim { return .hidden }
-        guard episodeLoaded else { return .blocked(loadingReason) }
-        if episodeStatus == "alta" { return .blocked(dischargedReason) }
-        if !open && !canTake { return .blocked("La tiene a cargo \(ownerName(responsable))") }
-        return .action(take: canTake, close: open, hint: canTake ? takeHint : closeHint)
+    /// Revisando = la consulta es mía y la tomé después de mi última marca (o nunca marqué).
+    /// Compara las fechas, no los textos.
+    static func isReviewing(isMine: Bool, myReview: MyReview) -> Bool {
+        guard isMine, let claimed = myReview.claimedAt else { return false }
+        guard let reviewed = myReview.reviewedAt else { return true }
+        guard let claimedDate = Fechas.iso(claimed), let reviewedDate = Fechas.iso(reviewed) else { return false }
+        return claimedDate > reviewedDate
     }
 
-    /// Si al tocar hay que confirmar: va a tomar la consulta y la tiene otro.
-    static func confirmation(for state: State, responsable: Responsable?, userId: String?) -> String? {
-        guard case .action(let take, _, _) = state, take, let responsable, responsable.usuario != userId else {
-            return nil
+    /// `viewingActive`: la consulta a la vista es la vigente. `episodeLoaded`: llegó el
+    /// registro del episodio; `episodeStatus`, su `estado`.
+    static func flow(
+        episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
+        derivados: [Derivado], responsable: Responsable?, myReview: MyReview,
+        canClaim: Bool, canReassign: Bool, userId: String?
+    ) -> Flow {
+        let isMine = responsable != nil && responsable?.usuario == userId
+        let open = userId.map { me in derivados.contains { $0.usuario == me } } ?? false
+        let reviewing = isReviewing(isMine: isMine, myReview: myReview)
+
+        let reason: String?
+        if episode == nil {
+            reason = noEpisodeReason
+        } else if !viewingActive {
+            reason = previousEpisodeReason
+        } else if !episodeLoaded {
+            reason = loadingReason
+        } else if episodeStatus == "alta" {
+            reason = dischargedReason
+        } else {
+            reason = nil
         }
+        var reviewReason = reason
+        if reviewReason == nil, responsable != nil, !isMine, !canReassign {
+            reviewReason = "La tiene a cargo \(ownerName(responsable))"
+        }
+        return Flow(
+            reviewedOnce: myReview.reviewedAt != nil,
+            inReview: reviewing,
+            showReview: canClaim && !reviewing,
+            reviewBlockReason: reviewReason,
+            // Sin permiso de tomar casos (un especialista al que se lo derivaron) marca directo.
+            showMark: reviewing || (open && !canClaim),
+            markBlockReason: reason
+        )
+    }
+
+    /// Al tocar «🙋 Revisar»: si la tiene otro, se confirma con este texto.
+    static func confirmation(responsable: Responsable?, userId: String?) -> String? {
+        guard let responsable, responsable.usuario != userId else { return nil }
         return "\(ownerName(responsable)) la tiene a cargo. ¿La revisas tú?"
     }
 

@@ -20,6 +20,8 @@ final class HiloModelo {
     private(set) var responsable: Responsable?
     private(set) var canClaim = false
     private(set) var canReassign = false
+    /// En qué paso de la revisión está quien mira (PAPER §38.5).
+    private(set) var myReview = MyReview()
     private(set) var pagina: PaginaHilo = .masNueva
     /// El episodio elegido en el navegador que todavía espera su turno (PAPER §28.4.1): el
     /// chat estaba ocupado. Se aplica al terminar; si se elige otro antes, gana el último.
@@ -177,6 +179,7 @@ final class HiloModelo {
         responsable = r.responsable
         canClaim = r.canClaim
         canReassign = r.canReassign
+        myReview = r.myReview
     }
 
     func volverALaActual() {
