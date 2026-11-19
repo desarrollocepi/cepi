@@ -664,6 +664,13 @@ describe('IntakeChat — flujo de revisión (PAPER §38.5)', () => {
     conf.mockRestore();
   });
 
+  it('con «Marcar revisado» a la vista no se muestra «✓ Revisado»', async () => {
+    deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }], my_review: { claimed_at: null, reviewed_at: '2026-11-18T10:00:00Z' } });
+    const w = await abrir();
+    expect(marcar(w).exists()).toBe(true);
+    expect(etiqueta(w).exists()).toBe(false);
+  });
+
   it('sin permiso de tomar casos pero derivada a mí: solo «Marcar revisado»', async () => {
     deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }] });
     api.markReviewed.mockResolvedValue({ ok: true });

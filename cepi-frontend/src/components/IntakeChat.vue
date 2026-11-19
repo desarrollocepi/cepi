@@ -67,7 +67,7 @@
            revisado»; al marcarlo queda la etiqueta «✓ Revisado» (para siempre) y vuelve
            «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra. -->
       <span v-if="flujo.enRevision" class="rev-label revisando" :title="`La tomaste para revisar el ${fechaCorta(myReview.claimed_at)}`">🙋 Revisando</span>
-      <span v-else-if="flujo.revisadoAlgunaVez" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
+      <span v-else-if="flujo.revisadoAlgunaVez && !flujo.marcar" class="rev-label" :title="`Lo revisaste el ${fechaCorta(myReview.reviewed_at)}`">✓ Revisado</span>
       <button
         v-if="flujo.revisar" type="button" class="iderivado-ok tomar"
         :disabled="busy || revisando || !!flujo.motivo" @click="tomarParaRevisar" :title="flujo.motivo || 'Tomar el paciente para revisarlo'"
@@ -557,7 +557,8 @@ async function cargarDerivados() {
 //   1. «🙋 Revisar» toma el paciente (claim) → aparece «Marcar revisado».
 //   2. «Marcar revisado» (complete_review only_mine) → etiqueta «✓ Revisado» y vuelve «🙋 Revisar».
 //   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
-//   Mientras revisas (tomaste y no marcaste), la etiqueta dice «🙋 Revisando».
+//   Mientras revisas (tomaste y no marcaste), la etiqueta dice «🙋 Revisando». Mientras se ve
+//   «Marcar revisado», «✓ Revisado» no se muestra.
 // Estás «revisando» si la consulta es tuya y la tomaste después de tu última marca.
 const revisando = ref(false);
 const myReview = ref({ claimed_at: null, reviewed_at: null });
