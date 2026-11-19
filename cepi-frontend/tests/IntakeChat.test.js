@@ -598,109 +598,106 @@ describe('IntakeChat — responder interconsulta (feedback de las dermatólogas)
   });
 });
 
-describe('IntakeChat — «Revisado» por médico (PAPER §38)', () => {
-  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('Marcar como revisado'));
+describe('IntakeChat — «🙋 Revisar» / «✓ Revisado» (PAPER §38.3)', () => {
+  const btn = (w) => w.find('.iderivado-ok');
+  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => /Revisar|Revisado/.test(b.text()));
+  const deriv = (extra) => api.listEntityDerivations.mockResolvedValue({ derivados: [], revisados: [], responsable: null, can_claim: true, can_reassign: false, ...extra });
 
-  it('con una revisión mía abierta: marca, recarga los estados y avisa a la lista', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'yo', name: 'Yo' }, { user_id: 'u2', name: 'Dra. B' }], revisados: [] });
-    api.markReviewed.mockResolvedValue({ ok: true, data: { cleared: 1, remaining: 1 } });
-    const w = await abrir();
-    const btn = w.find('.iderivado-ok');
-    expect(btn.attributes('disabled')).toBeUndefined();
-    expect(delMenu(w).attributes('disabled')).toBeUndefined();
-    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'u2', name: 'Dra. B' }], revisados: [{ user_id: 'yo', name: 'Yo' }] });
-    await btn.trigger('click');
-    await flushPromises();
-    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
-    expect(w.emitted('respondida')).toHaveLength(1);
-    expect(w.find('.rev-st.ok').text()).toBe('✓ Yo');
-    expect(w.find('.rev-st.pend').text()).toBe('Dra. B');
-    expect(w.find('.iderivado-ok').attributes('disabled')).toBeDefined();
-    expect(w.find('.iderivado-ok').attributes('title')).toBe('Ya marcaste esta consulta como revisada');
-    expect(turnos(w).some((t) => t.includes('Marcado como revisado'))).toBe(true);
-  });
-
-  it('sin revisión mía: el botón está, gris y con el motivo', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'u2', name: 'Dra. B' }] });
-    const w = await abrir();
-    const btn = w.find('.iderivado-ok');
-    expect(btn.attributes('disabled')).toBeDefined();
-    expect(btn.attributes('title')).toBe('No tienes una revisión pendiente en esta consulta');
-    expect(delMenu(w).attributes('disabled')).toBeDefined();
-  });
-
-  it('sin derivaciones la franja dice «Sin responsable» y el botón del menú sigue ahí, gris', async () => {
-    const w = await abrir();
-    expect(w.find('.acargo-linea').text()).toBe('Sin responsable');
-    expect(delMenu(w).attributes('disabled')).toBeDefined();
-    expect(delMenu(w).attributes('title')).toBe('No tienes una revisión pendiente en esta consulta');
-  });
-
-  it('si falla, lo dice en el chat y no avisa a la lista', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [{ user_id: 'yo', name: 'Yo' }] });
-    api.markReviewed.mockRejectedValue(new Error('sin red'));
-    const w = await abrir();
-    await w.find('.iderivado-ok').trigger('click');
-    await flushPromises();
-    expect(w.emitted('respondida')).toBeUndefined();
-    expect(turnos(w).some((t) => t.includes('No se pudo marcar como revisado: sin red'))).toBe(true);
-  });
-});
-
-describe('IntakeChat — «Revisar» (PAPER §38.3)', () => {
-  const tomar = (w) => w.find('.iderivado-ok.tomar');
-  const delMenu = (w) => w.findAll('.ihead-actions button').find((b) => b.text().includes('🙋 Revisar'));
-
-  it('sin responsable: toma la consulta; si estaba enviada pasa a en_triage', async () => {
+  it('derivada a mí y sin responsable: toma la consulta y apaga mi revisar; queda «✓ Revisado»', async () => {
     preparar({ episodio: { estado: 'enviada' } });
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: null, can_claim: true, can_reassign: false });
+    deriv({ derivados: [{ user_id: 'yo', name: 'Yo' }, { user_id: 'u2', name: 'Dra. B' }] });
     api.claimEpisode.mockResolvedValue({ ok: true });
+    api.markReviewed.mockResolvedValue({ ok: true });
     const w = await abrir();
-    expect(tomar(w).attributes('disabled')).toBeUndefined();
-    expect(delMenu(w).attributes('disabled')).toBeUndefined();
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'yo', name: 'Yo' }, can_claim: true });
-    await tomar(w).trigger('click');
+    expect(w.findAll('.iderivado-ok')).toHaveLength(1);
+    expect(btn(w).text()).toBe('🙋 Revisar');
+    expect(btn(w).attributes('disabled')).toBeUndefined();
+    deriv({ derivados: [{ user_id: 'u2', name: 'Dra. B' }], revisados: [{ user_id: 'yo', name: 'Yo' }], responsable: { user_id: 'yo', name: 'Yo' } });
+    await btn(w).trigger('click');
     await flushPromises();
     expect(api.claimEpisode).toHaveBeenCalledWith('ep2', 'en_triage');
+    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
     expect(w.emitted('respondida')).toHaveLength(1);
+    expect(btn(w).text()).toBe('✓ Revisado');
+    expect(btn(w).attributes('disabled')).toBeDefined();
     expect(w.find('.acargo-linea').text()).toBe('A cargo: tú');
-    expect(tomar(w).attributes('title')).toBe('Ya está a tu cargo');
+    expect(w.find('.rev-st.ok').text()).toBe('✓ Yo');
   });
 
-  it('en otro estado no cambia el estado', async () => {
+  it('sin derivación: solo toma la consulta, sin cambiar el estado si no estaba enviada', async () => {
     preparar({ episodio: { estado: 'derivada' } });
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], can_claim: true });
+    deriv({});
     api.claimEpisode.mockResolvedValue({ ok: true });
     const w = await abrir();
-    await tomar(w).trigger('click');
+    await btn(w).trigger('click');
     await flushPromises();
     expect(api.claimEpisode).toHaveBeenCalledWith('ep2', null);
+    expect(api.markReviewed).not.toHaveBeenCalled();
   });
 
-  it('la tiene otro y no puedo reasignar: gris con su nombre', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'u2', name: 'Dra. B' }, can_claim: true, can_reassign: false });
+  it('derivada a mí pero la tiene otro y no puedo reasignar: solo apaga mi revisar', async () => {
+    deriv({ derivados: [{ user_id: 'yo', name: 'Yo' }], responsable: { user_id: 'u2', name: 'Dra. B' } });
+    api.markReviewed.mockResolvedValue({ ok: true });
+    const w = await abrir();
+    await btn(w).trigger('click');
+    await flushPromises();
+    expect(api.claimEpisode).not.toHaveBeenCalled();
+    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
+  });
+
+  it('la tiene otro, no es para mí y no puedo reasignar: «🙋 Revisar» gris con su nombre', async () => {
+    deriv({ responsable: { user_id: 'u2', name: 'Dra. B' } });
     const w = await abrir();
     expect(w.find('.acargo-linea').text()).toBe('A cargo: Dra. B');
-    expect(tomar(w).attributes('disabled')).toBeDefined();
-    expect(tomar(w).attributes('title')).toBe('La tiene a cargo Dra. B');
+    expect(btn(w).text()).toBe('🙋 Revisar');
+    expect(btn(w).attributes('disabled')).toBeDefined();
+    expect(btn(w).attributes('title')).toBe('La tiene a cargo Dra. B');
   });
 
   it('la tiene otro y puedo reasignar: pide confirmación; si cancelo no hace nada', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], responsable: { user_id: 'u2', name: 'Dra. B' }, can_claim: true, can_reassign: true });
+    deriv({ responsable: { user_id: 'u2', name: 'Dra. B' }, can_reassign: true });
     const conf = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const w = await abrir();
-    await tomar(w).trigger('click');
+    await btn(w).trigger('click');
     expect(conf).toHaveBeenCalledWith('Dra. B la tiene a cargo. ¿La revisas tú?');
     expect(api.claimEpisode).not.toHaveBeenCalled();
     conf.mockRestore();
   });
 
-  it('sin permiso de reclamar, «Revisar» no aparece (ni en el menú)', async () => {
-    api.listEntityDerivations.mockResolvedValue({ derivados: [], can_claim: false });
+  it('ya es mía: «✓ Revisado» gris, en la franja y en el menú', async () => {
+    deriv({ responsable: { user_id: 'yo', name: 'Yo' } });
     const w = await abrir();
-    expect(tomar(w).exists()).toBe(false);
+    expect(btn(w).text()).toBe('✓ Revisado');
+    expect(btn(w).attributes('disabled')).toBeDefined();
+    expect(delMenu(w).text()).toBe('✓ Revisado');
+  });
+
+  it('sin permiso de tomar casos y sin revisión mía: no aparece (ni en el menú)', async () => {
+    deriv({ can_claim: false });
+    const w = await abrir();
+    expect(w.find('.acargo-linea').text()).toBe('Sin responsable');
+    expect(btn(w).exists()).toBe(false);
     expect(delMenu(w)).toBeUndefined();
-    expect(w.find('.iderivado-ok').text()).toContain('Revisado');
+  });
+
+  it('sin permiso de tomar casos pero derivada a mí: aparece y solo apaga mi revisar', async () => {
+    deriv({ can_claim: false, derivados: [{ user_id: 'yo', name: 'Yo' }] });
+    api.markReviewed.mockResolvedValue({ ok: true });
+    const w = await abrir();
+    await btn(w).trigger('click');
+    await flushPromises();
+    expect(api.claimEpisode).not.toHaveBeenCalled();
+    expect(api.markReviewed).toHaveBeenCalledWith('ep2');
+  });
+
+  it('si falla, lo dice en el chat y no avisa a la lista', async () => {
+    deriv({ derivados: [{ user_id: 'yo', name: 'Yo' }] });
+    api.claimEpisode.mockRejectedValue(new Error('sin red'));
+    const w = await abrir();
+    await btn(w).trigger('click');
+    await flushPromises();
+    expect(w.emitted('respondida')).toBeUndefined();
+    expect(turnos(w).some((t) => t.includes('No se pudo marcar como revisado: sin red'))).toBe(true);
   });
 });
 

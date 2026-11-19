@@ -32,13 +32,9 @@
           :title="responderMotivo || 'Responder la interconsulta: queda en la ficha y le llega al médico que envió el caso'"
         >✅ Responder interconsulta</button>
         <button
-          type="button" class="ihead-revisado" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
-          :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
-        >☑️ Marcar como revisado</button>
-        <button
-          v-if="canClaim" type="button" class="ihead-tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
-          :title="tomarMotivo || 'Revisar este caso: queda a tu cargo'"
-        >🙋 Revisar</button>
+          v-if="revisar.modo !== 'oculto'" type="button" class="ihead-revisar"
+          :disabled="busy || revisando || revisar.modo !== 'accion'" @click="revisarCaso" :title="revisar.title"
+        >{{ revisar.modo === 'hecho' ? '✓ Revisado' : '🙋 Revisar' }}</button>
         <button
           type="button" class="ihead-alta" :disabled="busy || !!altaMotivo" @click="showAlta = true"
           :title="altaMotivo || 'Dar de alta: cierra el caso; si vuelve, es una consulta nueva'"
@@ -53,7 +49,7 @@
     <div v-if="patientName && !isActiveEpisode" class="ireadonly">👁️ Consulta anterior (solo lectura)</div>
     <!-- Quién tiene la consulta a cargo, a quién está derivada y el estado de cada uno
          (PAPER §38). Se ve siempre que haya una consulta. Tocar los nombres abre Derivar;
-         «Revisar» la deja a tu cargo y «Revisado» cierra solo tu revisión. -->
+         «🙋 Revisar» la deja a tu cargo y cierra tu revisión. -->
     <div v-if="patientName && activeEpisodeId" class="iderivado">
       <button type="button" class="iderivado-who" @click="openDerivar" title="Ver o cambiar la derivación">
         <span class="acargo-linea">{{ acargoTexto }}</span>
@@ -63,15 +59,14 @@
           <span v-for="d in revisados" :key="'r' + d.user_id" class="rev-st ok" :title="`${d.name || d.email}: ya lo revisó`">✓ {{ d.name || d.email }}</span>
         </template>
       </button>
-      <!-- Sin permiso de reclamar (primario, especialista) no se muestra: excepción por permisos. -->
+      <!-- Un solo botón (PAPER §38.3): «🙋 Revisar» toma la consulta y apaga tu «revisar»;
+           después queda «✓ Revisado», gris, como estado. Sin nada que revisar ni permiso de
+           tomar casos no se muestra (excepción por permisos). -->
       <button
-        v-if="canClaim" type="button" class="iderivado-ok tomar" :disabled="busy || tomando || !!tomarMotivo" @click="tomarConsulta"
-        :title="tomarMotivo || 'Revisar este caso: queda a tu cargo'"
-      >{{ tomando ? 'Guardando…' : '🙋 Revisar' }}</button>
-      <button
-        type="button" class="iderivado-ok" :disabled="busy || revisando || !!revisadoMotivo" @click="marcarRevisado"
-        :title="revisadoMotivo || 'Marcar que ya revisaste el caso: se apaga tu «revisar»; los demás siguen pendientes'"
-      >{{ revisando ? 'Guardando…' : '✓ Revisado' }}</button>
+        v-if="revisar.modo !== 'oculto'" type="button" class="iderivado-ok"
+        :class="{ hecho: revisar.modo === 'hecho' }"
+        :disabled="busy || revisando || revisar.modo !== 'accion'" @click="revisarCaso" :title="revisar.title"
+      >{{ revisando ? 'Guardando…' : (revisar.modo === 'hecho' ? '✓ Revisado' : '🙋 Revisar') }}</button>
     </div>
 
     <div class="ifeed" ref="feedEl">
@@ -547,76 +542,58 @@ async function cargarDerivados() {
   } catch { vaciar(); }
 }
 
-// «Revisar» (PAPER §38.3): gris con el motivo cuando no aplica.
-const tomando = ref(false);
+// «🙋 Revisar» (PAPER §38.3): un solo botón que toma la consulta (si puedes y no es tuya) y
+// apaga tu «revisar» (si tienes una revisión abierta). Hecho, queda «✓ Revisado» como estado.
+const revisando = ref(false);
 const nombreResp = computed(() => responsable.value?.name || responsable.value?.email || 'otro médico');
 const acargoTexto = computed(() => {
   if (!responsable.value) return 'Sin responsable';
   return responsable.value.user_id === props.user?.id ? 'A cargo: tú' : `A cargo: ${nombreResp.value}`;
 });
-const tomarMotivo = computed(() => {
-  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
-  if (!isActiveEpisode.value) return 'Es una consulta anterior: solo se toma la vigente';
-  if (!episodioInfo.value) return 'Cargando el estado de la consulta…';
-  if (episodioInfo.value.estado === 'alta') return 'El paciente está de alta: si vuelve, abre una consulta nueva';
-  const r = responsable.value;
-  if (r && r.user_id === props.user?.id) return 'Ya está a tu cargo';
-  if (r && !canReassign.value) return `La tiene a cargo ${nombreResp.value}`;
-  return '';
-});
-async function tomarConsulta() {
-  const epId = activeEpisodeId.value;
-  if (!epId || tomarMotivo.value || tomando.value) return;
-  const r = responsable.value;
-  if (r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La revisas tú?`)) return;
-  tomando.value = true;
-  showMenu.value = false;
-  try {
-    await claimEpisode(epId, episodioInfo.value?.estado === 'enviada' ? 'en_triage' : null);
-    messages.value = [...messages.value, {
-      role: 'assistant', is_bot: true, episode_id: epId,
-      content: '🙋 Ahora tienes esta consulta a cargo.',
-    }];
-    await Promise.all([cargarDerivados(), cargarEpisodioInfo()]);
-    emit('respondida');      // la lista se recarga: la fila pasa a «a cargo: tú»
-  } catch (e) {
-    messages.value = [...messages.value, {
-      role: 'assistant', is_bot: true, episode_id: epId,
-      content: `⚠️ No se pudo tomar la consulta: ${e?.message || 'error de red'}`,
-    }];
-  } finally {
-    tomando.value = false;
-  }
-}
-
-// «Revisado» (PAPER §38): el botón está siempre; gris con el motivo cuando no aplica.
-const revisando = ref(false);
-const revisadoMotivo = computed(() => {
-  if (!activeEpisodeId.value) return 'Elige un paciente con una consulta abierta';
-  if (!isActiveEpisode.value) return 'Es una consulta anterior: solo se revisa la vigente';
+/** modo: 'oculto' | 'hecho' (✓ Revisado, gris) | 'gris' (🙋 Revisar con motivo) | 'accion'. */
+const revisar = computed(() => {
   const yo = props.user?.id;
-  if (yo && revisados.value.some(d => d.user_id === yo)) return 'Ya marcaste esta consulta como revisada';
-  if (!yo || !derivadoIds.value.has(yo)) return 'No tienes una revisión pendiente en esta consulta';
-  return '';
+  const r = responsable.value;
+  const abierta = !!yo && derivadoIds.value.has(yo);
+  const revisada = !!yo && revisados.value.some(d => d.user_id === yo);
+  const esMia = !!r && r.user_id === yo;
+  const puedeTomar = canClaim.value && !esMia && (!r || canReassign.value);
+  const gris = (title) => ({ modo: 'gris', title, tomar: false, cerrar: false });
+  if (!activeEpisodeId.value) return gris('Elige un paciente con una consulta abierta');
+  if (!isActiveEpisode.value) return gris('Es una consulta anterior: solo se revisa la vigente');
+  if (!abierta && (revisada || esMia)) return { modo: 'hecho', title: 'Ya lo revisaste: está a tu cargo', tomar: false, cerrar: false };
+  if (!abierta && !canClaim.value) return { modo: 'oculto', title: '', tomar: false, cerrar: false };
+  if (!episodioInfo.value) return gris('Cargando el estado de la consulta…');
+  if (episodioInfo.value.estado === 'alta') return gris('El paciente está de alta: si vuelve, abre una consulta nueva');
+  if (!abierta && !puedeTomar) return gris(`La tiene a cargo ${nombreResp.value}`);
+  return {
+    modo: 'accion', tomar: puedeTomar, cerrar: abierta,
+    title: puedeTomar ? 'Revisar este caso: queda a tu cargo y se apaga tu «revisar»' : 'Marcar que ya revisaste el caso: se apaga tu «revisar»',
+  };
 });
-async function marcarRevisado() {
+async function revisarCaso() {
   const epId = activeEpisodeId.value;
-  if (!epId || revisadoMotivo.value || revisando.value) return;
+  const st = revisar.value;
+  if (!epId || st.modo !== 'accion' || revisando.value) return;
+  const r = responsable.value;
+  if (st.tomar && r && r.user_id !== props.user?.id && !confirm(`${nombreResp.value} la tiene a cargo. ¿La revisas tú?`)) return;
   revisando.value = true;
   showMenu.value = false;
   try {
-    await markReviewed(epId);
+    if (st.tomar) await claimEpisode(epId, episodioInfo.value?.estado === 'enviada' ? 'en_triage' : null);
+    if (st.cerrar) await markReviewed(epId);
     messages.value = [...messages.value, {
       role: 'assistant', is_bot: true, episode_id: epId,
-      content: '☑️ Marcado como revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes.',
+      content: st.tomar ? '🙋 Revisado: la consulta quedó a tu cargo.' : '✓ Revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes.',
     }];
-    await cargarDerivados();
-    emit('respondida');      // ChatShell recarga la lista: el paciente sale de «revisar»
+    await Promise.all([cargarDerivados(), cargarEpisodioInfo()]);
+    emit('respondida');      // ChatShell recarga la lista: sale de «revisar», «a cargo: tú»
   } catch (e) {
     messages.value = [...messages.value, {
       role: 'assistant', is_bot: true, episode_id: epId,
       content: `⚠️ No se pudo marcar como revisado: ${e?.message || 'error de red'}`,
     }];
+    await cargarDerivados();
   } finally {
     revisando.value = false;
   }
@@ -1295,7 +1272,7 @@ defineExpose({ openPatient, newGeneral, activarEpisodio });
   background: #f97316; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .iderivado-ok:disabled { background: transparent; color: #fed7aa; opacity: .55; cursor: not-allowed; }
-.iderivado-ok.tomar:not(:disabled) { background: #0e7490; border-color: #a5f3fc; }
+.iderivado-ok.hecho:disabled { background: rgba(34, 197, 94, .25); color: #bbf7d0; border-color: #86efac; opacity: 1; }
 .acargo-linea { font-weight: 700; }
 .iderivado .sep { opacity: .6; }
 .derivar-go {

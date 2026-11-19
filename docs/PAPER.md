@@ -3655,3 +3655,19 @@ la lista ya hace; sin pedido extra).
 - Sin pacientes míos, «Mis pacientes · 0» sigue elegible y el vacío lo dice: «Todavía no
   tienes pacientes a tu cargo. Mira «Todos».»
 
+### 38.4 Un solo botón: «🙋 Revisar» → «✓ Revisado» (pedido del dueño, 2026-11-19)
+
+Probando en la PWA, el dueño pidió que no haya dos botones: «✓ Revisado» solo se ve si **yo**
+ya lo revisé. Reemplaza lo dicho en §38.2 y §38.3 sobre los botones (los endpoints no cambian).
+
+- **«🙋 Revisar»** hace las dos cosas a la vez: toma la consulta (`claim`, si puedes y no es
+  tuya; confirma si la tiene otro y puedes reasignar) y apaga tu «revisar» (`complete_review
+  {only_mine}`, si tienes una revisión abierta). Si solo una aplica, hace esa.
+- Hecho, el botón queda **«✓ Revisado»**, gris: es un estado, no una acción. Se ve así si
+  revisaste la derivación vigente, o si la consulta es tuya y no tienes una revisión abierta.
+- Gris con el motivo: consulta anterior, de alta, cargando, o la tiene otro, no es para ti y
+  no puedes reasignar («La tiene a cargo X»).
+- No se muestra (excepción por permisos) si no tienes una revisión abierta ni permiso de
+  tomar casos.
+- El mismo botón en la franja y en el menú de acciones.
+
