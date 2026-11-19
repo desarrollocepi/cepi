@@ -53,7 +53,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.api.ApiError
-import ec.cepi.telemedicina.api.CaseClaim
 import ec.cepi.telemedicina.api.CaseReview
 import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.Revisado
@@ -187,74 +186,49 @@ fun PacienteAbierto(
             null
         }
     }
-    var markingReviewed by remember { mutableStateOf(false) }
-    // «Revisado» (PAPER §38.2): solo quien tiene una revisión abierta en la consulta.
-    val reviewReason = when {
-        markingReviewed -> "Marcando como revisado…"
-        modelo.episodioActivo == null -> "Elige un paciente con una consulta abierta"
-        else -> CaseReview.disabledReason(entorno.sesion.usuario?.id, modelo.derivados)
-    }
+    var reviewing by remember { mutableStateOf(false) }
+    // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
+    var reviewConfirmOwner by remember { mutableStateOf<String?>(null) }
+    // «🙋 Revisar» (PAPER §38.4), con el estado del registro del episodio activo.
+    val reviewState = CaseReview.state(
+        referrals = modelo.referrals,
+        userId = entorno.sesion.usuario?.id,
+        episodeId = modelo.episodioActivo,
+        isActive = modelo.episodioActivo != null && shownEpisode == modelo.episodioActivo,
+        status = activeEpisode?.takeIf { it.id == modelo.episodioActivo }?.get("estado"),
+    )
 
     /**
-     * Cierra la revisión propia; los demás revisores siguen pendientes. Después se releen
-     * derivados y revisados, y la lista de pacientes, para que el caso salga de "revisar".
+     * Toma la consulta y/o apaga la revisión propia, según el estado. Después se releen la franja
+     * y el registro, y la lista de pacientes: el caso sale de "revisar" y queda «a cargo: tú».
      */
-    fun markReviewed() {
+    fun review(state: CaseReview.State.Action) {
         val episode = modelo.episodioActivo ?: return
-        if (markingReviewed) return
-        markingReviewed = true
-        alcance.launch {
-            try {
-                api.markReviewed(episode)
-                modelo.releerDerivaciones()
-                onConsultationAnswered()
-                snackbar.showSnackbar(CaseReview.CONFIRMATION)
-            } catch (e: ApiError) {
-                snackbar.showSnackbar("No se pudo marcar como revisado: ${e.mensaje}")
-            } finally {
-                markingReviewed = false
-            }
-        }
-    }
-    var claiming by remember { mutableStateOf(false) }
-    // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
-    var claimConfirmOwner by remember { mutableStateOf<String?>(null) }
-    // «Revisar» (PAPER §38.3), con el estado del registro del episodio activo.
-    val claimState = if (claiming) {
-        CaseClaim.State.Disabled("Guardando…")
-    } else {
-        CaseClaim.state(
-            referrals = modelo.referrals,
-            userId = entorno.sesion.usuario?.id,
-            isActive = modelo.episodioActivo != null && shownEpisode == modelo.episodioActivo,
-            status = activeEpisode?.takeIf { it.id == modelo.episodioActivo }?.get("estado"),
-        )
-    }
-
-    fun claim() {
-        val episode = modelo.episodioActivo ?: return
-        if (claiming) return
-        claiming = true
+        if (reviewing) return
+        reviewing = true
         val status = activeEpisode?.takeIf { it.id == episode }?.get("estado")
         alcance.launch {
             try {
-                api.claimConsultation(episode, status)
+                if (state.take) api.claimConsultation(episode, status)
+                if (state.close) api.markReviewed(episode)
                 modelo.releerDerivaciones()
                 episodeReload++
                 onConsultationAnswered()
-                snackbar.showSnackbar(CaseClaim.CONFIRMATION)
+                snackbar.showSnackbar(CaseReview.confirmation(state.take))
             } catch (e: ApiError) {
-                snackbar.showSnackbar("No se pudo tomar la consulta: ${e.mensaje}")
+                modelo.releerDerivaciones()
+                snackbar.showSnackbar("No se pudo marcar como revisado: ${e.mensaje}")
             } finally {
-                claiming = false
+                reviewing = false
             }
         }
     }
 
-    /** Tocar «Revisar»: si se la quita a otro, primero confirma. */
-    fun requestClaim() {
-        val state = claimState as? CaseClaim.State.Enabled ?: return
-        if (state.currentOwner != null) claimConfirmOwner = state.currentOwner else claim()
+    /** Tocar «🙋 Revisar»: si se la quita a otro, primero confirma. */
+    fun requestReview() {
+        val state = reviewState as? CaseReview.State.Action ?: return
+        if (reviewing) return
+        if (state.take && state.confirmOwner != null) reviewConfirmOwner = state.confirmOwner else review(state)
     }
     val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
     val dischargeReason = PatientDischarge.disabledReason(modelo.episodioActivo, activeEpisode)
@@ -328,10 +302,9 @@ fun PacienteAbierto(
                             onAnswer = { answering = true },
                             dischargeReason = dischargeReason,
                             onDischarge = { discharging = true },
-                            reviewReason = reviewReason,
-                            onMarkReviewed = { markReviewed() },
-                            claimState = claimState,
-                            onClaim = { requestClaim() },
+                            reviewState = reviewState,
+                            reviewing = reviewing,
+                            onReview = { requestReview() },
                         )
                     }
                 },
@@ -345,21 +318,18 @@ fun PacienteAbierto(
                 .imePadding()
                 .fillMaxSize(),
         ) {
-            // La franja de la consulta activa (PAPER §38.2–38.3), siempre que haya una: quién la
-            // tiene a cargo, a quién está derivada con el estado de cada revisor, «Revisar» y
-            // «Revisado». Tocar los nombres abre Derivar para sumar o cambiar destinos.
+            // La franja de la consulta activa (PAPER §38.4), siempre que haya una: quién la tiene
+            // a cargo, a quién está derivada con el estado de cada revisor, y el único botón
+            // «🙋 Revisar» / «✓ Revisado». Tocar los nombres abre Derivar.
             if (modelo.episodioActivo != null) {
                 ReviewStrip(
-                    ownerLabel = CaseClaim.ownerLabel(modelo.referrals.responsable, entorno.sesion.usuario?.id),
+                    ownerLabel = CaseReview.ownerLabel(modelo.referrals.responsable, entorno.sesion.usuario?.id),
                     pending = modelo.derivados,
                     reviewed = modelo.revisados,
-                    reviewReason = reviewReason,
-                    marking = markingReviewed,
-                    claimState = claimState,
-                    claiming = claiming,
+                    reviewState = reviewState,
+                    reviewing = reviewing,
                     onOpenReferral = { derivar = true },
-                    onMarkReviewed = { markReviewed() },
-                    onClaim = { requestClaim() },
+                    onReview = { requestReview() },
                 )
             }
             PrimaryTabRow(selectedTabIndex = paginas.currentPage) {
@@ -434,18 +404,18 @@ fun PacienteAbierto(
             alCerrar = { mostrarSecciones = false },
         )
     }
-    claimConfirmOwner?.let { owner ->
+    reviewConfirmOwner?.let { owner ->
         AlertDialog(
-            onDismissRequest = { claimConfirmOwner = null },
+            onDismissRequest = { reviewConfirmOwner = null },
             title = { Text("Revisar el caso") },
-            text = { Text(CaseClaim.confirmQuestion(owner)) },
+            text = { Text(CaseReview.confirmQuestion(owner)) },
             confirmButton = {
                 TextButton(onClick = {
-                    claimConfirmOwner = null
-                    claim()
+                    reviewConfirmOwner = null
+                    (reviewState as? CaseReview.State.Action)?.let(::review)
                 }) { Text("La reviso") }
             },
-            dismissButton = { TextButton(onClick = { claimConfirmOwner = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { reviewConfirmOwner = null }) { Text("Cancelar") } },
         )
     }
     val episodeToAnswer = activeEpisode
@@ -516,12 +486,10 @@ private fun Acciones(
     /** Por qué no se puede dar el alta; `null` si se puede (PAPER §35). */
     dischargeReason: String?,
     onDischarge: () -> Unit,
-    /** Por qué no se puede marcar «Revisado»; `null` si se puede (PAPER §38). */
-    reviewReason: String?,
-    onMarkReviewed: () -> Unit,
-    /** «Revisar» (PAPER §38.3); `Hidden` solo por permiso. */
-    claimState: CaseClaim.State,
-    onClaim: () -> Unit,
+    /** «🙋 Revisar» / «✓ Revisado» (PAPER §38.4); `Hidden` solo por permiso. */
+    reviewState: CaseReview.State,
+    reviewing: Boolean,
+    onReview: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -594,25 +562,17 @@ private fun Acciones(
                 onAnswer()
             },
         )
-        // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
-        if (claimState !is CaseClaim.State.Hidden) {
+        // Sin revisión abierta ni permiso de tomar casos no se muestra (excepción por permisos).
+        if (reviewState !is CaseReview.State.Hidden) {
             DropdownMenuItem(
-                text = { Explicado("🙋 Revisar", (claimState as? CaseClaim.State.Disabled)?.reason) },
-                enabled = claimState is CaseClaim.State.Enabled,
+                text = { Explicado(reviewLabel(reviewState), reviewReason(reviewState, reviewing)) },
+                enabled = reviewState is CaseReview.State.Action && !reviewing,
                 onClick = {
                     alCerrar()
-                    onClaim()
+                    onReview()
                 },
             )
         }
-        DropdownMenuItem(
-            text = { Explicado("✓ Marcar como revisado", reviewReason) },
-            enabled = reviewReason == null,
-            onClick = {
-                alCerrar()
-                onMarkReviewed()
-            },
-        )
         DropdownMenuItem(
             text = { Explicado("🏁 Dar de alta", dischargeReason) },
             enabled = libre && dischargeReason == null,
@@ -632,28 +592,37 @@ private fun Acciones(
     }
 }
 
+/** «✓ Revisado» si ya está hecho; si no, «🙋 Revisar». */
+private fun reviewLabel(state: CaseReview.State): String =
+    if (state is CaseReview.State.Done) "✓ Revisado" else "🙋 Revisar"
+
+/** El motivo visible del botón; `null` cuando se puede tocar. */
+private fun reviewReason(state: CaseReview.State, reviewing: Boolean): String? = when {
+    reviewing -> "Guardando…"
+    state is CaseReview.State.Done -> state.reason
+    state is CaseReview.State.Disabled -> state.reason
+    else -> null
+}
+
 /**
- * La franja de la consulta activa (PAPER §38.2–38.3): quién la tiene a cargo, los derivados con
- * su estado (pendiente o ✓ revisado) y, a la derecha, «Revisar» y «Revisado». Un botón que no
- * aplica queda gris y su motivo se lee debajo de los nombres.
+ * La franja de la consulta activa (PAPER §38.4): quién la tiene a cargo, los derivados con su
+ * estado (pendiente o ✓ revisado) y, a la derecha, el único botón «🙋 Revisar» / «✓ Revisado».
+ * Gris, su motivo se lee debajo de los nombres.
  */
 @Composable
 private fun ReviewStrip(
     ownerLabel: String,
     pending: List<Derivado>,
     reviewed: List<Revisado>,
-    reviewReason: String?,
-    marking: Boolean,
-    claimState: CaseClaim.State,
-    claiming: Boolean,
+    reviewState: CaseReview.State,
+    reviewing: Boolean,
     onOpenReferral: () -> Unit,
-    onMarkReviewed: () -> Unit,
-    onClaim: () -> Unit,
+    onReview: () -> Unit,
 ) {
     val pendingIds = pending.map { it.usuario }.toSet()
     val reviewers = pending.map { "${it.comoSeLlama} (pendiente)" } +
         reviewed.filter { it.usuario !in pendingIds }.map { "${it.comoSeLlama} (✓ revisado)" }
-    val claimReason = (claimState as? CaseClaim.State.Disabled)?.reason
+    val reason = reviewReason(reviewState, reviewing)
     val color = MaterialTheme.colorScheme.onTertiaryContainer
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -680,32 +649,28 @@ private fun ReviewStrip(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                // Los motivos, salvo mientras se hace la acción (ahí el botón muestra el progreso).
-                if (claimReason != null && !claiming) {
-                    Text("Revisar: $claimReason", style = MaterialTheme.typography.bodySmall, color = color)
-                }
-                if (reviewReason != null && !marking) {
-                    Text("Revisado: $reviewReason", style = MaterialTheme.typography.bodySmall, color = color)
+                // El motivo del botón gris, salvo mientras guarda (el botón muestra el progreso).
+                if (reason != null && !reviewing && reviewState !is CaseReview.State.Hidden) {
+                    Text(reason, style = MaterialTheme.typography.bodySmall, color = color)
                 }
             }
-            // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
-            if (claimState !is CaseClaim.State.Hidden) {
+            // Sin revisión abierta ni permiso de tomar casos no se muestra (excepción por permisos).
+            if (reviewState !is CaseReview.State.Hidden) {
                 TextButton(
-                    onClick = onClaim,
-                    enabled = claimState is CaseClaim.State.Enabled,
-                    modifier = Modifier.semantics { contentDescription = claimReason ?: "Revisar este caso" },
+                    onClick = onReview,
+                    enabled = reviewState is CaseReview.State.Action && !reviewing,
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .semantics {
+                            contentDescription = reason ?: (reviewState as? CaseReview.State.Action)?.description ?: ""
+                        },
                 ) {
-                    if (claiming) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("🙋 Revisar")
+                    if (reviewing) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(reviewLabel(reviewState))
+                    }
                 }
-            }
-            TextButton(
-                onClick = onMarkReviewed,
-                enabled = reviewReason == null,
-                modifier = Modifier
-                    .padding(end = 4.dp)
-                    .semantics { contentDescription = reviewReason ?: "Marcar como revisado" },
-            ) {
-                if (marking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Revisado")
             }
         }
     }

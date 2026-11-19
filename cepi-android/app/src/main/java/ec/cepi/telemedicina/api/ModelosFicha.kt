@@ -233,7 +233,7 @@ data class Responsable(
     @SerialName("name") val nombre: String? = null,
     val email: String? = null,
 ) {
-    val comoSeLlama: String get() = nombre ?: email ?: "Profesional"
+    val comoSeLlama: String get() = nombre ?: email ?: "otro médico"
 }
 
 /** `POST /api/entities/:id/claim`: quién quedó a cargo y el estado nuevo, si cambió. */
@@ -244,45 +244,78 @@ data class ClaimResult(
     @SerialName("new_status") val newStatus: String? = null,
 )
 
+/** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */
+@Serializable
+data class ReviewCompletion(
+    @SerialName("entity_id") val entityId: String? = null,
+    val cleared: Int = 0,
+    val remaining: Int = 0,
+)
+
 /**
- * «Revisar» (PAPER §38.3): qué muestra el botón. Sin UI, para poder probarlo.
+ * El único botón de la consulta (PAPER §38.4): «🙋 Revisar» toma la consulta (si puedes y no es
+ * tuya) y apaga tu «revisar» (si tienes una revisión abierta); hecho, queda «✓ Revisado», gris,
+ * como estado. Igual que `revisar` / `revisarCaso()` de `IntakeChat.vue`. Sin UI, para probarlo.
  */
-object CaseClaim {
-    const val CONFIRMATION = "Ahora tienes esta consulta a cargo."
-    const val ALREADY_MINE = "Ya está a tu cargo"
-    const val NOT_ACTIVE = "Solo en la consulta actual: activa esta consulta para tomarla"
-    const val DISCHARGED = "El paciente está de alta: si vuelve, abre una consulta nueva"
+object CaseReview {
+    const val NO_EPISODE = "Elige un paciente con una consulta abierta"
+    const val NOT_ACTIVE = "Es una consulta anterior: solo se revisa la vigente"
+    const val DONE = "Ya lo revisaste: está a tu cargo"
     const val LOADING = "Cargando el estado de la consulta…"
+    const val DISCHARGED = "El paciente está de alta: si vuelve, abre una consulta nueva"
+    const val CONFIRMATION_TAKEN = "🙋 Revisado: la consulta quedó a tu cargo."
+    const val CONFIRMATION_CLOSED = "✓ Revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes."
 
     sealed interface State {
-        /** Sin `entities:claim`: el rol nunca podrá tomarla, el botón no se muestra. */
+        /** Sin revisión abierta ni permiso de tomar casos: no se muestra (excepción por permisos). */
         data object Hidden : State
 
-        /** Se ve gris, con el motivo. */
+        /** «✓ Revisado», gris: es un estado, no una acción. */
+        data class Done(val reason: String = DONE) : State
+
+        /** «🙋 Revisar», gris, con el motivo. */
         data class Disabled(val reason: String) : State
 
-        /** Se puede tomar. `currentOwner` no nulo: antes se confirma, porque se la quita a otro. */
-        data class Enabled(val currentOwner: String? = null) : State
+        /**
+         * «🙋 Revisar» habilitado. `take` = se toma la consulta; `close` = se apaga mi revisión.
+         * `confirmOwner` no nulo: la tiene otro y antes se confirma.
+         */
+        data class Action(val take: Boolean, val close: Boolean, val confirmOwner: String?) : State {
+            val description: String
+                get() = if (take) {
+                    "Revisar este caso: queda a tu cargo y se apaga tu «revisar»"
+                } else {
+                    "Marcar que ya revisaste el caso: se apaga tu «revisar»"
+                }
+        }
     }
 
     /**
-     * El estado del botón, en el orden de PAPER §38.3. `status` es el `estado` del registro del
-     * episodio activo; `null` mientras se carga.
+     * El estado del botón, en el orden de la web. `episodeId` = consulta activa del chat;
+     * `isActive` = es la que se está mirando; `status` = `estado` del registro del episodio
+     * activo, `null` mientras se carga.
      */
     fun state(
         referrals: Derivaciones,
         userId: String?,
+        episodeId: String?,
         isActive: Boolean,
         status: String?,
     ): State {
-        if (!referrals.canClaim) return State.Hidden
+        val owner = referrals.responsable
+        val open = userId != null && referrals.derivados.any { it.usuario == userId }
+        val reviewed = userId != null && referrals.revisados.any { it.usuario == userId }
+        val isMine = owner != null && owner.usuario == userId
+        val canTake = referrals.canClaim && !isMine && (owner == null || referrals.canReassign)
+        if (episodeId == null) return State.Disabled(NO_EPISODE)
         if (!isActive) return State.Disabled(NOT_ACTIVE)
+        if (!open && (reviewed || isMine)) return State.Done()
+        if (!open && !referrals.canClaim) return State.Hidden
         if (status == null) return State.Disabled(LOADING)
         if (status == "alta") return State.Disabled(DISCHARGED)
-        val owner = referrals.responsable ?: return State.Enabled()
-        if (userId != null && owner.usuario == userId) return State.Disabled(ALREADY_MINE)
-        if (!referrals.canReassign) return State.Disabled("La tiene a cargo ${owner.comoSeLlama}")
-        return State.Enabled(currentOwner = owner.comoSeLlama)
+        if (!open && !canTake) return State.Disabled("La tiene a cargo ${owner?.comoSeLlama ?: "otro médico"}")
+        val confirmOwner = if (canTake && owner != null && owner.usuario != userId) owner.comoSeLlama else null
+        return State.Action(take = canTake, close = open, confirmOwner = confirmOwner)
     }
 
     /** «A cargo: X», «A cargo: tú» o «Sin responsable». */
@@ -294,27 +327,9 @@ object CaseClaim {
 
     /** La pregunta antes de quitársela a otro. */
     fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La revisas tú?"
-}
 
-/** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */
-@Serializable
-data class ReviewCompletion(
-    @SerialName("entity_id") val entityId: String? = null,
-    val cleared: Int = 0,
-    val remaining: Int = 0,
-)
-
-/**
- * Cuándo se puede marcar «Revisado» (PAPER §38.2): solo quien tiene una revisión abierta en la
- * consulta. Sin UI, para poder probarlo.
- */
-object CaseReview {
-    const val NO_PENDING_REVIEW = "No tienes una revisión pendiente en esta consulta"
-    const val CONFIRMATION = "Marcado como revisado."
-
-    /** Por qué hoy no se puede marcar, o `null` si se puede. */
-    fun disabledReason(userId: String?, pending: List<Derivado>): String? =
-        if (userId != null && pending.any { it.usuario == userId }) null else NO_PENDING_REVIEW
+    /** El aviso al terminar. */
+    fun confirmation(taken: Boolean): String = if (taken) CONFIRMATION_TAKEN else CONFIRMATION_CLOSED
 }
 
 @Serializable

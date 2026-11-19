@@ -12,7 +12,7 @@ struct PacienteView: View {
     let fila: FilaPaciente
     /// Cierra el paciente (tras derivar, el médico pasa al siguiente).
     let alTerminar: () -> Void
-    /// Vuelve a pedir la lista: tras responder o marcar «Revisado», el paciente sale de
+    /// Vuelve a pedir la lista: tras responder o «🙋 Revisar», el paciente sale de
     /// "revisar"; tras el alta, pasa a «Alta».
     let onListChanged: () async -> Void
 
@@ -34,14 +34,12 @@ struct PacienteView: View {
     @State private var answerConfirmation: String?
     @State private var showDischarge = false
     @State private var dischargeDone = false
-    /// «Revisado» en vuelo (PAPER §38.2): el botón queda gris hasta que vuelve.
-    @State private var markingReviewed = false
-    /// «Revisar» en vuelo (PAPER §38.3).
-    @State private var claiming = false
-    /// La tiene otro y quien mira puede reasignar: el texto del diálogo de confirmación.
-    @State private var claimConfirmation: String?
-    /// Un fallo de «Revisado» o «Revisar»: una sola alerta con su título.
-    @State private var stripError: StripError?
+    /// «🙋 Revisar» en vuelo (PAPER §38.4): el botón queda gris hasta que vuelve.
+    @State private var reviewing = false
+    /// Va a tomar una consulta que tiene otro: el texto del diálogo de confirmación.
+    @State private var reviewConfirmation: String?
+    /// Un fallo de «🙋 Revisar».
+    @State private var reviewError: String?
 
     enum Seccion: String, CaseIterable, Identifiable {
         case chat, ficha, evolucion, imagenes
@@ -84,10 +82,10 @@ struct PacienteView: View {
                 onNext: { navigator.goNext() }
             )
 
-            // La franja de la consulta (PAPER §38.2–38.3), siempre que haya una consulta
-            // activa: quién la tiene a cargo, los derivados con su estado y, a la derecha,
-            // «Revisar» y «Revisado». El texto se toca y abre Derivar para sumar o cambiar
-            // destinos.
+            // La franja de la consulta (PAPER §38.2–38.4), siempre que haya una consulta
+            // activa: quién la tiene a cargo, los derivados con su estado y, a la derecha, el
+            // botón único «🙋 Revisar» / «✓ Revisado». El texto se toca y abre Derivar para
+            // sumar o cambiar destinos.
             if modelo.episodioActivo != nil {
                 HStack(spacing: 8) {
                     Button {
@@ -110,40 +108,25 @@ struct PacienteView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
-                    if claimState != .hidden {
+                    // Sin revisión abierta ni permiso de tomar casos no se muestra (excepción
+                    // por permiso).
+                    if reviewState != .hidden {
                         Button {
-                            requestClaim()
+                            requestReview()
                         } label: {
-                            if claiming {
+                            if reviewing {
                                 ProgressView().controlSize(.mini)
                             } else {
-                                Text("🙋 Revisar")
+                                Text(reviewTitle)
                             }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .tint(Marca.revisar)
-                        .disabled(claimDisabled)
-                        .help(claimState.blockReason ?? "Quedas a cargo de esta consulta")
-                        .accessibilityHint(claimState.blockReason ?? "Quedas a cargo de esta consulta")
+                        .disabled(reviewDisabled)
+                        .help(reviewState.hint)
+                        .accessibilityHint(reviewState.hint)
                     }
-
-                    Button {
-                        Task { await markReviewed() }
-                    } label: {
-                        if markingReviewed {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Label("Revisado", systemImage: "checkmark.circle")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .tint(Marca.revisar)
-                    .disabled(markingReviewed || modelo.ocupado || reviewBlockReason != nil)
-                    .help(reviewBlockReason ?? "Marca que ya revisaste este caso; los demás revisores siguen pendientes")
-                    .accessibilityHint(reviewBlockReason ?? "Marca que ya revisaste este caso")
                 }
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 12)
@@ -258,22 +241,22 @@ struct PacienteView: View {
         } message: {
             Text(PatientDischarge.confirmation)
         }
-        .alert(stripError?.title ?? "", isPresented: Binding(
-            get: { stripError != nil },
-            set: { if !$0 { stripError = nil } }
+        .alert("No se pudo marcar como revisado", isPresented: Binding(
+            get: { reviewError != nil },
+            set: { if !$0 { reviewError = nil } }
         )) {
             Button("Aceptar", role: .cancel) {}
         } message: {
-            Text(stripError?.message ?? "")
+            Text(reviewError ?? "")
         }
         .confirmationDialog("Revisar el caso", isPresented: Binding(
-            get: { claimConfirmation != nil },
-            set: { if !$0 { claimConfirmation = nil } }
+            get: { reviewConfirmation != nil },
+            set: { if !$0 { reviewConfirmation = nil } }
         ), titleVisibility: .visible) {
-            Button("La reviso") { Task { await claim() } }
+            Button("La reviso") { Task { await review() } }
             Button("Cancelar", role: .cancel) {}
         } message: {
-            Text(claimConfirmation ?? "")
+            Text(reviewConfirmation ?? "")
         }
         .alert("Interconsulta respondida", isPresented: Binding(
             get: { answerConfirmation != nil },
@@ -335,34 +318,16 @@ struct PacienteView: View {
         )
     }
 
-    /// «Revisado» solo aplica a quien tiene una revisión abierta en la consulta (PAPER §38.2).
-    private var reviewBlockReason: String? {
-        ReviewStatus.blockReason(derivados: modelo.derivados, userId: sesion.usuario?.id)
-    }
-
-    /// Cierra la revisión propia, relee derivados/revisados y la lista: el paciente sale de
-    /// «revisar» para quien lo marcó. Sin gate: es una acción explícita (PAPER §38.1).
-    private func markReviewed() async {
-        guard let episodio = modelo.episodioActivo, !markingReviewed else { return }
-        markingReviewed = true
-        defer { markingReviewed = false }
-        do {
-            try await sesion.api.markReviewed(episode: episodio)
-        } catch {
-            stripError = StripError(title: "No se pudo marcar como revisado", message: error.localizedDescription)
-            return
-        }
-        await modelo.releerDerivaciones(api: sesion.api)
-        await onListChanged()
-    }
-
-    /// «Revisar» (PAPER §38.3). El estado de la consulta sale del registro del episodio.
-    private var claimState: ClaimStatus.State {
-        ClaimStatus.state(
+    /// «🙋 Revisar» / «✓ Revisado» (PAPER §38.4). El estado de la consulta sale del registro
+    /// del episodio.
+    private var reviewState: ReviewStatus.State {
+        ReviewStatus.state(
             episode: modelo.episodioActivo,
             viewingActive: navigator.current == nil || navigator.current == modelo.episodioActivo,
             episodeLoaded: episodeRecord != nil,
             episodeStatus: episodeRecord?["estado"],
+            derivados: modelo.derivados,
+            revisados: modelo.revisados,
             responsable: modelo.responsable,
             canClaim: modelo.canClaim,
             canReassign: modelo.canReassign,
@@ -370,34 +335,45 @@ struct PacienteView: View {
         )
     }
 
-    private var claimDisabled: Bool {
-        claiming || modelo.ocupado || claimState.blockReason != nil
+    private var reviewTitle: String {
+        reviewState.isDone ? "✓ Revisado" : "🙋 Revisar"
     }
 
-    /// Si la tiene otro, primero el diálogo; si no, la toma directo.
-    private func requestClaim() {
-        switch claimState {
-        case .confirm(let message):
-            claimConfirmation = message
-        case .allowed:
-            Task { await claim() }
-        case .hidden, .blocked:
-            break
+    private var reviewDisabled: Bool {
+        reviewing || modelo.ocupado || !reviewState.isEnabled
+    }
+
+    /// Si va a tomar una consulta que tiene otro, primero el diálogo; si no, directo.
+    private func requestReview() {
+        let state = reviewState
+        guard state.isEnabled, !reviewing else { return }
+        if let message = ReviewStatus.confirmation(for: state, responsable: modelo.responsable, userId: sesion.usuario?.id) {
+            reviewConfirmation = message
+        } else {
+            Task { await review() }
         }
     }
 
-    /// Toma la consulta y relee la franja, el registro del episodio (si estaba `enviada`,
-    /// pasa a `en_triage`) y la lista: la fila pasa a «a cargo: tú». Sin gate.
-    private func claim() async {
-        guard let episodio = modelo.episodioActivo, !claiming else { return }
-        claiming = true
-        defer { claiming = false }
+    /// Toma la consulta (si aplica; `enviada` pasa a `en_triage`) y apaga la revisión propia
+    /// (si hay una abierta). Después relee la franja, el registro del episodio y la lista:
+    /// sale de «revisar» y queda «a cargo: tú». Sin gate: es una acción explícita.
+    private func review() async {
+        guard let episodio = modelo.episodioActivo, !reviewing,
+              case .action(let take, let close, _) = reviewState else { return }
+        reviewing = true
+        defer { reviewing = false }
         do {
-            try await sesion.api.claim(
-                episode: episodio, ClaimStatus.request(episodeStatus: episodeRecord?["estado"])
-            )
+            if take {
+                try await sesion.api.claim(
+                    episode: episodio, ClaimStatus.request(episodeStatus: episodeRecord?["estado"])
+                )
+            }
+            if close {
+                try await sesion.api.markReviewed(episode: episodio)
+            }
         } catch {
-            stripError = StripError(title: "No se pudo tomar la consulta", message: error.localizedDescription)
+            reviewError = error.localizedDescription
+            await modelo.releerDerivaciones(api: sesion.api)
             return
         }
         await modelo.releerDerivaciones(api: sesion.api)
@@ -457,22 +433,15 @@ struct PacienteView: View {
                 Text(answerBlockReason ?? "Queda en la ficha y le llega al médico que envió el caso")
             }
             .disabled(modelo.ocupado || answerBlockReason != nil)
-            Button {
-                Task { await markReviewed() }
-            } label: {
-                Label("Marcar como revisado", systemImage: "checkmark.circle")
-                Text(reviewBlockReason ?? "Los demás revisores siguen pendientes")
-            }
-            .disabled(markingReviewed || modelo.ocupado || reviewBlockReason != nil)
-            // Sin `entities:claim` no se muestra (excepción por permiso).
-            if claimState != .hidden {
+            // El mismo botón único de la franja (PAPER §38.4).
+            if reviewState != .hidden {
                 Button {
-                    requestClaim()
+                    requestReview()
                 } label: {
-                    Text("🙋 Revisar")
-                    Text(claimState.blockReason ?? "Quedas a cargo de esta consulta")
+                    Text(reviewTitle)
+                    Text(reviewState.hint)
                 }
-                .disabled(claimDisabled)
+                .disabled(reviewDisabled)
             }
             Button {
                 showDischarge = true
@@ -487,12 +456,6 @@ struct PacienteView: View {
             Label("Acciones", systemImage: "ellipsis.circle")
         }
     }
-}
-
-/// El fallo de una acción de la franja («Revisado», «Revisar»).
-private struct StripError: Equatable {
-    let title: String
-    let message: String
 }
 
 /// Lo que decide si hay que llevar el chat al episodio elegido en la barra.

@@ -277,10 +277,17 @@ struct ContratoTests {
         #expect(r.revisados.first?.reviewedAt == "2026-11-19T11:00:00.000Z")
         #expect(ReviewStatus.summary(derivados: r.derivados, revisados: r.revisados)
             == "Dra. B · pendiente, Dr. A ✓ revisado")
-        // «Revisado» solo para quien tiene la revisión abierta.
-        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: "u2") == nil)
-        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: "u1") == ReviewStatus.noPendingReason)
-        #expect(ReviewStatus.blockReason(derivados: r.derivados, userId: nil) == ReviewStatus.noPendingReason)
+        // Con el JSON real: u2 tiene la revisión abierta; u1 ya la marcó (PAPER §38.4).
+        func estado(_ userId: String?) -> ReviewStatus.State {
+            ReviewStatus.state(
+                episode: "e1", viewingActive: true, episodeLoaded: true, episodeStatus: "derivada",
+                derivados: r.derivados, revisados: r.revisados, responsable: nil,
+                canClaim: false, canReassign: false, userId: userId
+            )
+        }
+        #expect(estado("u2") == .action(take: false, close: true, hint: ReviewStatus.closeHint))
+        #expect(estado("u1") == .done(ReviewStatus.doneHint))
+        #expect(estado(nil) == .hidden)
 
         // Servidor anterior a §38: sin `revisados`.
         let viejo = try decodificar(Derivaciones.self, """
@@ -340,29 +347,59 @@ struct ContratoTests {
         #expect(tomada.newStatus == "en_triage")
     }
 
-    @Test func estadosDeLoTomo() {
+    /// El botón único «🙋 Revisar» → «✓ Revisado» (PAPER §38.4), estado por estado y en el
+    /// orden de `revisar` de IntakeChat.vue. Quien mira es u1.
+    @Test func estadosDeRevisar() {
+        let mio = Responsable(usuario: "u1", nombre: "Yo", email: nil)
         let otra = Responsable(usuario: "u3", nombre: "Dra. C", email: nil)
+        let abierta = [Derivado(usuario: "u1", nombre: "Yo", email: nil)]
+        let revisada = [Revisado(usuario: "u1", nombre: "Yo", email: nil, reviewedAt: nil)]
         func estado(
             episode: String? = "e1", viewingActive: Bool = true, loaded: Bool = true, status: String? = "derivada",
-            responsable: Responsable? = nil, canClaim: Bool = true, canReassign: Bool = false
-        ) -> ClaimStatus.State {
-            ClaimStatus.state(
+            derivados: [Derivado] = [], revisados: [Revisado] = [], responsable: Responsable? = nil,
+            canClaim: Bool = true, canReassign: Bool = false
+        ) -> ReviewStatus.State {
+            ReviewStatus.state(
                 episode: episode, viewingActive: viewingActive, episodeLoaded: loaded, episodeStatus: status,
-                responsable: responsable, canClaim: canClaim, canReassign: canReassign, userId: "u1"
+                derivados: derivados, revisados: revisados, responsable: responsable,
+                canClaim: canClaim, canReassign: canReassign, userId: "u1"
             )
         }
+        // 1–2: sin consulta y consulta anterior, antes que todo lo demás.
+        #expect(estado(episode: nil, derivados: abierta) == .blocked(ReviewStatus.noEpisodeReason))
+        #expect(estado(viewingActive: false, revisados: revisada) == .blocked(ReviewStatus.previousEpisodeReason))
+        // 3: hecho = ya lo revisé, o es mía y no tengo revisión abierta. Aun sin permiso de tomar.
+        #expect(estado(revisados: revisada, canClaim: false) == .done(ReviewStatus.doneHint))
+        #expect(estado(responsable: mio) == .done(ReviewStatus.doneHint))
+        #expect(estado(responsable: mio).isDone)
+        // 4: sin revisión abierta ni permiso de tomar: no se muestra.
         #expect(estado(canClaim: false) == .hidden)
-        #expect(estado(episode: nil) == .blocked(ClaimStatus.noEpisodeReason))
-        #expect(estado(viewingActive: false) == .blocked(ClaimStatus.notActiveReason))
-        #expect(estado(loaded: false, status: nil) == .blocked(ClaimStatus.loadingReason))
-        #expect(estado(status: "alta") == .blocked(ClaimStatus.dischargedReason))
-        #expect(estado(responsable: Responsable(usuario: "u1", nombre: "Yo", email: nil))
-            == .blocked(ClaimStatus.alreadyMineReason))
+        #expect(estado(responsable: otra, canClaim: false) == .hidden)
+        // 5–6: cargando y de alta.
+        #expect(estado(loaded: false, status: nil) == .blocked(ReviewStatus.loadingReason))
+        #expect(estado(status: "alta", derivados: abierta) == .blocked(ReviewStatus.dischargedReason))
+        // 7: la tiene otro, no es para mí y no puedo reasignar.
         #expect(estado(responsable: otra) == .blocked("La tiene a cargo Dra. C"))
-        #expect(estado(responsable: otra, canReassign: true) == .confirm("Dra. C la tiene a cargo. ¿La revisas tú?"))
-        #expect(estado() == .allowed)
-        #expect(estado().blockReason == nil)
-        #expect(estado(status: "alta").blockReason == ClaimStatus.dischargedReason)
+        #expect(!estado(responsable: otra).isEnabled)
+        // 8: acción. Tomar y cerrar a la vez, solo tomar, solo cerrar.
+        #expect(estado(derivados: abierta) == .action(take: true, close: true, hint: ReviewStatus.takeHint))
+        #expect(estado() == .action(take: true, close: false, hint: ReviewStatus.takeHint))
+        #expect(estado(derivados: abierta, responsable: mio) == .action(take: false, close: true, hint: ReviewStatus.closeHint))
+        #expect(estado(derivados: abierta, canClaim: false) == .action(take: false, close: true, hint: ReviewStatus.closeHint))
+        #expect(estado(derivados: abierta, responsable: otra) == .action(take: false, close: true, hint: ReviewStatus.closeHint))
+        let reasignar = estado(responsable: otra, canReassign: true)
+        #expect(reasignar == .action(take: true, close: false, hint: ReviewStatus.takeHint))
+        #expect(reasignar.isEnabled)
+
+        // Confirmación: solo si va a tomar una consulta que tiene otro.
+        #expect(ReviewStatus.confirmation(for: reasignar, responsable: otra, userId: "u1")
+            == "Dra. C la tiene a cargo. ¿La revisas tú?")
+        #expect(ReviewStatus.confirmation(for: estado(), responsable: nil, userId: "u1") == nil)
+        #expect(ReviewStatus.confirmation(
+            for: estado(derivados: abierta, responsable: otra), responsable: otra, userId: "u1"
+        ) == nil)
+        // Sin nombre ni correo, como `nombreResp` de la web.
+        #expect(ReviewStatus.ownerName(Responsable(usuario: "u9", nombre: nil, email: nil)) == "otro médico")
     }
 
     @Test func urlCodificaElMas() {

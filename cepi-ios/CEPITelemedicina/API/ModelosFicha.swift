@@ -289,14 +289,81 @@ struct ReviewCompleteResult: Decodable, Sendable {
     }
 }
 
-/// Lo que decide el botón «Revisado» y lo que dice la franja (PAPER §38.2).
+/// El botón único «🙋 Revisar» → «✓ Revisado» y lo que dice la franja (PAPER §38.4). Copia
+/// `revisar` / `revisarCaso()` de IntakeChat.vue: toma la consulta (si puedes y no es tuya) y
+/// apaga tu «revisar» (si tienes una revisión abierta). Hecho, queda «✓ Revisado» como estado.
 enum ReviewStatus {
-    static let noPendingReason = "No tienes una revisión pendiente en esta consulta"
+    enum State: Equatable {
+        /// Sin revisión abierta ni permiso de tomar casos: no se muestra (excepción por permiso).
+        case hidden
+        /// «✓ Revisado», gris: es un estado, no una acción. Lleva el texto de ayuda.
+        case done(String)
+        /// «🙋 Revisar», gris con el motivo.
+        case blocked(String)
+        /// «🙋 Revisar» habilitado: `take` = toma la consulta (`claim`), `close` = apaga la
+        /// revisión propia (`complete_review {only_mine}`).
+        case action(take: Bool, close: Bool, hint: String)
 
-    /// nil si quien mira tiene una revisión abierta en la consulta; si no, el motivo.
-    static func blockReason(derivados: [Derivado], userId: String?) -> String? {
-        guard let userId, derivados.contains(where: { $0.usuario == userId }) else { return noPendingReason }
-        return nil
+        /// El texto de ayuda: el motivo si está gris, qué hace si está habilitado.
+        var hint: String {
+            switch self {
+            case .hidden: ""
+            case .done(let text), .blocked(let text): text
+            case .action(_, _, let text): text
+            }
+        }
+
+        var isEnabled: Bool {
+            if case .action = self { return true }
+            return false
+        }
+
+        var isDone: Bool {
+            if case .done = self { return true }
+            return false
+        }
+    }
+
+    static let noEpisodeReason = "Elige un paciente con una consulta abierta"
+    static let previousEpisodeReason = "Es una consulta anterior: solo se revisa la vigente"
+    static let doneHint = "Ya lo revisaste: está a tu cargo"
+    static let loadingReason = "Cargando el estado de la consulta…"
+    static let dischargedReason = "El paciente está de alta: si vuelve, abre una consulta nueva"
+    static let takeHint = "Revisar este caso: queda a tu cargo y se apaga tu «revisar»"
+    static let closeHint = "Marcar que ya revisaste el caso: se apaga tu «revisar»"
+
+    /// El nombre de quien la tiene a cargo, como `nombreResp` de la web.
+    static func ownerName(_ responsable: Responsable?) -> String {
+        responsable?.nombre ?? responsable?.email ?? "otro médico"
+    }
+
+    /// `viewingActive`: la consulta a la vista es la vigente. `episodeLoaded`: llegó el
+    /// registro del episodio; `episodeStatus`, su `estado`.
+    static func state(
+        episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
+        derivados: [Derivado], revisados: [Revisado], responsable: Responsable?,
+        canClaim: Bool, canReassign: Bool, userId: String?
+    ) -> State {
+        let open = userId.map { me in derivados.contains { $0.usuario == me } } ?? false
+        let reviewed = userId.map { me in revisados.contains { $0.usuario == me } } ?? false
+        let isMine = responsable != nil && responsable?.usuario == userId
+        let canTake = canClaim && !isMine && (responsable == nil || canReassign)
+        guard episode != nil else { return .blocked(noEpisodeReason) }
+        guard viewingActive else { return .blocked(previousEpisodeReason) }
+        if !open && (reviewed || isMine) { return .done(doneHint) }
+        if !open && !canClaim { return .hidden }
+        guard episodeLoaded else { return .blocked(loadingReason) }
+        if episodeStatus == "alta" { return .blocked(dischargedReason) }
+        if !open && !canTake { return .blocked("La tiene a cargo \(ownerName(responsable))") }
+        return .action(take: canTake, close: open, hint: canTake ? takeHint : closeHint)
+    }
+
+    /// Si al tocar hay que confirmar: va a tomar la consulta y la tiene otro.
+    static func confirmation(for state: State, responsable: Responsable?, userId: String?) -> String? {
+        guard case .action(let take, _, _) = state, take, let responsable, responsable.usuario != userId else {
+            return nil
+        }
+        return "\(ownerName(responsable)) la tiene a cargo. ¿La revisas tú?"
     }
 
     /// «Dra. B · pendiente, Dr. A ✓ revisado».
@@ -330,47 +397,8 @@ struct ClaimResult: Decodable, Sendable {
     }
 }
 
-/// Lo que decide el botón «Revisar» y la línea «A cargo» de la franja (PAPER §38.3).
+/// El cuerpo de `claim` y la línea «A cargo» de la franja (PAPER §38.3).
 enum ClaimStatus {
-    enum State: Equatable {
-        /// Sin `entities:claim`: el rol nunca podrá tomarla, así que no se muestra.
-        case hidden
-        /// Se ve gris con el motivo.
-        case blocked(String)
-        /// Habilitado, pero la tiene otro: pide confirmación con este texto.
-        case confirm(String)
-        /// Habilitado, sin confirmación.
-        case allowed
-
-        var blockReason: String? {
-            if case .blocked(let reason) = self { return reason }
-            return nil
-        }
-    }
-
-    static let noEpisodeReason = "Este paciente no tiene una consulta abierta"
-    static let notActiveReason = "Solo se toma la consulta actual"
-    static let loadingReason = "Cargando el estado de la consulta…"
-    static let dischargedReason = "El paciente está de alta: si vuelve, abre una consulta nueva"
-    static let alreadyMineReason = "Ya está a tu cargo"
-
-    /// `viewingActive`: la consulta a la vista es la activa. `episodeStatus`: el `estado` del
-    /// registro del episodio; `nil` mientras carga.
-    static func state(
-        episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
-        responsable: Responsable?, canClaim: Bool, canReassign: Bool, userId: String?
-    ) -> State {
-        guard canClaim else { return .hidden }
-        guard episode != nil else { return .blocked(noEpisodeReason) }
-        guard viewingActive else { return .blocked(notActiveReason) }
-        guard episodeLoaded else { return .blocked(loadingReason) }
-        if episodeStatus == "alta" { return .blocked(dischargedReason) }
-        guard let responsable else { return .allowed }
-        if let userId, responsable.usuario == userId { return .blocked(alreadyMineReason) }
-        guard canReassign else { return .blocked("La tiene a cargo \(responsable.comoSeLlama)") }
-        return .confirm("\(responsable.comoSeLlama) la tiene a cargo. ¿La revisas tú?")
-    }
-
     /// `enviada` pasa a `en_triage`, como el comando `reclamar`; otro estado no cambia.
     static func request(episodeStatus: String?) -> ClaimRequest {
         ClaimRequest(statusValue: episodeStatus == "enviada" ? "en_triage" : nil)

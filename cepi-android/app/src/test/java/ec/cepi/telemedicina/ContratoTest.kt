@@ -2,10 +2,12 @@ package ec.cepi.telemedicina
 
 import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.Asignaciones
-import ec.cepi.telemedicina.api.CaseClaim
 import ec.cepi.telemedicina.api.CaseReview
 import ec.cepi.telemedicina.api.ClaimResult
 import ec.cepi.telemedicina.api.Derivaciones
+import ec.cepi.telemedicina.api.Derivado
+import ec.cepi.telemedicina.api.Responsable
+import ec.cepi.telemedicina.api.Revisado
 import ec.cepi.telemedicina.api.ReviewCompletion
 import ec.cepi.telemedicina.api.Uno
 import ec.cepi.telemedicina.api.CepiApi
@@ -194,12 +196,6 @@ class ContratoTest {
         assertEquals(1, sinRevisados.derivados.size)
         assertTrue(sinRevisados.revisados.isEmpty())
 
-        // El botón: habilitado solo con una revisión abierta propia.
-        assertNull(CaseReview.disabledReason("u2", conRevisados.derivados))
-        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason("u1", conRevisados.derivados))
-        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason(null, conRevisados.derivados))
-        assertEquals(CaseReview.NO_PENDING_REVIEW, CaseReview.disabledReason("u2", emptyList()))
-
         // POST /api/entities/:id/complete_review: cuerpo y respuesta.
         assertEquals("""{"only_mine":true}""", CepiApi.markReviewedBody().toString())
         val cierre = decodificar<Uno<ReviewCompletion>>(
@@ -246,25 +242,69 @@ class ContratoTest {
         assertEquals("u1", tomada.ownerId)
         assertEquals("en_triage", tomada.newStatus)
 
-        // Estados del botón, en el orden del paper.
-        val deOtroSinReasignar = conResponsable.copy(canReassign = false)
-        assertEquals(CaseClaim.State.Hidden, CaseClaim.state(viejo, "u1", true, "enviada"))
-        assertEquals(CaseClaim.State.Disabled(CaseClaim.NOT_ACTIVE), CaseClaim.state(sinResponsable, "u1", false, "enviada"))
-        assertEquals(CaseClaim.State.Disabled(CaseClaim.LOADING), CaseClaim.state(sinResponsable, "u1", true, null))
-        assertEquals(CaseClaim.State.Disabled(CaseClaim.DISCHARGED), CaseClaim.state(sinResponsable, "u1", true, "alta"))
-        assertEquals(CaseClaim.State.Disabled(CaseClaim.ALREADY_MINE), CaseClaim.state(conResponsable, "u9", true, "en_triage"))
-        assertEquals(
-            CaseClaim.State.Disabled("La tiene a cargo Dra. Paz"),
-            CaseClaim.state(deOtroSinReasignar, "u1", true, "en_triage"),
-        )
-        assertEquals(CaseClaim.State.Enabled("Dra. Paz"), CaseClaim.state(conResponsable, "u1", true, "en_triage"))
-        assertEquals(CaseClaim.State.Enabled(), CaseClaim.state(sinResponsable, "u1", true, "enviada"))
-
         // La línea «A cargo» y la confirmación.
-        assertEquals("Sin responsable", CaseClaim.ownerLabel(null, "u1"))
-        assertEquals("A cargo: tú", CaseClaim.ownerLabel(conResponsable.responsable, "u9"))
-        assertEquals("A cargo: Dra. Paz", CaseClaim.ownerLabel(conResponsable.responsable, "u1"))
-        assertEquals("Dra. Paz la tiene a cargo. ¿La revisas tú?", CaseClaim.confirmQuestion("Dra. Paz"))
+        assertEquals("Sin responsable", CaseReview.ownerLabel(null, "u1"))
+        assertEquals("A cargo: tú", CaseReview.ownerLabel(conResponsable.responsable, "u9"))
+        assertEquals("A cargo: Dra. Paz", CaseReview.ownerLabel(conResponsable.responsable, "u1"))
+        assertEquals("Dra. Paz la tiene a cargo. ¿La revisas tú?", CaseReview.confirmQuestion("Dra. Paz"))
+    }
+
+    /** PAPER §38.4: el único botón «🙋 Revisar» / «✓ Revisado», en el orden de `IntakeChat.vue`. */
+    @Test
+    fun unSoloBotonRevisar() {
+        fun refs(
+            derivados: List<String> = emptyList(),
+            revisados: List<String> = emptyList(),
+            owner: String? = null,
+            canClaim: Boolean = false,
+            canReassign: Boolean = false,
+        ) = Derivaciones(
+            derivados = derivados.map { Derivado(it, "Dr. $it") },
+            revisados = revisados.map { Revisado(it, "Dr. $it") },
+            responsable = owner?.let { Responsable(it, "Dr. $it") },
+            canClaim = canClaim,
+            canReassign = canReassign,
+        )
+        fun st(r: Derivaciones, user: String? = "yo", episode: String? = "e1", active: Boolean = true, status: String? = "derivada") =
+            CaseReview.state(r, user, episode, active, status)
+
+        // 1. Sin consulta activa. 2. Consulta anterior.
+        assertEquals(CaseReview.State.Disabled(CaseReview.NO_EPISODE), st(refs(derivados = listOf("yo")), episode = null))
+        assertEquals(CaseReview.State.Disabled(CaseReview.NOT_ACTIVE), st(refs(derivados = listOf("yo")), active = false))
+        // 3. Hecho: ya lo revisé, o es mía sin revisión abierta (aunque no tenga can_claim).
+        assertEquals(CaseReview.State.Done(), st(refs(revisados = listOf("yo"))))
+        assertEquals(CaseReview.State.Done(), st(refs(owner = "yo", canClaim = true)))
+        // Con revisión abierta y mía, no está hecho: se apaga mi «revisar» sin tomar.
+        assertEquals(CaseReview.State.Action(take = false, close = true, confirmOwner = null), st(refs(derivados = listOf("yo"), owner = "yo", canClaim = true)))
+        // 4. Sin revisión abierta ni permiso de tomar: oculto.
+        assertEquals(CaseReview.State.Hidden, st(refs(owner = "otro")))
+        assertEquals(CaseReview.State.Hidden, st(refs()))
+        // 5. Cargando. 6. Alta.
+        assertEquals(CaseReview.State.Disabled(CaseReview.LOADING), st(refs(canClaim = true), status = null))
+        assertEquals(CaseReview.State.Disabled(CaseReview.DISCHARGED), st(refs(derivados = listOf("yo")), status = "alta"))
+        // 7. La tiene otro, no es para mí y no puedo reasignar.
+        assertEquals(CaseReview.State.Disabled("La tiene a cargo Dr. otro"), st(refs(owner = "otro", canClaim = true)))
+        // 8. Acciones.
+        assertEquals(CaseReview.State.Action(take = true, close = false, confirmOwner = null), st(refs(canClaim = true), status = "enviada"))
+        assertEquals(
+            CaseReview.State.Action(take = true, close = false, confirmOwner = "Dr. otro"),
+            st(refs(owner = "otro", canClaim = true, canReassign = true)),
+        )
+        assertEquals(
+            CaseReview.State.Action(take = true, close = true, confirmOwner = null),
+            st(refs(derivados = listOf("yo"), canClaim = true)),
+        )
+        // Revisión abierta sin permiso de tomar, la tiene otro: solo se apaga mi «revisar».
+        assertEquals(
+            CaseReview.State.Action(take = false, close = true, confirmOwner = null),
+            st(refs(derivados = listOf("yo"), owner = "otro")),
+        )
+        // Sin usuario no hay nada mío.
+        assertEquals(CaseReview.State.Hidden, st(refs(derivados = listOf("yo")), user = null))
+
+        // Los avisos al terminar.
+        assertEquals(CaseReview.CONFIRMATION_TAKEN, CaseReview.confirmation(true))
+        assertEquals(CaseReview.CONFIRMATION_CLOSED, CaseReview.confirmation(false))
     }
 
     @Test
