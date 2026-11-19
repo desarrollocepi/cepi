@@ -283,12 +283,9 @@ object CaseReview {
     /**
      * Qué se ve en la franja y en el menú. Un motivo no nulo deja el botón gris con ese texto.
      */
-    /** La etiqueta de la franja: nunca salen las dos. */
+    /** La etiqueta de la franja. */
     enum class Badge {
-        /** «🙋 Revisando»: la tomé y todavía no la marqué. */
-        Reviewing,
-
-        /** «✓ Revisado»: no estoy revisando y la marqué al menos una vez. */
+        /** «✓ Revisado»: la marqué al menos una vez y no se ve «Marcar revisado». */
         Reviewed,
     }
 
@@ -340,11 +337,7 @@ object CaseReview {
         return Flow(
             reviewedOnce = reviewed != null,
             // Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
-            badge = when {
-                inReview -> Badge.Reviewing
-                reviewed != null && !showMark -> Badge.Reviewed
-                else -> null
-            },
+            badge = if (reviewed != null && !showMark) Badge.Reviewed else null,
             showClaim = referrals.canClaim && !inReview,
             claimReason = claimReason,
             showMark = showMark,

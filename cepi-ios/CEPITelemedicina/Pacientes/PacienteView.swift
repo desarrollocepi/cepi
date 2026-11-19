@@ -111,15 +111,7 @@ struct PacienteView: View {
                     // Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece
                     // «☑️ Marcar revisado»; al marcarlo queda la etiqueta «✓ Revisado» y vuelve
                     // «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra.
-                    if reviewFlow.inReview {
-                        Text("🙋 Revisando")
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Marca.revisar.opacity(0.22), in: Capsule())
-                            .foregroundStyle(Marca.revisar)
-                            .help(takenOnHint)
-                            .accessibilityHint(takenOnHint)
-                    } else if reviewFlow.showReviewedLabel {
+                    if reviewFlow.showReviewedLabel {
                         Text("✓ Revisado")
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -360,12 +352,6 @@ struct PacienteView: View {
             canReassign: modelo.canReassign,
             userId: sesion.usuario?.id
         )
-    }
-
-    /// «La tomaste para revisar el 19/11/26, 10:00».
-    private var takenOnHint: String {
-        guard let fecha = Fechas.iso(modelo.myReview.claimedAt) else { return "La tomaste para revisar" }
-        return "La tomaste para revisar el \(fecha.formatted(date: .numeric, time: .shortened))"
     }
 
     /// «Lo revisaste el 19/11/26, 11:00».

@@ -713,16 +713,8 @@ private fun ReviewStrip(
                 }
                 reasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
             }
-            // La etiqueta: «🙋 Revisando» mientras la tengo tomada sin marcar; si no, «✓ Revisado»
-            // si la marqué al menos una vez. Nunca las dos.
+            // La etiqueta «✓ Revisado» si la marqué al menos una vez y no se ve «Marcar revisado».
             when (reviewFlow.badge) {
-                CaseReview.Badge.Reviewing -> ReviewBadge(
-                    text = "🙋 Revisando",
-                    background = Marca.revisar,
-                    textColor = Color.White,
-                    description = shortDate(myReview.claimedAt)
-                        ?.let { "La tomaste para revisar el $it" } ?: "La tomaste para revisar",
-                )
                 CaseReview.Badge.Reviewed -> ReviewBadge(
                     text = "✓ Revisado",
                     background = Color(0x4022C55E),

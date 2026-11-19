@@ -395,7 +395,7 @@ struct ContratoTests {
         #expect(tomada.showMark)
         #expect(tomada.markBlockReason == nil)
         #expect(!tomada.reviewedOnce)
-        #expect(tomada.inReview)                 // «🙋 Revisando»
+        #expect(tomada.inReview)
         #expect(!tomada.showReviewedLabel)
         // Paso 2: marqué después de tomarla: etiqueta y vuelve «🙋 Revisar» (sigue siendo mía).
         let marcada = flujo(responsable: mio, myReview: MyReview(
@@ -412,7 +412,7 @@ struct ContratoTests {
             claimedAt: "2026-11-19T12:00:00Z", reviewedAt: "2026-11-19T11:00:00.000Z"
         ))
         #expect(otraRonda.reviewedOnce)
-        #expect(otraRonda.inReview)              // «🙋 Revisando» otra vez, nunca las dos
+        #expect(otraRonda.inReview)              // otra vez en revisión: sin etiqueta
         #expect(!otraRonda.showReviewedLabel)
         #expect(!otraRonda.showReview)
         #expect(otraRonda.showMark)

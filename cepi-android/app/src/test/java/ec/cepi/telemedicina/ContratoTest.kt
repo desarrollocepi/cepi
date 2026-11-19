@@ -301,8 +301,8 @@ class ContratoTest {
         assertTrue(reviewing.showMark)
         assertNull(reviewing.markReason)
         assertFalse(reviewing.reviewedOnce)
-        // Después de tomar: «🙋 Revisando».
-        assertEquals(CaseReview.Badge.Reviewing, reviewing.badge)
+        // Después de tomar: sin etiqueta, se ve «Marcar revisado».
+        assertNull(reviewing.badge)
 
         // Paso 3: marcada después de tomarla: etiqueta y vuelve «🙋 Revisar» (sigue siendo mía).
         val done = flow(refs(owner = "yo", canClaim = true, claimedAt = t10, reviewedAt = t11))
@@ -322,7 +322,7 @@ class ContratoTest {
         assertTrue(again.showMark)
         assertFalse(again.showClaim)
         // Al volver a tomar: «🙋 Revisando» otra vez, nunca las dos.
-        assertEquals(CaseReview.Badge.Reviewing, again.badge)
+        assertNull(again.badge)
         // Se comparan instantes, no textos: con otro formato sigue siendo posterior.
         assertTrue(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T11:00:00Z", reviewedAt = "2026-11-19T10:30:00.000Z")).inReview)
         assertFalse(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T06:00:00-05:00", reviewedAt = t11)).inReview)

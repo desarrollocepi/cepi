@@ -327,7 +327,7 @@ enum ReviewStatus {
     struct Flow: Equatable {
         /// Marqué «Revisado» al menos una vez en esta consulta (`reviewed_at`).
         let reviewedOnce: Bool
-        /// La tomé y todavía no la marqué: etiqueta «🙋 Revisando».
+        /// La tomé y todavía no la marqué: se ve «☑️ Marcar revisado».
         let inReview: Bool
         /// «🙋 Revisar» se muestra (sin permiso de tomar casos, no: excepción por permiso).
         let showReview: Bool
@@ -338,7 +338,7 @@ enum ReviewStatus {
         /// Por qué «☑️ Marcar revisado» está gris; nil = habilitado.
         let markBlockReason: String?
 
-        /// La etiqueta «✓ Revisado» (texto, no botón): nunca junto con «🙋 Revisando».
+        /// La etiqueta «✓ Revisado» (texto, no botón): no se ve junto con «☑️ Marcar revisado».
         /// Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
         var showReviewedLabel: Bool { !inReview && reviewedOnce && !showMark }
     }
