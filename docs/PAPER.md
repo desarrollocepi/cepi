@@ -3700,8 +3700,7 @@ por X.» en el chatter — esa nota es la marca. Si había recordatorios propios
   casos (un especialista).
 - En la franja y en el menú de acciones, los mismos.
 - Marcar no suelta la consulta: sigue a tu cargo.
-- **«🙋 Revisando»** (etiqueta naranja) mientras estás revisando: tomaste la consulta y todavía
-  no la marcaste. Tomarla **no** la deja revisada. «✓ Revisado» se ve cuando no estás
-  revisando y la marcaste al menos una vez.
+- Tomarla **no** la deja revisada. (Hubo una etiqueta «🙋 Revisando» mientras se revisaba; el
+  dueño la quitó: basta con que se vea «Marcar revisado».)
 - Mientras se ve «Marcar revisado», la etiqueta «✓ Revisado» no se muestra.
 

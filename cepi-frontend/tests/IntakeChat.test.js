@@ -623,7 +623,7 @@ describe('IntakeChat — flujo de revisión (PAPER §38.5)', () => {
     expect(revisar(w)).toBeUndefined();
     expect(marcar(w).attributes('disabled')).toBeUndefined();
     expect(w.find('.acargo-linea').text()).toBe('A cargo: tú');
-    expect(etiqueta(w).text()).toBe('🙋 Revisando');      // tomarlo NO lo deja revisado
+    expect(etiqueta(w).exists()).toBe(false);             // tomarlo NO lo deja revisado
   });
 
   it('2) «Marcar revisado» deja la etiqueta «✓ Revisado» y vuelve «🙋 Revisar»', async () => {
@@ -639,10 +639,10 @@ describe('IntakeChat — flujo de revisión (PAPER §38.5)', () => {
     expect(marcar(w)).toBeUndefined();
   });
 
-  it('3) al volver a tomarlo dice «Revisando»; al marcarlo otra vez, «Revisado»', async () => {
+  it('3) al volver a tomarlo se ve «Marcar revisado» y no la etiqueta', async () => {
     deriv({ responsable: { user_id: 'yo', name: 'Yo' }, my_review: { claimed_at: '2026-11-19T11:00:00Z', reviewed_at: '2026-11-19T10:05:00Z' } });
     const w = await abrir();
-    expect(etiqueta(w).text()).toBe('🙋 Revisando');
+    expect(etiqueta(w).exists()).toBe(false);
     expect(marcar(w).exists()).toBe(true);     // en revisión otra vez
     expect(revisar(w)).toBeUndefined();
   });
