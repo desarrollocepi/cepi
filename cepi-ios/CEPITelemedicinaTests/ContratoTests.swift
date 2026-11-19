@@ -193,6 +193,22 @@ struct ContratoTests {
         #expect(paciente.data["regiones"] == .lista([.texto("torax")]))
     }
 
+    @Test func asignacionesConMine() throws {
+        // GET /api/patient-assignments (PAPER §39): `mine` = los pacientes «míos».
+        let conMine = try decodificar(Asignaciones.self, """
+        {"ok":true,"assignments":{"p1":{"assignee_name":"Dr. Mora","estado":"derivada"}},"mine":["p1","p7"]}
+        """)
+        #expect(conMine.mine == ["p1", "p7"])
+        #expect(conMine.porPaciente["p1"]?.estado == "derivada")
+
+        // Servidor anterior a §39: sin `mine`.
+        let sinMine = try decodificar(Asignaciones.self, """
+        {"ok":true,"assignments":{"p1":{"estado":"derivada"}}}
+        """)
+        #expect(sinMine.mine.isEmpty)
+        #expect(sinMine.porPaciente.count == 1)
+    }
+
     @Test func registroSinData() throws {
         let registro = try decodificar(Registro.self, #"{"id":"r1","title":null}"#)
         #expect(registro.data.isEmpty)
@@ -281,6 +297,72 @@ struct ContratoTests {
         """).data
         #expect(hecho.cleared == 1)
         #expect(hecho.remaining == 2)
+    }
+
+    @Test func franjaConResponsable() throws {
+        // GET /api/review-queue/entity/:id (PAPER §38.3): quién la tiene a cargo y permisos.
+        let r = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[],"revisados":[],
+         "responsable":{"user_id":"u3","name":"Dra. C","email":"c@x.ec"},"can_claim":true,"can_reassign":false}
+        """)
+        #expect(r.responsable?.usuario == "u3")
+        #expect(r.responsable?.comoSeLlama == "Dra. C")
+        #expect(r.canClaim)
+        #expect(!r.canReassign)
+
+        let nulo = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[],"responsable":null,"can_claim":true,"can_reassign":true}
+        """)
+        #expect(nulo.responsable == nil)
+        #expect(nulo.canReassign)
+
+        // Servidor anterior a §38.3: sin las tres claves.
+        let viejo = try decodificar(Derivaciones.self, """
+        {"ok":true,"entity_id":"e1","derivados":[]}
+        """)
+        #expect(viejo.responsable == nil)
+        #expect(!viejo.canClaim)
+        #expect(!viejo.canReassign)
+
+        #expect(ClaimStatus.ownerLine(responsable: r.responsable, userId: "u3") == "A cargo: tú")
+        #expect(ClaimStatus.ownerLine(responsable: r.responsable, userId: "u1") == "A cargo: Dra. C")
+        #expect(ClaimStatus.ownerLine(responsable: nil, userId: "u1") == "Sin responsable")
+
+        // POST /api/entities/:id/claim: `enviada` pasa a `en_triage`; otro estado, `{}`.
+        let enviada = try JSONEncoder().encode(ClaimStatus.request(episodeStatus: "enviada"))
+        #expect(String(decoding: enviada, as: UTF8.self) == #"{"status_value":"en_triage"}"#)
+        let otra = try JSONEncoder().encode(ClaimStatus.request(episodeStatus: "derivada"))
+        #expect(String(decoding: otra, as: UTF8.self) == "{}")
+        let tomada = try decodificar(Uno<ClaimResult>.self, """
+        {"ok":true,"data":{"entity_id":"e1","responsable_actual_id":"u1","new_status":"en_triage"}}
+        """).data
+        #expect(tomada.responsableActualId == "u1")
+        #expect(tomada.newStatus == "en_triage")
+    }
+
+    @Test func estadosDeLoTomo() {
+        let otra = Responsable(usuario: "u3", nombre: "Dra. C", email: nil)
+        func estado(
+            episode: String? = "e1", viewingActive: Bool = true, loaded: Bool = true, status: String? = "derivada",
+            responsable: Responsable? = nil, canClaim: Bool = true, canReassign: Bool = false
+        ) -> ClaimStatus.State {
+            ClaimStatus.state(
+                episode: episode, viewingActive: viewingActive, episodeLoaded: loaded, episodeStatus: status,
+                responsable: responsable, canClaim: canClaim, canReassign: canReassign, userId: "u1"
+            )
+        }
+        #expect(estado(canClaim: false) == .hidden)
+        #expect(estado(episode: nil) == .blocked(ClaimStatus.noEpisodeReason))
+        #expect(estado(viewingActive: false) == .blocked(ClaimStatus.notActiveReason))
+        #expect(estado(loaded: false, status: nil) == .blocked(ClaimStatus.loadingReason))
+        #expect(estado(status: "alta") == .blocked(ClaimStatus.dischargedReason))
+        #expect(estado(responsable: Responsable(usuario: "u1", nombre: "Yo", email: nil))
+            == .blocked(ClaimStatus.alreadyMineReason))
+        #expect(estado(responsable: otra) == .blocked("La tiene a cargo Dra. C"))
+        #expect(estado(responsable: otra, canReassign: true) == .confirm("Dra. C la tiene a cargo. ¿La tomas tú?"))
+        #expect(estado() == .allowed)
+        #expect(estado().blockReason == nil)
+        #expect(estado(status: "alta").blockReason == ClaimStatus.dischargedReason)
     }
 
     @Test func urlCodificaElMas() {

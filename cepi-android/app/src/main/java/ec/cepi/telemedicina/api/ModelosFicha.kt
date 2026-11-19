@@ -218,7 +218,83 @@ data class Revisado(
 data class Derivaciones(
     val derivados: List<Derivado> = emptyList(),
     val revisados: List<Revisado> = emptyList(),
+    /** Quién tiene la consulta a cargo (PAPER §38.3); null = sin responsable o servidor viejo. */
+    val responsable: Responsable? = null,
+    /** Si quien consulta tiene `entities:claim`. */
+    @SerialName("can_claim") val canClaim: Boolean = false,
+    /** Si quien consulta tiene `entities:assign`: puede quitársela a otro. */
+    @SerialName("can_reassign") val canReassign: Boolean = false,
 )
+
+/** El responsable actual de una consulta (`responsable` de `GET /api/review-queue/entity/:id`). */
+@Serializable
+data class Responsable(
+    @SerialName("user_id") val usuario: String,
+    @SerialName("name") val nombre: String? = null,
+    val email: String? = null,
+) {
+    val comoSeLlama: String get() = nombre ?: email ?: "Profesional"
+}
+
+/** `POST /api/entities/:id/claim`: quién quedó a cargo y el estado nuevo, si cambió. */
+@Serializable
+data class ClaimResult(
+    @SerialName("entity_id") val entityId: String? = null,
+    @SerialName("responsable_actual_id") val ownerId: String? = null,
+    @SerialName("new_status") val newStatus: String? = null,
+)
+
+/**
+ * «Lo tomo» (PAPER §38.3): qué muestra el botón. Sin UI, para poder probarlo.
+ */
+object CaseClaim {
+    const val CONFIRMATION = "Ahora tienes esta consulta a cargo."
+    const val ALREADY_MINE = "Ya está a tu cargo"
+    const val NOT_ACTIVE = "Solo en la consulta actual: activa esta consulta para tomarla"
+    const val DISCHARGED = "El paciente está de alta: si vuelve, abre una consulta nueva"
+    const val LOADING = "Cargando el estado de la consulta…"
+
+    sealed interface State {
+        /** Sin `entities:claim`: el rol nunca podrá tomarla, el botón no se muestra. */
+        data object Hidden : State
+
+        /** Se ve gris, con el motivo. */
+        data class Disabled(val reason: String) : State
+
+        /** Se puede tomar. `currentOwner` no nulo: antes se confirma, porque se la quita a otro. */
+        data class Enabled(val currentOwner: String? = null) : State
+    }
+
+    /**
+     * El estado del botón, en el orden de PAPER §38.3. `status` es el `estado` del registro del
+     * episodio activo; `null` mientras se carga.
+     */
+    fun state(
+        referrals: Derivaciones,
+        userId: String?,
+        isActive: Boolean,
+        status: String?,
+    ): State {
+        if (!referrals.canClaim) return State.Hidden
+        if (!isActive) return State.Disabled(NOT_ACTIVE)
+        if (status == null) return State.Disabled(LOADING)
+        if (status == "alta") return State.Disabled(DISCHARGED)
+        val owner = referrals.responsable ?: return State.Enabled()
+        if (userId != null && owner.usuario == userId) return State.Disabled(ALREADY_MINE)
+        if (!referrals.canReassign) return State.Disabled("La tiene a cargo ${owner.comoSeLlama}")
+        return State.Enabled(currentOwner = owner.comoSeLlama)
+    }
+
+    /** «A cargo: X», «A cargo: tú» o «Sin responsable». */
+    fun ownerLabel(owner: Responsable?, userId: String?): String = when {
+        owner == null -> "Sin responsable"
+        userId != null && owner.usuario == userId -> "A cargo: tú"
+        else -> "A cargo: ${owner.comoSeLlama}"
+    }
+
+    /** La pregunta antes de quitársela a otro. */
+    fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La tomas tú?"
+}
 
 /** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */
 @Serializable

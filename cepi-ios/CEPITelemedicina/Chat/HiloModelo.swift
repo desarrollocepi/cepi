@@ -16,6 +16,10 @@ final class HiloModelo {
     private(set) var derivados: [Derivado] = []
     /// Quienes ya marcaron «Revisado» en la derivación vigente (PAPER §38).
     private(set) var revisados: [Revisado] = []
+    /// Quién tiene a cargo la consulta activa y si quien mira puede tomarla (PAPER §38.3).
+    private(set) var responsable: Responsable?
+    private(set) var canClaim = false
+    private(set) var canReassign = false
     private(set) var pagina: PaginaHilo = .masNueva
     /// El episodio elegido en el navegador que todavía espera su turno (PAPER §28.4.1): el
     /// chat estaba ocupado. Se aplica al terminar; si se elige otro antes, gana el último.
@@ -162,14 +166,17 @@ final class HiloModelo {
     /// Quién tiene pendiente esta consulta. Un fallo acá no molesta al hilo: se muestra sin
     /// la barra de "derivado a…" y se reintenta en la próxima relectura.
     func releerDerivaciones(api: CEPIAPI) async {
-        guard let episodio = episodioActivo else {
-            derivados = []
-            revisados = []
-            return
+        let r: Derivaciones
+        if let episodio = episodioActivo {
+            r = (try? await api.derivaciones(episodio: episodio)) ?? Derivaciones()
+        } else {
+            r = Derivaciones()
         }
-        let r = (try? await api.derivaciones(episodio: episodio)) ?? Derivaciones()
         derivados = r.derivados
         revisados = r.revisados
+        responsable = r.responsable
+        canClaim = r.canClaim
+        canReassign = r.canReassign
     }
 
     func volverALaActual() {

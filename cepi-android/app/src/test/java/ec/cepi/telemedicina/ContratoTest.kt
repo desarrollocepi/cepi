@@ -2,7 +2,9 @@ package ec.cepi.telemedicina
 
 import ec.cepi.telemedicina.api.ApiClient
 import ec.cepi.telemedicina.api.Asignaciones
+import ec.cepi.telemedicina.api.CaseClaim
 import ec.cepi.telemedicina.api.CaseReview
+import ec.cepi.telemedicina.api.ClaimResult
 import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.ReviewCompletion
 import ec.cepi.telemedicina.api.Uno
@@ -19,6 +21,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -127,6 +130,12 @@ class ContratoTest {
         assertEquals("Dr. Mora", asignaciones.porPaciente["p1"]?.nombre)
         assertEquals("derivado_grupo", asignaciones.porPaciente["p1"]?.origen)
         assertEquals("derivada", asignaciones.porPaciente["p1"]?.estado)
+        // PAPER §39: sin `mine` (backend anterior), ningún paciente es mío.
+        assertTrue(asignaciones.mine.isEmpty())
+        val conMios = decodificar<Asignaciones>(
+            """{"ok":true,"assignments":{"p1":{"estado":"derivada"}},"mine":["p1","p7"]}""",
+        )
+        assertEquals(listOf("p1", "p7"), conMios.mine)
         // Sin `prioridad` (backend anterior o consulta sin clasificar): no hay chip.
         assertNull(asignaciones.porPaciente["p1"]?.prioridad)
 
@@ -199,6 +208,63 @@ class ContratoTest {
         assertEquals("e1", cierre.entityId)
         assertEquals(1, cierre.cleared)
         assertEquals(2, cierre.remaining)
+    }
+
+    @Test
+    fun loTomo() {
+        // PAPER §38.3: responsable y permisos en GET /api/review-queue/entity/:id.
+        val conResponsable = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[],"revisados":[],
+               "responsable":{"user_id":"u9","name":"Dra. Paz","email":"p@x.ec"},"can_claim":true,"can_reassign":true}""",
+        )
+        assertEquals("u9", conResponsable.responsable?.usuario)
+        assertEquals("Dra. Paz", conResponsable.responsable?.comoSeLlama)
+        assertTrue(conResponsable.canClaim)
+        assertTrue(conResponsable.canReassign)
+
+        val sinResponsable = decodificar<Derivaciones>(
+            """{"ok":true,"entity_id":"e1","derivados":[],"responsable":null,"can_claim":true,"can_reassign":false}""",
+        )
+        assertNull(sinResponsable.responsable)
+        assertTrue(sinResponsable.canClaim)
+        assertFalse(sinResponsable.canReassign)
+
+        // Servidor anterior a §38.3: sin las tres claves.
+        val viejo = decodificar<Derivaciones>("""{"ok":true,"entity_id":"e1","derivados":[]}""")
+        assertNull(viejo.responsable)
+        assertFalse(viejo.canClaim)
+        assertFalse(viejo.canReassign)
+
+        // El cuerpo del claim: solo una consulta enviada pasa a en_triage.
+        assertEquals("""{"status_value":"en_triage"}""", CepiApi.claimBody("enviada").toString())
+        assertEquals("{}", CepiApi.claimBody("en_triage").toString())
+        assertEquals("{}", CepiApi.claimBody(null).toString())
+        val tomada = decodificar<Uno<ClaimResult>>(
+            """{"ok":true,"data":{"entity_id":"e1","responsable_actual_id":"u1","new_status":"en_triage"}}""",
+        ).data
+        assertEquals("e1", tomada.entityId)
+        assertEquals("u1", tomada.ownerId)
+        assertEquals("en_triage", tomada.newStatus)
+
+        // Estados del botón, en el orden del paper.
+        val deOtroSinReasignar = conResponsable.copy(canReassign = false)
+        assertEquals(CaseClaim.State.Hidden, CaseClaim.state(viejo, "u1", true, "enviada"))
+        assertEquals(CaseClaim.State.Disabled(CaseClaim.NOT_ACTIVE), CaseClaim.state(sinResponsable, "u1", false, "enviada"))
+        assertEquals(CaseClaim.State.Disabled(CaseClaim.LOADING), CaseClaim.state(sinResponsable, "u1", true, null))
+        assertEquals(CaseClaim.State.Disabled(CaseClaim.DISCHARGED), CaseClaim.state(sinResponsable, "u1", true, "alta"))
+        assertEquals(CaseClaim.State.Disabled(CaseClaim.ALREADY_MINE), CaseClaim.state(conResponsable, "u9", true, "en_triage"))
+        assertEquals(
+            CaseClaim.State.Disabled("La tiene a cargo Dra. Paz"),
+            CaseClaim.state(deOtroSinReasignar, "u1", true, "en_triage"),
+        )
+        assertEquals(CaseClaim.State.Enabled("Dra. Paz"), CaseClaim.state(conResponsable, "u1", true, "en_triage"))
+        assertEquals(CaseClaim.State.Enabled(), CaseClaim.state(sinResponsable, "u1", true, "enviada"))
+
+        // La línea «A cargo» y la confirmación.
+        assertEquals("Sin responsable", CaseClaim.ownerLabel(null, "u1"))
+        assertEquals("A cargo: tú", CaseClaim.ownerLabel(conResponsable.responsable, "u9"))
+        assertEquals("A cargo: Dra. Paz", CaseClaim.ownerLabel(conResponsable.responsable, "u1"))
+        assertEquals("Dra. Paz la tiene a cargo. ¿La tomas tú?", CaseClaim.confirmQuestion("Dra. Paz"))
     }
 
     @Test

@@ -12,6 +12,8 @@ struct PacientesView: View {
     @State private var seccionPedida: PacienteView.Seccion?
     @State private var busqueda = ""
     @State private var estadoElegido: EstadoFicha?
+    /// El alcance (PAPER §39): al abrir la app, «Mis pacientes».
+    @State private var scope: PatientScope = .mine
     @State private var creando = false
     @State private var confirmarBorrado = false
     @State private var aBorrar: FilaPaciente?
@@ -89,7 +91,8 @@ struct PacientesView: View {
     }
 
     private var lista: some View {
-        let filas = modelo.filtradas(por: busqueda, estado: estadoElegido)
+        let filas = modelo.filtradas(por: busqueda, estado: estadoElegido, scope: scope)
+        let scopeCounts = modelo.conteoPorAlcance()
         return List(filas, selection: $seleccion) { fila in
             PacienteFila(
                 fila: fila,
@@ -125,11 +128,18 @@ struct PacientesView: View {
                     ProgressView("Cargando pacientes…")
                 }
             } else if filas.isEmpty {
-                if let estado = estadoElegido, busqueda.isEmpty {
+                if scope == .mine, busqueda.isEmpty, (scopeCounts[.mine] ?? 0) == 0, !modelo.filas.isEmpty {
+                    // PAPER §39: sin pacientes míos, «Mis pacientes · 0» sigue elegible.
+                    ContentUnavailableView(
+                        "Sin pacientes a tu cargo",
+                        systemImage: "person.crop.circle.badge.questionmark",
+                        description: Text("Todavía no tienes pacientes a tu cargo. Mira «Todos».")
+                    )
+                } else if let estado = estadoElegido, busqueda.isEmpty {
                     ContentUnavailableView(
                         "Ningún paciente en «\(estado.etiqueta)»",
                         systemImage: "line.3.horizontal.decrease.circle",
-                        description: Text("Elige otro estado o «Todos».")
+                        description: Text("Elige otro estado o «Cualquier estado».")
                     )
                 } else if busqueda.isEmpty, !modelo.filas.isEmpty {
                     // Todos los que hay están de alta desde antes de hoy (PAPER §35).
@@ -152,9 +162,10 @@ struct PacientesView: View {
         // Debajo del buscador: por eso el buscador va fijo arriba y no escondido al desplazar.
         .safeAreaInset(edge: .top, spacing: 0) {
             FiltroEstados(
+                scope: $scope,
                 elegido: $estadoElegido,
-                conteo: modelo.conteoPorEstado(),
-                total: modelo.filas.count
+                scopeCounts: scopeCounts,
+                conteo: modelo.conteoPorEstado(scope: scope)
             )
             .disabled(!modelo.cargado)
         }
@@ -216,18 +227,43 @@ private extension PacientesView {
     }
 }
 
-/// Los estados de la ficha como filtro, debajo del buscador. Cada botón lleva su LED y cuántos
-/// pacientes hay: es también la leyenda de los colores. Un estado sin pacientes se ve gris, no
-/// se esconde (nunca ocultes un botón). Tocar el elegido lo suelta.
+/// Los filtros debajo del buscador, en dos filas independientes que se combinan (PAPER §39).
+/// Fila 1, alcance: «Mis pacientes» o «Todos»; uno siempre está elegido. Fila 2, los estados de
+/// la ficha: cada botón lleva su LED y cuántos pacientes hay dentro del alcance; es también la
+/// leyenda de los colores. Un estado sin pacientes se ve gris, no se esconde (nunca ocultes un
+/// botón). Tocar el estado elegido lo suelta.
 private struct FiltroEstados: View {
+    @Binding var scope: PatientScope
     @Binding var elegido: EstadoFicha?
+    let scopeCounts: [PatientScope: Int]
+    /// Por estado, dentro del alcance elegido.
     let conteo: [EstadoFicha: Int]
-    let total: Int
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    boton("Mis pacientes · \(scopeCounts[.mine] ?? 0)", led: nil, activo: scope == .mine, habilitado: true) {
+                        scope = .mine
+                    }
+                    boton("Todos · \(scopeCounts[.all] ?? 0)", led: nil, activo: scope == .all, habilitado: true) {
+                        scope = .all
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+            estados
+        }
+        .background(.bar)
+    }
+
+    private var estados: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                boton("Todos · \(total)", led: nil, activo: elegido == nil, habilitado: true) {
+                boton(
+                    "Cualquier estado · \(conteo.values.reduce(0, +))", led: nil, activo: elegido == nil, habilitado: true
+                ) {
                     elegido = nil
                 }
                 ForEach(EstadoFicha.allCases) { estado in
@@ -245,7 +281,6 @@ private struct FiltroEstados: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(.bar)
     }
 
     private func boton(

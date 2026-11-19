@@ -76,8 +76,7 @@ class CepiApi(val cliente: ApiClient) {
     suspend fun colaRevision(): Map<String, PendienteRevision> =
         cliente.get<ColaRevision>("/api/review-queue").porPaciente
 
-    suspend fun asignaciones(): Map<String, Asignacion> =
-        cliente.get<Asignaciones>("/api/patient-assignments").porPaciente
+    suspend fun asignaciones(): Asignaciones = cliente.get("/api/patient-assignments")
 
     /**
      * Borrado suave del paciente (D-Aux-23): solo lo permite el backend a quien tiene el
@@ -268,6 +267,14 @@ class CepiApi(val cliente: ApiClient) {
         cliente.get("/api/review-queue/entity/$episodio")
 
     /**
+     * «Lo tomo» (PAPER §38.3): quien llama queda como responsable. Una consulta `enviada` pasa a
+     * `en_triage`, como el comando `reclamar`; en otro estado no cambia. Un 409 (la tiene otro
+     * y no puedes reasignar) llega como `ApiError` con el mensaje del servidor.
+     */
+    suspend fun claimConsultation(episode: String, status: String?): ClaimResult =
+        cliente.post<Uno<ClaimResult>>("/api/entities/$episode/claim", claimBody(status)).data
+
+    /**
      * «Revisado» (PAPER §38.1): cierra solo la revisión abierta de quien llama; los demás
      * revisores siguen pendientes. Acción explícita: sin sí/no. Sin revisión propia abierta
      * responde ok con `cleared = 0`.
@@ -361,6 +368,11 @@ class CepiApi(val cliente: ApiClient) {
 
         /** El cuerpo de `POST /api/entities/:id/complete_review` para «Revisado». Sin red, para probarlo. */
         fun markReviewedBody(): JsonObject = buildJsonObject { put("only_mine", true) }
+
+        /** El cuerpo de `POST /api/entities/:id/claim`: solo una consulta `enviada` cambia de estado. */
+        fun claimBody(status: String?): JsonObject = buildJsonObject {
+            if (status == "enviada") put("status_value", "en_triage")
+        }
 
         /** El cuerpo de `POST /api/bot/episodio/alta`. Sin red, para probarlo. */
         fun dischargeBody(episodio: String, nota: String): JsonObject = buildJsonObject {

@@ -4,6 +4,7 @@ import ec.cepi.telemedicina.ServidorFalso.Respuesta
 import ec.cepi.telemedicina.api.Credenciales
 import ec.cepi.telemedicina.pacientes.EstadoFicha
 import ec.cepi.telemedicina.pacientes.PacientesModelo
+import ec.cepi.telemedicina.pacientes.PatientScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -160,5 +161,78 @@ class PacientesCargaTest {
         assertEquals(listOf("p0-Ana", "p1-Beto"), modelo.filtradas("", EstadoFicha.Alta, hoy).map { it.id })
         // Al día siguiente, la de hoy también se oculta.
         assertEquals(listOf("p2-Caro"), modelo.filtradas("", null, "2026-11-10").map { it.id })
+    }
+
+    /** PAPER §39: alcance «Mis pacientes» / «Todos», combinado con el estado. */
+    @Test
+    fun misPacientesYTodos() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("GET /api/entities", Respuesta.Http(200, lista("Ana", "Beto", "Caro")))
+        servidor.fijar(
+            "GET /api/patient-assignments",
+            Respuesta.Http(
+                200,
+                """{"ok":true,"assignments":{"p0-Ana":{"estado":"derivada"},"p1-Beto":{"estado":"derivada"},
+                   "p2-Caro":{"estado":"cerrado"}},"mine":["p1-Beto","p2-Caro","otro-de-otra-org"]}""",
+            ),
+        )
+        val modelo = PacientesModelo()
+        modelo.cargar(servidor.api())
+        val mine = PatientScope.Mine
+
+        assertEquals(setOf("p1-Beto", "p2-Caro", "otro-de-otra-org"), modelo.mine)
+        // Solo cuenta los míos que están en la lista.
+        assertEquals(mapOf(PatientScope.Mine to 2, PatientScope.All to 3), modelo.scopeCounts())
+        assertEquals(listOf("p1-Beto", "p2-Caro"), modelo.filtradas("", null, scope = mine).map { it.id })
+        // Los dos filtros se combinan.
+        assertEquals(listOf("p1-Beto"), modelo.filtradas("", EstadoFicha.Derivada, scope = mine).map { it.id })
+        assertEquals(listOf("p0-Ana", "p1-Beto"), modelo.filtradas("", EstadoFicha.Derivada, scope = PatientScope.All).map { it.id })
+        // Las cuentas de estado, dentro del alcance.
+        assertEquals(mapOf(EstadoFicha.Derivada to 1, EstadoFicha.Cerrada to 1), modelo.conteoPorEstado(mine))
+        assertEquals(mapOf(EstadoFicha.Derivada to 2, EstadoFicha.Cerrada to 1), modelo.conteoPorEstado(PatientScope.All))
+        // Buscando, el alcance no cuenta: Ana no es mía pero se encuentra.
+        assertEquals(listOf("p0-Ana"), modelo.filtradas("ana", null, scope = mine).map { it.id })
+    }
+
+    /** Un backend sin `mine`: «Mis pacientes · 0» y la lista vacía; «Todos» sigue igual. */
+    @Test
+    fun sinMineNingunoEsMio() = runBlocking {
+        val servidor = servidor()
+        servidor.fijar("GET /api/entities", Respuesta.Http(200, lista("Ana", "Beto")))
+        val modelo = PacientesModelo()
+        modelo.cargar(servidor.api())
+
+        assertTrue(modelo.mine.isEmpty())
+        assertEquals(mapOf(PatientScope.Mine to 0, PatientScope.All to 2), modelo.scopeCounts())
+        assertTrue(modelo.filtradas("", null, scope = PatientScope.Mine).isEmpty())
+        assertTrue(modelo.conteoPorEstado(PatientScope.Mine).isEmpty())
+        assertEquals(2, modelo.filtradas("", null, scope = PatientScope.All).size)
+        assertEquals(listOf("p1-Beto"), modelo.filtradas("beto", null, scope = PatientScope.Mine).map { it.id })
+    }
+
+    /** Las funciones puras, sin servidor. */
+    @Test
+    fun filtroPuroPorAlcance() {
+        val filas = PacientesModelo.preparar(
+            listOf(
+                ec.cepi.telemedicina.api.jsonCepi.decodeFromString<ec.cepi.telemedicina.api.Registro>("""{"id":"a","data":{"nombre":"Ana"}}"""),
+                ec.cepi.telemedicina.api.jsonCepi.decodeFromString<ec.cepi.telemedicina.api.Registro>("""{"id":"b","data":{"nombre":"Beto"}}"""),
+            ),
+            emptyMap(),
+        )
+        val mine = setOf("b")
+        assertEquals(
+            listOf("b"),
+            PacientesModelo.filter(filas, emptyMap(), mine, "", null, PatientScope.Mine, "2026-11-19").map { it.id },
+        )
+        assertEquals(
+            listOf("a"),
+            PacientesModelo.filter(filas, emptyMap(), mine, "an", null, PatientScope.Mine, "2026-11-19").map { it.id },
+        )
+        assertEquals(
+            mapOf(EstadoFicha.SinConsulta to 1),
+            PacientesModelo.countByState(filas, emptyMap(), mine, PatientScope.Mine),
+        )
+        assertEquals(mapOf(PatientScope.Mine to 1, PatientScope.All to 2), PacientesModelo.countByScope(filas, mine))
     }
 }

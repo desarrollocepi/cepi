@@ -208,25 +208,56 @@ struct Revisado: Decodable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// `GET /api/review-queue/entity/:id`: los pendientes (`derivados`) y quienes ya marcaron
-/// «Revisado» (`revisados`). Un servidor anterior a PAPER §38 no manda `revisados`.
+/// Quién tiene a cargo la consulta (`responsable` de PAPER §38.3).
+struct Responsable: Decodable, Sendable, Hashable {
+    let usuario: String
+    let nombre: String?
+    let email: String?
+
+    var comoSeLlama: String { nombre ?? email ?? "Profesional" }
+
+    enum CodingKeys: String, CodingKey {
+        case usuario = "user_id"
+        case nombre = "name"
+        case email
+    }
+}
+
+/// `GET /api/review-queue/entity/:id`: los pendientes (`derivados`), quienes ya marcaron
+/// «Revisado» (`revisados`), quién la tiene a cargo (`responsable`) y si quien consulta
+/// puede tomarla (`can_claim`) o quitársela a otro (`can_reassign`). Un servidor anterior a
+/// PAPER §38 no manda `revisados`; uno anterior a §38.3, las otras tres.
 struct Derivaciones: Decodable, Sendable {
     let derivados: [Derivado]
     let revisados: [Revisado]
+    let responsable: Responsable?
+    let canClaim: Bool
+    let canReassign: Bool
 
-    init(derivados: [Derivado] = [], revisados: [Revisado] = []) {
+    init(
+        derivados: [Derivado] = [], revisados: [Revisado] = [], responsable: Responsable? = nil,
+        canClaim: Bool = false, canReassign: Bool = false
+    ) {
         self.derivados = derivados
         self.revisados = revisados
+        self.responsable = responsable
+        self.canClaim = canClaim
+        self.canReassign = canReassign
     }
 
     enum CodingKeys: String, CodingKey {
-        case derivados, revisados
+        case derivados, revisados, responsable
+        case canClaim = "can_claim"
+        case canReassign = "can_reassign"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         derivados = try c.decodeIfPresent([Derivado].self, forKey: .derivados) ?? []
         revisados = try c.decodeIfPresent([Revisado].self, forKey: .revisados) ?? []
+        responsable = try c.decodeIfPresent(Responsable.self, forKey: .responsable)
+        canClaim = try c.decodeIfPresent(Bool.self, forKey: .canClaim) ?? false
+        canReassign = try c.decodeIfPresent(Bool.self, forKey: .canReassign) ?? false
     }
 }
 
@@ -273,6 +304,83 @@ enum ReviewStatus {
         let pending = derivados.map { "\($0.comoSeLlama) · pendiente" }
         let done = revisados.map { "\($0.comoSeLlama) ✓ revisado" }
         return (pending + done).joined(separator: ", ")
+    }
+}
+
+/// «Lo tomo» (PAPER §38.3): `POST /api/entities/:id/claim`. Sin `status_value` el cuerpo
+/// sale `{}` (la síntesis de `Encodable` omite los opcionales en nil).
+struct ClaimRequest: Encodable, Sendable, Equatable {
+    let statusValue: String?
+
+    enum CodingKeys: String, CodingKey {
+        case statusValue = "status_value"
+    }
+}
+
+/// La respuesta de `claim`: quién quedó a cargo y el estado nuevo, si cambió.
+struct ClaimResult: Decodable, Sendable {
+    let entityId: String?
+    let responsableActualId: String?
+    let newStatus: String?
+
+    enum CodingKeys: String, CodingKey {
+        case entityId = "entity_id"
+        case responsableActualId = "responsable_actual_id"
+        case newStatus = "new_status"
+    }
+}
+
+/// Lo que decide el botón «Lo tomo» y la línea «A cargo» de la franja (PAPER §38.3).
+enum ClaimStatus {
+    enum State: Equatable {
+        /// Sin `entities:claim`: el rol nunca podrá tomarla, así que no se muestra.
+        case hidden
+        /// Se ve gris con el motivo.
+        case blocked(String)
+        /// Habilitado, pero la tiene otro: pide confirmación con este texto.
+        case confirm(String)
+        /// Habilitado, sin confirmación.
+        case allowed
+
+        var blockReason: String? {
+            if case .blocked(let reason) = self { return reason }
+            return nil
+        }
+    }
+
+    static let noEpisodeReason = "Este paciente no tiene una consulta abierta"
+    static let notActiveReason = "Solo se toma la consulta actual"
+    static let loadingReason = "Cargando el estado de la consulta…"
+    static let dischargedReason = "El paciente está de alta: si vuelve, abre una consulta nueva"
+    static let alreadyMineReason = "Ya está a tu cargo"
+
+    /// `viewingActive`: la consulta a la vista es la activa. `episodeStatus`: el `estado` del
+    /// registro del episodio; `nil` mientras carga.
+    static func state(
+        episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
+        responsable: Responsable?, canClaim: Bool, canReassign: Bool, userId: String?
+    ) -> State {
+        guard canClaim else { return .hidden }
+        guard episode != nil else { return .blocked(noEpisodeReason) }
+        guard viewingActive else { return .blocked(notActiveReason) }
+        guard episodeLoaded else { return .blocked(loadingReason) }
+        if episodeStatus == "alta" { return .blocked(dischargedReason) }
+        guard let responsable else { return .allowed }
+        if let userId, responsable.usuario == userId { return .blocked(alreadyMineReason) }
+        guard canReassign else { return .blocked("La tiene a cargo \(responsable.comoSeLlama)") }
+        return .confirm("\(responsable.comoSeLlama) la tiene a cargo. ¿La tomas tú?")
+    }
+
+    /// `enviada` pasa a `en_triage`, como el comando `reclamar`; otro estado no cambia.
+    static func request(episodeStatus: String?) -> ClaimRequest {
+        ClaimRequest(statusValue: episodeStatus == "enviada" ? "en_triage" : nil)
+    }
+
+    /// «A cargo: Dra. B», «A cargo: tú» o «Sin responsable».
+    static func ownerLine(responsable: Responsable?, userId: String?) -> String {
+        guard let responsable else { return "Sin responsable" }
+        if let userId, responsable.usuario == userId { return "A cargo: tú" }
+        return "A cargo: \(responsable.comoSeLlama)"
     }
 }
 

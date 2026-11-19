@@ -219,12 +219,26 @@ struct PendienteRevision: Decodable, Sendable, Hashable {
     }
 }
 
-/// `GET /api/patient-assignments`: quién tiene a cargo a cada paciente.
+/// `GET /api/patient-assignments`: quién tiene a cargo a cada paciente y cuáles son «míos»
+/// (`mine`, PAPER §39). Un servidor anterior a §39 no manda `mine`.
 struct Asignaciones: Decodable, Sendable {
     let porPaciente: [String: Asignacion]
+    let mine: [String]
+
+    init(porPaciente: [String: Asignacion] = [:], mine: [String] = []) {
+        self.porPaciente = porPaciente
+        self.mine = mine
+    }
 
     enum CodingKeys: String, CodingKey {
         case porPaciente = "assignments"
+        case mine
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        porPaciente = try c.decodeIfPresent([String: Asignacion].self, forKey: .porPaciente) ?? [:]
+        mine = try c.decodeIfPresent([String].self, forKey: .mine) ?? []
     }
 }
 

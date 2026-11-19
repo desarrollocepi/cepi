@@ -54,6 +54,10 @@ class HiloModelo(
     /** Quién ya marcó «Revisado» en la derivación vigente (PAPER §38). */
     var revisados: List<Revisado> by mutableStateOf(emptyList())
         private set
+
+    /** Lo último que dijo `GET /api/review-queue/entity/:id`: responsable y permisos (§38.3). */
+    var referrals: Derivaciones by mutableStateOf(Derivaciones())
+        private set
     var pagina: PaginaHilo by mutableStateOf(PaginaHilo.MasNueva)
         private set
     var ocupado: Boolean by mutableStateOf(false)
@@ -257,6 +261,7 @@ class HiloModelo(
         } catch (_: ApiError) {
             Derivaciones()
         }
+        referrals = leidas
         derivados = leidas.derivados
         revisados = leidas.revisados
     }

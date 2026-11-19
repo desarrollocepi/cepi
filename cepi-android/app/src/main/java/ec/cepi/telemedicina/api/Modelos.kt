@@ -106,6 +106,11 @@ data class PendienteRevision(
 @Serializable
 data class Asignaciones(
     @SerialName("assignments") val porPaciente: Map<String, Asignacion> = emptyMap(),
+    /**
+     * Los pacientes que son o fueron míos en alguna consulta (PAPER §39): responsable, médico,
+     * derivado, reclamado o asignado. Un servidor anterior a §39 no la manda.
+     */
+    val mine: List<String> = emptyList(),
 )
 
 @Serializable

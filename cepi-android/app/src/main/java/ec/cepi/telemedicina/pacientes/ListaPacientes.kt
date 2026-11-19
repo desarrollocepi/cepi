@@ -74,6 +74,8 @@ fun ListaPacientes(
     var refrescando by remember { mutableStateOf(false) }
     var aBorrar by remember { mutableStateOf<FilaPaciente?>(null) }
     var estadoElegido by rememberSaveable { mutableStateOf<EstadoFicha?>(null) }
+    // PAPER §39: la lista arranca en «Mis pacientes».
+    var scope by rememberSaveable { mutableStateOf(PatientScope.Mine) }
     val puedeBorrar = sesion.usuario?.puede(CepiApi.PERMISO_BORRAR_PACIENTE) == true
 
     // Recarga al volver a primer plano, al cambiar de organización y cada 20 s mientras está
@@ -92,10 +94,11 @@ fun ListaPacientes(
     // El arranque en frío termina cuando la lista está a la vista (PAPER §25.5).
     ReportDrawnWhen { modelo.cargado }
 
-    val filas = remember(modelo.filas, modelo.asignaciones, busqueda, estadoElegido) {
-        modelo.filtradas(busqueda, estadoElegido)
+    val filas = remember(modelo.filas, modelo.asignaciones, modelo.mine, busqueda, estadoElegido, scope) {
+        modelo.filtradas(busqueda, estadoElegido, scope = scope)
     }
-    val conteo = remember(modelo.filas, modelo.asignaciones) { modelo.conteoPorEstado() }
+    val conteo = remember(modelo.filas, modelo.asignaciones, modelo.mine, scope) { modelo.conteoPorEstado(scope) }
+    val scopeCounts = remember(modelo.filas, modelo.mine) { modelo.scopeCounts() }
 
     Column(
         Modifier
@@ -119,10 +122,16 @@ fun ListaPacientes(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
 
+        ScopeFilter(
+            selected = scope,
+            counts = scopeCounts,
+            enabled = modelo.cargado,
+            onSelect = { scope = it },
+        )
         FiltroEstados(
             elegido = estadoElegido,
             conteo = conteo,
-            total = modelo.filas.size,
+            total = conteo.values.sum(),
             habilitado = modelo.cargado,
             alElegir = { estadoElegido = it },
         )
@@ -172,10 +181,17 @@ fun ListaPacientes(
                     }
                 }
                 !modelo.cargado -> Espera("Cargando pacientes…")
+                // PAPER §39: sin pacientes míos, «Mis pacientes · 0» sigue elegible y lo dice.
+                filas.isEmpty() && busqueda.isBlank() && scope == PatientScope.Mine &&
+                    (scopeCounts[PatientScope.Mine] ?: 0) == 0 -> Aviso(
+                    icono = painterResource(R.drawable.ic_grupo),
+                    titulo = "Sin pacientes a tu cargo",
+                    descripcion = "Todavía no tienes pacientes a tu cargo. Mira «Todos».",
+                )
                 filas.isEmpty() && estadoElegido != null && busqueda.isBlank() -> Aviso(
                     icono = rememberVectorPainter(Icons.Filled.Search),
                     titulo = "Ningún paciente en «${estadoElegido?.etiqueta}»",
-                    descripcion = "Elige otro estado o «Todos».",
+                    descripcion = "Elige otro estado o «Cualquier estado».",
                 )
                 // Todos los que hay están de alta desde antes de hoy (PAPER §35).
                 filas.isEmpty() && busqueda.isBlank() && modelo.filas.isNotEmpty() -> Aviso(
@@ -243,6 +259,35 @@ private fun Espera(texto: String) {
 }
 
 /**
+ * El alcance de la lista (PAPER §39): «Mis pacientes» o «Todos», con su cuenta. Uno siempre está
+ * elegido; «Mis pacientes · 0» sigue elegible.
+ */
+@Composable
+private fun ScopeFilter(
+    selected: PatientScope,
+    counts: Map<PatientScope, Int>,
+    enabled: Boolean,
+    onSelect: (PatientScope) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+    ) {
+        PatientScope.entries.forEach { option ->
+            FilterChip(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                enabled = enabled,
+                label = { Text("${option.label} · ${counts[option] ?: 0}") },
+            )
+        }
+    }
+}
+
+/**
  * Los estados de la ficha como filtro, debajo del buscador. Cada chip lleva su LED y cuántos
  * pacientes hay: es también la leyenda de los colores. Un estado sin pacientes se ve gris, no se
  * esconde (nunca ocultes un botón). Tocar el elegido lo suelta.
@@ -266,7 +311,7 @@ private fun FiltroEstados(
             selected = elegido == null,
             onClick = { alElegir(null) },
             enabled = habilitado,
-            label = { Text("Todos · $total") },
+            label = { Text("Cualquier estado · $total") },
         )
         EstadoFicha.entries.forEach { estado ->
             val cuantos = conteo[estado] ?: 0

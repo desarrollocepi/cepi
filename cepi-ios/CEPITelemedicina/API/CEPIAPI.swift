@@ -69,9 +69,9 @@ struct CEPIAPI: Sendable {
         return cola.porPaciente
     }
 
-    func asignaciones() async throws -> [String: Asignacion] {
-        let respuesta: Asignaciones = try await cliente.get("/api/patient-assignments")
-        return respuesta.porPaciente
+    /// A cargo de cada paciente y los «míos» (PAPER §39).
+    func asignaciones() async throws -> Asignaciones {
+        try await cliente.get("/api/patient-assignments")
     }
 
     // MARK: Hilo y chat
@@ -208,6 +208,15 @@ struct CEPIAPI: Sendable {
         let r: Uno<ReviewCompleteResult> = try await cliente.post(
             "/api/entities/\(id)/complete_review", json: ReviewCompleteRequest(onlyMine: true)
         )
+        return r.data
+    }
+
+    /// «Lo tomo» (PAPER §38.3): quien llama queda a cargo de la consulta. Acción explícita:
+    /// sin gate. Un 409 (la tiene otro y no se puede reasignar) llega como `APIError` con el
+    /// motivo del backend.
+    @discardableResult
+    func claim(episode id: String, _ request: ClaimRequest) async throws -> ClaimResult {
+        let r: Uno<ClaimResult> = try await cliente.post("/api/entities/\(id)/claim", json: request)
         return r.data
     }
 

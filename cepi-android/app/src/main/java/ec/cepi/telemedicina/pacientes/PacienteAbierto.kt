@@ -16,6 +16,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ec.cepi.telemedicina.api.ApiError
+import ec.cepi.telemedicina.api.CaseClaim
 import ec.cepi.telemedicina.api.CaseReview
 import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.Revisado
@@ -214,6 +216,46 @@ fun PacienteAbierto(
             }
         }
     }
+    var claiming by remember { mutableStateOf(false) }
+    // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
+    var claimConfirmOwner by remember { mutableStateOf<String?>(null) }
+    // «Lo tomo» (PAPER §38.3), con el estado del registro del episodio activo.
+    val claimState = if (claiming) {
+        CaseClaim.State.Disabled("Tomando la consulta…")
+    } else {
+        CaseClaim.state(
+            referrals = modelo.referrals,
+            userId = entorno.sesion.usuario?.id,
+            isActive = modelo.episodioActivo != null && shownEpisode == modelo.episodioActivo,
+            status = activeEpisode?.takeIf { it.id == modelo.episodioActivo }?.get("estado"),
+        )
+    }
+
+    fun claim() {
+        val episode = modelo.episodioActivo ?: return
+        if (claiming) return
+        claiming = true
+        val status = activeEpisode?.takeIf { it.id == episode }?.get("estado")
+        alcance.launch {
+            try {
+                api.claimConsultation(episode, status)
+                modelo.releerDerivaciones()
+                episodeReload++
+                onConsultationAnswered()
+                snackbar.showSnackbar(CaseClaim.CONFIRMATION)
+            } catch (e: ApiError) {
+                snackbar.showSnackbar("No se pudo tomar la consulta: ${e.mensaje}")
+            } finally {
+                claiming = false
+            }
+        }
+    }
+
+    /** Tocar «Lo tomo»: si se la quita a otro, primero confirma. */
+    fun requestClaim() {
+        val state = claimState as? CaseClaim.State.Enabled ?: return
+        if (state.currentOwner != null) claimConfirmOwner = state.currentOwner else claim()
+    }
     val answerReason = ConsultationAnswer.disabledReason(modelo.episodioActivo, activeEpisode, entorno.sesion.usuario?.id)
     val dischargeReason = PatientDischarge.disabledReason(modelo.episodioActivo, activeEpisode)
     LaunchedEffect(pacienteId) {
@@ -288,6 +330,8 @@ fun PacienteAbierto(
                             onDischarge = { discharging = true },
                             reviewReason = reviewReason,
                             onMarkReviewed = { markReviewed() },
+                            claimState = claimState,
+                            onClaim = { requestClaim() },
                         )
                     }
                 },
@@ -301,17 +345,21 @@ fun PacienteAbierto(
                 .imePadding()
                 .fillMaxSize(),
         ) {
-            // A quién está derivada la consulta y el estado de cada revisor (PAPER §38.2),
-            // mientras haya derivados o revisados. Tocar los nombres abre Derivar para sumar o
-            // cambiar destinos; el botón «Revisado» cierra solo la revisión propia.
-            if (modelo.derivados.isNotEmpty() || modelo.revisados.isNotEmpty()) {
+            // La franja de la consulta activa (PAPER §38.2–38.3), siempre que haya una: quién la
+            // tiene a cargo, a quién está derivada con el estado de cada revisor, «Lo tomo» y
+            // «Revisado». Tocar los nombres abre Derivar para sumar o cambiar destinos.
+            if (modelo.episodioActivo != null) {
                 ReviewStrip(
+                    ownerLabel = CaseClaim.ownerLabel(modelo.referrals.responsable, entorno.sesion.usuario?.id),
                     pending = modelo.derivados,
                     reviewed = modelo.revisados,
                     reviewReason = reviewReason,
                     marking = markingReviewed,
+                    claimState = claimState,
+                    claiming = claiming,
                     onOpenReferral = { derivar = true },
                     onMarkReviewed = { markReviewed() },
+                    onClaim = { requestClaim() },
                 )
             }
             PrimaryTabRow(selectedTabIndex = paginas.currentPage) {
@@ -386,6 +434,20 @@ fun PacienteAbierto(
             alCerrar = { mostrarSecciones = false },
         )
     }
+    claimConfirmOwner?.let { owner ->
+        AlertDialog(
+            onDismissRequest = { claimConfirmOwner = null },
+            title = { Text("Tomar la consulta") },
+            text = { Text(CaseClaim.confirmQuestion(owner)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    claimConfirmOwner = null
+                    claim()
+                }) { Text("La tomo") }
+            },
+            dismissButton = { TextButton(onClick = { claimConfirmOwner = null }) { Text("Cancelar") } },
+        )
+    }
     val episodeToAnswer = activeEpisode
     if (answering && episodeToAnswer != null) {
         ConsultationAnswerSheet(
@@ -457,6 +519,9 @@ private fun Acciones(
     /** Por qué no se puede marcar «Revisado»; `null` si se puede (PAPER §38). */
     reviewReason: String?,
     onMarkReviewed: () -> Unit,
+    /** «Lo tomo» (PAPER §38.3); `Hidden` solo por permiso. */
+    claimState: CaseClaim.State,
+    onClaim: () -> Unit,
 ) {
     val episodios = modelo.episodios
     val enLaActual = episodios.esActiva(episodios.indice(modelo.pagina), modelo.episodioActivo)
@@ -529,6 +594,17 @@ private fun Acciones(
                 onAnswer()
             },
         )
+        // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
+        if (claimState !is CaseClaim.State.Hidden) {
+            DropdownMenuItem(
+                text = { Explicado("Tomar la consulta", (claimState as? CaseClaim.State.Disabled)?.reason) },
+                enabled = claimState is CaseClaim.State.Enabled,
+                onClick = {
+                    alCerrar()
+                    onClaim()
+                },
+            )
+        }
         DropdownMenuItem(
             text = { Explicado("✓ Marcar como revisado", reviewReason) },
             enabled = reviewReason == null,
@@ -557,22 +633,27 @@ private fun Acciones(
 }
 
 /**
- * La franja «Derivado a …» (PAPER §38.2): cada revisor con su estado, pendiente o ✓ revisado,
- * y a la derecha «Revisado». Sin revisión propia abierta el botón queda gris y el motivo se lee
- * debajo de los nombres.
+ * La franja de la consulta activa (PAPER §38.2–38.3): quién la tiene a cargo, los derivados con
+ * su estado (pendiente o ✓ revisado) y, a la derecha, «Lo tomo» y «Revisado». Un botón que no
+ * aplica queda gris y su motivo se lee debajo de los nombres.
  */
 @Composable
 private fun ReviewStrip(
+    ownerLabel: String,
     pending: List<Derivado>,
     reviewed: List<Revisado>,
     reviewReason: String?,
     marking: Boolean,
+    claimState: CaseClaim.State,
+    claiming: Boolean,
     onOpenReferral: () -> Unit,
     onMarkReviewed: () -> Unit,
+    onClaim: () -> Unit,
 ) {
     val pendingIds = pending.map { it.usuario }.toSet()
     val reviewers = pending.map { "${it.comoSeLlama} (pendiente)" } +
         reviewed.filter { it.usuario !in pendingIds }.map { "${it.comoSeLlama} (✓ revisado)" }
+    val claimReason = (claimState as? CaseClaim.State.Disabled)?.reason
     val color = MaterialTheme.colorScheme.onTertiaryContainer
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -583,15 +664,38 @@ private fun ReviewStrip(
                     .padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 8.dp),
             ) {
                 Text(
-                    "↪ Derivado a " + reviewers.joinToString(", "),
+                    ownerLabel,
                     style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
                     color = color,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                // El motivo, salvo mientras se marca (ahí el botón ya muestra el progreso).
+                if (reviewers.isNotEmpty()) {
+                    Text(
+                        "↪ Derivado a " + reviewers.joinToString(", "),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = color,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                // Los motivos, salvo mientras se hace la acción (ahí el botón muestra el progreso).
+                if (claimReason != null && !claiming) {
+                    Text("Lo tomo: $claimReason", style = MaterialTheme.typography.bodySmall, color = color)
+                }
                 if (reviewReason != null && !marking) {
-                    Text(reviewReason, style = MaterialTheme.typography.bodySmall, color = color)
+                    Text("Revisado: $reviewReason", style = MaterialTheme.typography.bodySmall, color = color)
+                }
+            }
+            // Sin `entities:claim` no se muestra: es un permiso que el rol nunca tendrá.
+            if (claimState !is CaseClaim.State.Hidden) {
+                TextButton(
+                    onClick = onClaim,
+                    enabled = claimState is CaseClaim.State.Enabled,
+                    modifier = Modifier.semantics { contentDescription = claimReason ?: "Tomar la consulta" },
+                ) {
+                    if (claiming) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Lo tomo")
                 }
             }
             TextButton(

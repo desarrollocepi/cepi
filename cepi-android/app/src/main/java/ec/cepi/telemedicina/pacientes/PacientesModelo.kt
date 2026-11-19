@@ -46,6 +46,12 @@ class FilaPaciente(val registro: Registro) {
     }
 }
 
+/** El filtro de alcance de la lista (PAPER §39): lo mío o todo. */
+enum class PatientScope(val label: String) {
+    Mine("Mis pacientes"),
+    All("Todos"),
+}
+
 /** Lista de pacientes, "revisar" y a cargo. Espejo de `PacientesModelo.swift`. */
 class PacientesModelo {
     var filas: List<FilaPaciente> by mutableStateOf(emptyList())
@@ -53,6 +59,9 @@ class PacientesModelo {
     var revision: Map<String, PendienteRevision> by mutableStateOf(emptyMap())
         private set
     var asignaciones: Map<String, Asignacion> by mutableStateOf(emptyMap())
+        private set
+    /** Los pacientes que son o fueron míos (`mine` de `GET /api/patient-assignments`, §39). */
+    var mine: Set<String> by mutableStateOf(emptySet())
         private set
     var cargado: Boolean by mutableStateOf(false)
         private set
@@ -86,11 +95,14 @@ class PacientesModelo {
             }
             // Fuera del hilo principal: normalizar y ordenar 500 filas no debe costar un frame.
             val nuevasFilas = withContext(Dispatchers.Default) {
-                preparar(registros, nuevaCola ?: revision, nuevasAsignaciones ?: asignaciones)
+                preparar(registros, nuevaCola ?: revision, nuevasAsignaciones?.porPaciente ?: asignaciones)
             }
             if (mio != pedido.get()) return   // llegó otra carga más nueva (otra org)
             nuevaCola?.let { revision = it }
-            nuevasAsignaciones?.let { asignaciones = it }
+            nuevasAsignaciones?.let {
+                asignaciones = it.porPaciente
+                mine = it.mine.toSet()
+            }
             filas = nuevasFilas
             porId = nuevasFilas.associateBy { it.id }
             error = null
@@ -117,6 +129,7 @@ class PacientesModelo {
         porId = emptyMap()
         revision = emptyMap()
         asignaciones = emptyMap()
+        mine = emptySet()
         cargado = false
         error = null
     }
@@ -131,28 +144,65 @@ class PacientesModelo {
 
     fun estado(id: String): EstadoFicha = EstadoFicha.de(asignaciones[id]?.estado)
 
-    /**
-     * Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. Quien
-     * está de alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
-     */
+    /** Ver [filter]. */
     fun filtradas(
         busqueda: String,
         estado: EstadoFicha? = null,
         today: String = LocalDate.now().toString(),
-    ): List<FilaPaciente> {
-        val consulta = FilaPaciente.normalizar(busqueda.trim())
-        return filas.filter { fila ->
-            (consulta.isEmpty() || consulta in fila.claveBusqueda) &&
-                (estado == null || estado(fila.id) == estado) &&
-                (consulta.isNotEmpty() || estado == EstadoFicha.Alta ||
-                    asignaciones[fila.id]?.dischargeExpired(today) != true)
-        }
-    }
+        scope: PatientScope = PatientScope.All,
+    ): List<FilaPaciente> = filter(filas, asignaciones, mine, busqueda, estado, scope, today)
 
-    /** Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos. */
-    fun conteoPorEstado(): Map<EstadoFicha, Int> = filas.groupingBy { estado(it.id) }.eachCount()
+    /** Ver [countByState]. */
+    fun conteoPorEstado(scope: PatientScope = PatientScope.All): Map<EstadoFicha, Int> =
+        countByState(filas, asignaciones, mine, scope)
+
+    /** Ver [countByScope]. */
+    fun scopeCounts(): Map<PatientScope, Int> = countByScope(filas, mine)
 
     companion object {
+        /**
+         * Por texto (nombre o cédula, sin tildes), por alcance y, si se eligió, por estado de la
+         * ficha; los filtros se combinan (Y). Con texto se busca en todos, ignorando el alcance:
+         * a un paciente que no es mío se lo tiene que poder encontrar (PAPER §39). Quien está de
+         * alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
+         */
+        fun filter(
+            rows: List<FilaPaciente>,
+            assignments: Map<String, Asignacion>,
+            mine: Set<String>,
+            query: String,
+            state: EstadoFicha?,
+            scope: PatientScope,
+            today: String,
+        ): List<FilaPaciente> {
+            val consulta = FilaPaciente.normalizar(query.trim())
+            return rows.filter { fila ->
+                (consulta.isEmpty() || consulta in fila.claveBusqueda) &&
+                    (consulta.isNotEmpty() || scope == PatientScope.All || fila.id in mine) &&
+                    (state == null || EstadoFicha.de(assignments[fila.id]?.estado) == state) &&
+                    (consulta.isNotEmpty() || state == EstadoFicha.Alta ||
+                        assignments[fila.id]?.dischargeExpired(today) != true)
+            }
+        }
+
+        /**
+         * Cuántos pacientes hay en cada estado dentro del alcance elegido: el filtro de estado
+         * los muestra y deshabilita los vacíos.
+         */
+        fun countByState(
+            rows: List<FilaPaciente>,
+            assignments: Map<String, Asignacion>,
+            mine: Set<String>,
+            scope: PatientScope,
+        ): Map<EstadoFicha, Int> =
+            rows.filter { scope == PatientScope.All || it.id in mine }
+                .groupingBy { EstadoFicha.de(assignments[it.id]?.estado) }
+                .eachCount()
+
+        /** «Mis pacientes · N» y «Todos · M». Solo cuenta los `mine` que están en la lista. */
+        fun countByScope(rows: List<FilaPaciente>, mine: Set<String>): Map<PatientScope, Int> =
+            mapOf(PatientScope.Mine to rows.count { it.id in mine }, PatientScope.All to rows.size)
+
         fun preparar(
             registros: List<Registro>,
             revision: Map<String, PendienteRevision>,

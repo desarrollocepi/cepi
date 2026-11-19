@@ -27,12 +27,19 @@ struct FilaPaciente: Identifiable, Sendable, Hashable {
     }
 }
 
+/// El alcance de la lista (PAPER §39): lo mío o todo. Uno siempre está elegido.
+enum PatientScope: Sendable, Hashable {
+    case mine, all
+}
+
 @MainActor
 @Observable
 final class PacientesModelo {
     private(set) var filas: [FilaPaciente] = []
     private(set) var revision: [String: PendienteRevision] = [:]
     private(set) var asignaciones: [String: Asignacion] = [:]
+    /// Los pacientes «míos» (PAPER §39): a cargo o alguna vez asignados a quien consulta.
+    private(set) var mine: Set<String> = []
     private(set) var cargado = false
     private(set) var error: String?
     private var porId: [String: FilaPaciente] = [:]
@@ -60,11 +67,15 @@ final class PacientesModelo {
             let nuevaCola = await cola
             let nuevasAsignaciones = await asignados
             let nuevasFilas = await Self.preparar(
-                registros, revision: nuevaCola ?? revision, asignaciones: nuevasAsignaciones ?? asignaciones
+                registros, revision: nuevaCola ?? revision,
+                asignaciones: nuevasAsignaciones?.porPaciente ?? asignaciones
             )
             guard mio == pedido else { return }   // llegó otra carga más nueva (otra org)
             if let nuevaCola { revision = nuevaCola }
-            if let nuevasAsignaciones { asignaciones = nuevasAsignaciones }
+            if let nuevasAsignaciones {
+                asignaciones = nuevasAsignaciones.porPaciente
+                mine = Set(nuevasAsignaciones.mine)
+            }
             filas = nuevasFilas
             porId = Dictionary(nuevasFilas.map { ($0.id, $0) }, uniquingKeysWith: { primera, _ in primera })
             error = nil
@@ -89,6 +100,7 @@ final class PacientesModelo {
         porId = [:]
         revision = [:]
         asignaciones = [:]
+        mine = []
         cargado = false
         error = nil
     }
@@ -108,17 +120,51 @@ final class PacientesModelo {
 
     func estado(_ id: String) -> EstadoFicha { EstadoFicha(asignaciones[id]?.estado) }
 
-    /// Por texto (nombre o cédula, sin tildes) y, si se eligió, por estado de la ficha. Quien
-    /// está de alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
+    /// Ver `filter(_:query:scope:state:mine:assignments:today:)`.
     func filtradas(
-        por busqueda: String, estado: EstadoFicha? = nil, today: String = PacientesModelo.localToday()
+        por busqueda: String, estado: EstadoFicha? = nil, scope: PatientScope = .all,
+        today: String = PacientesModelo.localToday()
     ) -> [FilaPaciente] {
-        let consulta = FilaPaciente.normalizar(busqueda.trimmingCharacters(in: .whitespaces))
-        let showDischarged = !consulta.isEmpty || estado == .alta
+        Self.filter(
+            filas, query: busqueda, scope: scope, state: estado, mine: mine, assignments: asignaciones, today: today
+        )
+    }
+
+    /// Por texto (nombre o cédula, sin tildes), por alcance y, si se eligió, por estado de la
+    /// ficha (PAPER §39: alcance Y estado). Con texto se busca en todos, aunque el alcance sea
+    /// «Mis pacientes»: a un paciente que no es mío se lo tiene que poder encontrar. Quien está
+    /// de alta desde antes de `today` solo sale buscándolo o en el filtro «Alta» (PAPER §35).
+    nonisolated static func filter(
+        _ filas: [FilaPaciente], query: String, scope: PatientScope, state: EstadoFicha?,
+        mine: Set<String>, assignments: [String: Asignacion], today: String
+    ) -> [FilaPaciente] {
+        let consulta = FilaPaciente.normalizar(query.trimmingCharacters(in: .whitespaces))
+        let showDischarged = !consulta.isEmpty || state == .alta
+        let effectiveScope: PatientScope = consulta.isEmpty ? scope : .all
         return filas.filter { fila in
             (consulta.isEmpty || fila.claveBusqueda.contains(consulta))
-                && (estado == nil || self.estado(fila.id) == estado)
-                && (showDischarged || asignaciones[fila.id]?.dischargeExpired(today: today) != true)
+                && inScope(fila.id, effectiveScope, mine: mine)
+                && (state == nil || EstadoFicha(assignments[fila.id]?.estado) == state)
+                && (showDischarged || assignments[fila.id]?.dischargeExpired(today: today) != true)
+        }
+    }
+
+    nonisolated static func inScope(_ id: String, _ scope: PatientScope, mine: Set<String>) -> Bool {
+        scope == .all || mine.contains(id)
+    }
+
+    /// Cuántos pacientes entran en cada alcance: «Mis pacientes · N» y «Todos · M».
+    nonisolated static func scopeCounts(_ filas: [FilaPaciente], mine: Set<String>) -> [PatientScope: Int] {
+        [.mine: filas.filter { mine.contains($0.id) }.count, .all: filas.count]
+    }
+
+    /// Cuántos pacientes hay en cada estado dentro del alcance elegido.
+    nonisolated static func stateCounts(
+        _ filas: [FilaPaciente], scope: PatientScope, mine: Set<String>, assignments: [String: Asignacion]
+    ) -> [EstadoFicha: Int] {
+        filas.reduce(into: [:]) { conteo, fila in
+            guard inScope(fila.id, scope, mine: mine) else { return }
+            conteo[EstadoFicha(assignments[fila.id]?.estado), default: 0] += 1
         }
     }
 
@@ -128,9 +174,14 @@ final class PacientesModelo {
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
-    /// Cuántos pacientes hay en cada estado: el filtro los muestra y deshabilita los vacíos.
-    func conteoPorEstado() -> [EstadoFicha: Int] {
-        filas.reduce(into: [:]) { conteo, fila in conteo[estado(fila.id), default: 0] += 1 }
+    /// Cuántos pacientes hay en cada estado dentro del alcance: el filtro los muestra y
+    /// deshabilita los vacíos.
+    func conteoPorEstado(scope: PatientScope = .all) -> [EstadoFicha: Int] {
+        Self.stateCounts(filas, scope: scope, mine: mine, assignments: asignaciones)
+    }
+
+    func conteoPorAlcance() -> [PatientScope: Int] {
+        Self.scopeCounts(filas, mine: mine)
     }
 
     /// Fuera del hilo principal: normalizar y ordenar 500 filas no debe costar un frame.
