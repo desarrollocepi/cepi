@@ -8,6 +8,7 @@ import ec.cepi.telemedicina.api.Derivaciones
 import ec.cepi.telemedicina.api.Derivado
 import ec.cepi.telemedicina.api.MyReview
 import ec.cepi.telemedicina.api.Responsable
+import ec.cepi.telemedicina.api.StartReviewResult
 import ec.cepi.telemedicina.api.ReviewCompletion
 import ec.cepi.telemedicina.api.Uno
 import ec.cepi.telemedicina.api.CepiApi
@@ -246,24 +247,30 @@ class ContratoTest {
         assertEquals("Sin responsable", CaseReview.ownerLabel(null, "u1"))
         assertEquals("A cargo: tú", CaseReview.ownerLabel(conResponsable.responsable, "u9"))
         assertEquals("A cargo: Dra. Paz", CaseReview.ownerLabel(conResponsable.responsable, "u1"))
-        assertEquals("Dra. Paz la tiene a cargo. ¿La revisas tú?", CaseReview.confirmQuestion("Dra. Paz"))
     }
 
-    /** PAPER §38.5: `my_review` en GET /api/review-queue/entity/:id. */
+    /** PAPER §38.6: `my_review` en GET /api/review-queue/entity/:id, con `started_at`. */
     @Test
     fun miRevisionEnLaFranja() {
         val con = decodificar<Derivaciones>(
             """{"ok":true,"entity_id":"e1","derivados":[],"revisados":[],"responsable":null,"can_claim":true,"can_reassign":false,
-               "my_review":{"claimed_at":"2026-11-19T10:00:00.000Z","reviewed_at":null}}""",
+               "my_review":{"started_at":"2026-11-19T10:00:00.000Z","reviewed_at":null}}""",
         )
-        assertEquals("2026-11-19T10:00:00.000Z", con.myReview.claimedAt)
+        assertEquals("2026-11-19T10:00:00.000Z", con.myReview.startedAt)
         assertNull(con.myReview.reviewedAt)
         val sin = decodificar<Derivaciones>("""{"ok":true,"entity_id":"e1","derivados":[]}""")
-        assertNull(sin.myReview.claimedAt)
+        assertNull(sin.myReview.startedAt)
         assertNull(sin.myReview.reviewedAt)
+
+        // POST /api/entities/:id/start_review
+        val empezada = decodificar<Uno<StartReviewResult>>(
+            """{"ok":true,"data":{"entity_id":"e1","started_at":"2026-11-19T10:00:00.000Z"}}""",
+        ).data
+        assertEquals("e1", empezada.entityId)
+        assertEquals("2026-11-19T10:00:00.000Z", empezada.startedAt)
     }
 
-    /** PAPER §38.5: el flujo en tres pasos, igual que `flujo` de `IntakeChat.vue`. */
+    /** PAPER §38.5–38.6: el flujo de revisión, igual que `flujo` de `IntakeChat.vue`. */
     @Test
     fun flujoDeRevisionEnTresPasos() {
         fun refs(
@@ -271,105 +278,93 @@ class ContratoTest {
             owner: String? = null,
             canClaim: Boolean = false,
             canReassign: Boolean = false,
-            claimedAt: String? = null,
+            startedAt: String? = null,
             reviewedAt: String? = null,
         ) = Derivaciones(
             derivados = derivados.map { Derivado(it, "Dr. $it") },
             responsable = owner?.let { Responsable(it, "Dr. $it") },
             canClaim = canClaim,
             canReassign = canReassign,
-            myReview = MyReview(claimedAt, reviewedAt),
+            myReview = MyReview(startedAt, reviewedAt),
         )
         fun flow(r: Derivaciones, user: String? = "yo", episode: String? = "e1", active: Boolean = true, status: String? = "derivada") =
             CaseReview.flow(r, user, episode, active, status)
         val t10 = "2026-11-19T10:00:00.000Z"
         val t11 = "2026-11-19T11:00:00.000Z"
 
-        // Paso 1: sin responsable, con permiso de tomar: «🙋 Revisar» habilitado, sin confirmar.
+        // Paso 1: «🙋 Revisar» habilitado, sin etiqueta.
         val start = flow(refs(canClaim = true), status = "enviada")
-        assertTrue(start.showClaim)
-        assertNull(start.claimReason)
-        assertNull(start.confirmOwner)
+        assertTrue(start.showStart)
+        assertNull(start.startReason)
         assertFalse(start.showMark)
-        assertFalse(start.reviewedOnce)
         assertNull(start.badge)
 
-        // Paso 2: la tomé (es mía, claimed sin marca): «☑️ Marcar revisado», sin «🙋 Revisar».
-        val reviewing = flow(refs(owner = "yo", canClaim = true, claimedAt = t10))
+        // Paso 2: empecé a revisar: «☑️ Marcar revisado», sin «🙋 Revisar» ni etiqueta.
+        val reviewing = flow(refs(canClaim = true, startedAt = t10))
         assertTrue(reviewing.inReview)
-        assertFalse(reviewing.showClaim)
+        assertFalse(reviewing.showStart)
         assertTrue(reviewing.showMark)
         assertNull(reviewing.markReason)
-        assertFalse(reviewing.reviewedOnce)
-        // Después de tomar: sin etiqueta, se ve «Marcar revisado».
         assertNull(reviewing.badge)
 
-        // Paso 3: marcada después de tomarla: etiqueta y vuelve «🙋 Revisar» (sigue siendo mía).
-        val done = flow(refs(owner = "yo", canClaim = true, claimedAt = t10, reviewedAt = t11))
+        // Paso 3: marcada después de empezar: vuelve «🙋 Revisar» y queda «✓ Revisado».
+        val done = flow(refs(canClaim = true, startedAt = t10, reviewedAt = t11))
         assertFalse(done.inReview)
-        assertTrue(done.reviewedOnce)
-        assertTrue(done.showClaim)
-        assertNull(done.claimReason)
-        assertNull(done.confirmOwner)
+        assertTrue(done.showStart)
         assertFalse(done.showMark)
-        // Después de marcar: «✓ Revisado».
+        assertTrue(done.reviewedOnce)
         assertEquals(CaseReview.Badge.Reviewed, done.badge)
 
-        // Otra ronda: la volví a tomar después de marcar; la etiqueta sigue.
-        val again = flow(refs(owner = "yo", canClaim = true, claimedAt = t11, reviewedAt = t10))
+        // Otra ronda: «Marcar revisado» otra vez y la etiqueta se esconde mientras.
+        val again = flow(refs(canClaim = true, startedAt = t11, reviewedAt = t10))
         assertTrue(again.inReview)
-        assertTrue(again.reviewedOnce)
         assertTrue(again.showMark)
-        assertFalse(again.showClaim)
-        // Al volver a tomar: «🙋 Revisando» otra vez, nunca las dos.
+        assertFalse(again.showStart)
+        assertTrue(again.reviewedOnce)
         assertNull(again.badge)
-        // Se comparan instantes, no textos: con otro formato sigue siendo posterior.
-        assertTrue(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T11:00:00Z", reviewedAt = "2026-11-19T10:30:00.000Z")).inReview)
-        assertFalse(flow(refs(owner = "yo", canClaim = true, claimedAt = "2026-11-19T06:00:00-05:00", reviewedAt = t11)).inReview)
+        // Se comparan instantes, no textos.
+        assertTrue(flow(refs(canClaim = true, startedAt = "2026-11-19T11:00:00Z", reviewedAt = "2026-11-19T10:30:00.000Z")).inReview)
+        assertFalse(flow(refs(canClaim = true, startedAt = "2026-11-19T06:00:00-05:00", reviewedAt = t11)).inReview)
 
-        // Tomada por mí pero ya no es mía (la tiene otro): no estoy revisando.
-        assertFalse(flow(refs(owner = "otro", canClaim = true, canReassign = true, claimedAt = t10)).inReview)
+        // El responsable no cuenta (§38.6): la tiene otro, sin reasignar, y «🙋 Revisar» está
+        // habilitado, sin motivo ni confirmación; y estoy revisando aunque no sea mía.
+        val others = flow(refs(owner = "otro", canClaim = true))
+        assertTrue(others.showStart)
+        assertNull(others.startReason)
+        assertEquals(others, flow(refs(owner = "otro", canClaim = true, canReassign = true)))
+        assertEquals(others, flow(refs(owner = "yo", canClaim = true)))
+        assertTrue(flow(refs(owner = "otro", canClaim = true, startedAt = t10)).inReview)
 
-        // La tiene otro y no puedo reasignar: «🙋 Revisar» gris con su nombre.
-        val othersNoReassign = flow(refs(owner = "otro", canClaim = true))
-        assertTrue(othersNoReassign.showClaim)
-        assertEquals("La tiene a cargo Dr. otro", othersNoReassign.claimReason)
-        // La tiene otro y puedo reasignar: habilitado, confirma con su nombre.
-        val othersReassign = flow(refs(owner = "otro", canClaim = true, canReassign = true))
-        assertNull(othersReassign.claimReason)
-        assertEquals("Dr. otro", othersReassign.confirmOwner)
-
-        // Especialista derivado sin permiso de tomar: «☑️ Marcar revisado» directo, sin «🙋 Revisar».
+        // Especialista derivado sin permiso de tomar casos: ve «🙋 Revisar» (ya no marca directo).
         val specialist = flow(refs(derivados = listOf("yo"), owner = "otro"))
-        assertFalse(specialist.showClaim)
-        assertTrue(specialist.showMark)
-        assertNull(specialist.markReason)
-        // Y después de marcar (ya no está en derivados): solo la etiqueta.
-        val specialistDone = flow(refs(owner = "otro", reviewedAt = t11))
-        assertTrue(specialistDone.reviewedOnce)
-        assertFalse(specialistDone.showClaim)
+        assertTrue(specialist.showStart)
+        assertNull(specialist.startReason)
+        assertFalse(specialist.showMark)
+        val specialistReviewing = flow(refs(derivados = listOf("yo"), owner = "otro", startedAt = t10))
+        assertTrue(specialistReviewing.showMark)
+        assertFalse(specialistReviewing.showStart)
+        // Ya marcado (salió de derivados) y sin permiso: solo la etiqueta.
+        val specialistDone = flow(refs(owner = "otro", startedAt = t10, reviewedAt = t11))
+        assertFalse(specialistDone.showStart)
         assertFalse(specialistDone.showMark)
         assertEquals(CaseReview.Badge.Reviewed, specialistDone.badge)
-        // Derivada otra vez tras haberla marcado: con «Marcar revisado» a la vista no hay «✓ Revisado».
-        val specialistAgain = flow(refs(derivados = listOf("yo"), owner = "otro", reviewedAt = t11))
-        assertTrue(specialistAgain.showMark)
-        assertNull(specialistAgain.badge)
 
         // Sin nada: ni permiso ni derivación, nada se ve.
         val nothing = flow(refs())
-        assertFalse(nothing.showClaim)
+        assertFalse(nothing.showStart)
         assertFalse(nothing.showMark)
-        assertFalse(nothing.reviewedOnce)
         assertNull(nothing.badge)
 
         // Motivos que bloquean los dos botones, en orden.
-        val r = refs(owner = "yo", canClaim = true, claimedAt = t10)
+        val r = refs(canClaim = true, startedAt = t10)
         assertEquals(CaseReview.NO_EPISODE, flow(r, episode = null).markReason)
         assertEquals(CaseReview.NOT_ACTIVE, flow(r, active = false).markReason)
         assertEquals(CaseReview.LOADING, flow(r, status = null).markReason)
         assertEquals(CaseReview.DISCHARGED, flow(r, status = "alta").markReason)
-        assertEquals(CaseReview.NOT_ACTIVE, flow(refs(owner = "otro", canClaim = true), active = false).claimReason)
-        assertEquals(CaseReview.DISCHARGED, flow(refs(canClaim = true), status = "alta").claimReason)
+        assertEquals(CaseReview.NO_EPISODE, flow(refs(canClaim = true), episode = null).startReason)
+        assertEquals(CaseReview.NOT_ACTIVE, flow(refs(canClaim = true), active = false).startReason)
+        assertEquals(CaseReview.LOADING, flow(refs(canClaim = true), status = null).startReason)
+        assertEquals(CaseReview.DISCHARGED, flow(refs(canClaim = true), status = "alta").startReason)
     }
 
     @Test

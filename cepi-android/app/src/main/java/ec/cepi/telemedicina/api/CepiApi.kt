@@ -275,6 +275,13 @@ class CepiApi(val cliente: ApiClient) {
         cliente.post<Uno<ClaimResult>>("/api/entities/$episode/claim", claimBody(status)).data
 
     /**
+     * «🙋 Revisar» (PAPER §38.6): solo anota «En revisión por X.» en el chatter. No cambia el
+     * responsable, ni el estado, ni las revisiones de otros. Sin sí/no.
+     */
+    suspend fun startReview(episode: String): StartReviewResult =
+        cliente.post<Uno<StartReviewResult>>("/api/entities/$episode/start_review", buildJsonObject { }).data
+
+    /**
      * «Revisado» (PAPER §38.1): cierra solo la revisión abierta de quien llama; los demás
      * revisores siguen pendientes. Acción explícita: sin sí/no. Sin revisión propia abierta
      * responde ok con `cleared = 0`.

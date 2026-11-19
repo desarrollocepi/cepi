@@ -266,25 +266,26 @@ struct Derivaciones: Decodable, Sendable {
     }
 }
 
-/// `my_review` (PAPER §38.5): la última vez que quien consulta tomó la consulta (`claim`) y la
-/// última que marcó «Revisado». Fechas ISO; un servidor anterior no lo manda.
+/// `my_review` (PAPER §38.6): la última vez que quien consulta empezó a revisar
+/// (`start_review`) y la última que marcó «Revisado». Fechas ISO; un servidor anterior no lo
+/// manda.
 struct MyReview: Decodable, Sendable, Hashable {
-    let claimedAt: String?
+    let startedAt: String?
     let reviewedAt: String?
 
-    init(claimedAt: String? = nil, reviewedAt: String? = nil) {
-        self.claimedAt = claimedAt
+    init(startedAt: String? = nil, reviewedAt: String? = nil) {
+        self.startedAt = startedAt
         self.reviewedAt = reviewedAt
     }
 
     enum CodingKeys: String, CodingKey {
-        case claimedAt = "claimed_at"
+        case startedAt = "started_at"
         case reviewedAt = "reviewed_at"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        claimedAt = try c.decodeIfPresent(String.self, forKey: .claimedAt)
+        startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
         reviewedAt = try c.decodeIfPresent(String.self, forKey: .reviewedAt)
     }
 }
@@ -317,63 +318,58 @@ struct ReviewCompleteResult: Decodable, Sendable {
     }
 }
 
-/// El flujo de revisión en tres pasos (PAPER §38.5). Copia `flujo` de IntakeChat.vue:
-///   1. «🙋 Revisar» toma el paciente (`claim`) y aparece «☑️ Marcar revisado».
+/// El flujo de revisión (PAPER §38.5, §38.6). Copia `flujo` de IntakeChat.vue:
+///   1. «🙋 Revisar» anota que empezaste a revisar (`start_review`) y aparece «☑️ Marcar
+///      revisado». No le quita la consulta ni la derivación a nadie: varios médicos revisan
+///      a la vez.
 ///   2. «☑️ Marcar revisado» (`complete_review {only_mine}`) deja la etiqueta «✓ Revisado» y
 ///      vuelve «🙋 Revisar» para otra ronda.
-///   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
-/// Estás «revisando» si la consulta es tuya y la tomaste después de tu última marca.
+///   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta;
+///      mientras se ve «Marcar revisado», no se muestra.
+/// Estás «revisando» si empezaste después de tu última marca.
 enum ReviewStatus {
     struct Flow: Equatable {
         /// Marqué «Revisado» al menos una vez en esta consulta (`reviewed_at`).
         let reviewedOnce: Bool
-        /// La tomé y todavía no la marqué: se ve «☑️ Marcar revisado».
+        /// Empecé a revisar y todavía no marqué: se ve «☑️ Marcar revisado».
         let inReview: Bool
-        /// «🙋 Revisar» se muestra (sin permiso de tomar casos, no: excepción por permiso).
+        /// «🙋 Revisar» se muestra: quien puede tomar casos o a quien se lo derivaron
+        /// (excepción por permisos).
         let showReview: Bool
-        /// Por qué «🙋 Revisar» está gris; nil = habilitado.
-        let reviewBlockReason: String?
         /// «☑️ Marcar revisado» se muestra.
         let showMark: Bool
-        /// Por qué «☑️ Marcar revisado» está gris; nil = habilitado.
-        let markBlockReason: String?
+        /// Por qué los dos botones están grises; nil = habilitados.
+        let blockReason: String?
 
-        /// La etiqueta «✓ Revisado» (texto, no botón): no se ve junto con «☑️ Marcar revisado».
-        /// Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
-        var showReviewedLabel: Bool { !inReview && reviewedOnce && !showMark }
+        /// La etiqueta «✓ Revisado» (texto, no botón), a la derecha de los botones: no se ve
+        /// junto con «☑️ Marcar revisado».
+        var showReviewedLabel: Bool { reviewedOnce && !showMark }
     }
 
     static let noEpisodeReason = "Elige un paciente con una consulta abierta"
     static let previousEpisodeReason = "Es una consulta anterior: solo se revisa la vigente"
     static let loadingReason = "Cargando el estado de la consulta…"
     static let dischargedReason = "El paciente está de alta: si vuelve, abre una consulta nueva"
-    static let reviewHint = "Tomar el paciente para revisarlo"
+    static let reviewHint = "Empezar a revisar: no le quita la consulta ni la derivación a nadie"
     static let markHint = "Marcar que ya lo revisaste"
 
-    /// El nombre de quien la tiene a cargo, como `nombreResp` de la web.
-    static func ownerName(_ responsable: Responsable?) -> String {
-        responsable?.nombre ?? responsable?.email ?? "otro médico"
-    }
-
-    /// Revisando = la consulta es mía y la tomé después de mi última marca (o nunca marqué).
-    /// Compara las fechas, no los textos.
-    static func isReviewing(isMine: Bool, myReview: MyReview) -> Bool {
-        guard isMine, let claimed = myReview.claimedAt else { return false }
+    /// Revisando = empecé después de mi última marca (o nunca marqué). Compara las fechas, no
+    /// los textos.
+    static func isReviewing(_ myReview: MyReview) -> Bool {
+        guard let started = myReview.startedAt else { return false }
         guard let reviewed = myReview.reviewedAt else { return true }
-        guard let claimedDate = Fechas.iso(claimed), let reviewedDate = Fechas.iso(reviewed) else { return false }
-        return claimedDate > reviewedDate
+        guard let startedDate = Fechas.iso(started), let reviewedDate = Fechas.iso(reviewed) else { return false }
+        return startedDate > reviewedDate
     }
 
     /// `viewingActive`: la consulta a la vista es la vigente. `episodeLoaded`: llegó el
     /// registro del episodio; `episodeStatus`, su `estado`.
     static func flow(
         episode: String?, viewingActive: Bool, episodeLoaded: Bool, episodeStatus: String?,
-        derivados: [Derivado], responsable: Responsable?, myReview: MyReview,
-        canClaim: Bool, canReassign: Bool, userId: String?
+        derivados: [Derivado], myReview: MyReview, canClaim: Bool, userId: String?
     ) -> Flow {
-        let isMine = responsable != nil && responsable?.usuario == userId
         let open = userId.map { me in derivados.contains { $0.usuario == me } } ?? false
-        let reviewing = isReviewing(isMine: isMine, myReview: myReview)
+        let reviewing = isReviewing(myReview)
 
         let reason: String?
         if episode == nil {
@@ -387,25 +383,13 @@ enum ReviewStatus {
         } else {
             reason = nil
         }
-        var reviewReason = reason
-        if reviewReason == nil, responsable != nil, !isMine, !canReassign {
-            reviewReason = "La tiene a cargo \(ownerName(responsable))"
-        }
         return Flow(
             reviewedOnce: myReview.reviewedAt != nil,
             inReview: reviewing,
-            showReview: canClaim && !reviewing,
-            reviewBlockReason: reviewReason,
-            // Sin permiso de tomar casos (un especialista al que se lo derivaron) marca directo.
-            showMark: reviewing || (open && !canClaim),
-            markBlockReason: reason
+            showReview: (canClaim || open) && !reviewing,
+            showMark: reviewing,
+            blockReason: reason
         )
-    }
-
-    /// Al tocar «🙋 Revisar»: si la tiene otro, se confirma con este texto.
-    static func confirmation(responsable: Responsable?, userId: String?) -> String? {
-        guard let responsable, responsable.usuario != userId else { return nil }
-        return "\(ownerName(responsable)) la tiene a cargo. ¿La revisas tú?"
     }
 
     /// «Dra. B · pendiente, Dr. A ✓ revisado».
@@ -415,6 +399,20 @@ enum ReviewStatus {
         return (pending + done).joined(separator: ", ")
     }
 }
+
+/// La respuesta de `start_review` (PAPER §38.6).
+struct ReviewStartResult: Decodable, Sendable {
+    let entityId: String?
+    let startedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case entityId = "entity_id"
+        case startedAt = "started_at"
+    }
+}
+
+/// Cuerpo vacío `{}` de `start_review`.
+struct EmptyBody: Encodable, Sendable {}
 
 /// «Revisar» (PAPER §38.3): `POST /api/entities/:id/claim`. Sin `status_value` el cuerpo
 /// sale `{}` (la síntesis de `Encodable` omite los opcionales en nil).

@@ -36,8 +36,6 @@ struct PacienteView: View {
     @State private var dischargeDone = false
     /// «🙋 Revisar» o «☑️ Marcar revisado» en vuelo (PAPER §38.5): los dos quedan grises.
     @State private var reviewing = false
-    /// La tiene otro: el texto del diálogo de confirmación de «🙋 Revisar».
-    @State private var reviewConfirmation: String?
     /// Un fallo de «🙋 Revisar» o de «☑️ Marcar revisado», con su título.
     @State private var reviewError: ReviewError?
 
@@ -108,21 +106,21 @@ struct PacienteView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Flujo de revisión (PAPER §38.5): «🙋 Revisar» toma el paciente y aparece
-                    // «☑️ Marcar revisado»; al marcarlo queda la etiqueta «✓ Revisado» y vuelve
-                    // «🙋 Revisar». Sin permiso de tomar casos, «🙋 Revisar» no se muestra.
+                    // Flujo de revisión (PAPER §38.5, §38.6): «🙋 Revisar» empieza tu revisión
+                    // (sin quitarle la consulta a nadie) y aparece «☑️ Marcar revisado»; al
+                    // marcarlo vuelve «🙋 Revisar» y, a la derecha, la etiqueta «✓ Revisado».
                     if reviewFlow.showReview {
                         Button {
-                            requestReview()
+                            Task { await startReview() }
                         } label: {
                             Text(reviewing ? "Guardando…" : "🙋 Revisar")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .tint(Marca.revisar)
-                        .disabled(reviewing || modelo.ocupado || reviewFlow.reviewBlockReason != nil)
-                        .help(reviewFlow.reviewBlockReason ?? ReviewStatus.reviewHint)
-                        .accessibilityHint(reviewFlow.reviewBlockReason ?? ReviewStatus.reviewHint)
+                        .disabled(reviewing || modelo.ocupado || reviewFlow.blockReason != nil)
+                        .help(reviewFlow.blockReason ?? ReviewStatus.reviewHint)
+                        .accessibilityHint(reviewFlow.blockReason ?? ReviewStatus.reviewHint)
                     }
                     if reviewFlow.showMark {
                         Button {
@@ -133,9 +131,9 @@ struct PacienteView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .tint(Marca.revisar)
-                        .disabled(reviewing || modelo.ocupado || reviewFlow.markBlockReason != nil)
-                        .help(reviewFlow.markBlockReason ?? ReviewStatus.markHint)
-                        .accessibilityHint(reviewFlow.markBlockReason ?? ReviewStatus.markHint)
+                        .disabled(reviewing || modelo.ocupado || reviewFlow.blockReason != nil)
+                        .help(reviewFlow.blockReason ?? ReviewStatus.markHint)
+                        .accessibilityHint(reviewFlow.blockReason ?? ReviewStatus.markHint)
                     }
                     // La etiqueta va a la derecha, después de los botones.
                     if reviewFlow.showReviewedLabel {
@@ -269,15 +267,6 @@ struct PacienteView: View {
         } message: {
             Text(reviewError?.message ?? "")
         }
-        .confirmationDialog("Revisar el caso", isPresented: Binding(
-            get: { reviewConfirmation != nil },
-            set: { if !$0 { reviewConfirmation = nil } }
-        ), titleVisibility: .visible) {
-            Button("La reviso") { Task { await takeForReview() } }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text(reviewConfirmation ?? "")
-        }
         .alert("Interconsulta respondida", isPresented: Binding(
             get: { answerConfirmation != nil },
             set: { if !$0 { answerConfirmation = nil } }
@@ -338,8 +327,8 @@ struct PacienteView: View {
         )
     }
 
-    /// El flujo de revisión (PAPER §38.5). El estado de la consulta sale del registro del
-    /// episodio.
+    /// El flujo de revisión (PAPER §38.5, §38.6). El estado de la consulta sale del registro
+    /// del episodio.
     private var reviewFlow: ReviewStatus.Flow {
         ReviewStatus.flow(
             episode: modelo.episodioActivo,
@@ -347,10 +336,8 @@ struct PacienteView: View {
             episodeLoaded: episodeRecord != nil,
             episodeStatus: episodeRecord?["estado"],
             derivados: modelo.derivados,
-            responsable: modelo.responsable,
             myReview: modelo.myReview,
             canClaim: modelo.canClaim,
-            canReassign: modelo.canReassign,
             userId: sesion.usuario?.id
         )
     }
@@ -361,39 +348,26 @@ struct PacienteView: View {
         return "Lo revisaste el \(fecha.formatted(date: .numeric, time: .shortened))"
     }
 
-    /// Si la tiene otro, primero el diálogo; si no, la toma directo.
-    private func requestReview() {
-        guard modelo.episodioActivo != nil, reviewFlow.reviewBlockReason == nil, !reviewing else { return }
-        if let message = ReviewStatus.confirmation(responsable: modelo.responsable, userId: sesion.usuario?.id) {
-            reviewConfirmation = message
-        } else {
-            Task { await takeForReview() }
-        }
-    }
-
-    /// «🙋 Revisar»: toma el paciente (`enviada` pasa a `en_triage`) y relee la franja, el
-    /// registro del episodio y la lista («a cargo: tú»). Aparece «☑️ Marcar revisado».
-    private func takeForReview() async {
-        guard let episodio = modelo.episodioActivo, reviewFlow.reviewBlockReason == nil, !reviewing else { return }
+    /// «🙋 Revisar» (PAPER §38.6): anota que empecé a revisar (`start_review`), sin
+    /// confirmación ni cambiar el responsable, el estado o las derivaciones de otros. Relee la
+    /// franja y la lista (entra en «Mis pacientes»). Aparece «☑️ Marcar revisado».
+    private func startReview() async {
+        guard let episodio = modelo.episodioActivo, reviewFlow.blockReason == nil, !reviewing else { return }
         reviewing = true
         defer { reviewing = false }
         do {
-            try await sesion.api.claim(
-                episode: episodio, ClaimStatus.request(episodeStatus: episodeRecord?["estado"])
-            )
+            try await sesion.api.startReview(episode: episodio)
         } catch {
-            reviewError = ReviewError(title: "No se pudo tomar el paciente", message: error.localizedDescription)
+            reviewError = ReviewError(title: "No se pudo empezar la revisión", message: error.localizedDescription)
             return
         }
         await modelo.releerDerivaciones(api: sesion.api)
-        await loadEpisodeRecord()
         await onListChanged()
     }
 
-    /// «☑️ Marcar revisado»: apaga mi «revisar» y deja la etiqueta «✓ Revisado»; la consulta
-    /// sigue a mi cargo. Relee la franja y la lista (sale de «revisar»).
+    /// «☑️ Marcar revisado»: apaga mi «revisar» y deja la etiqueta «✓ Revisado». Relee la franja y la lista (sale de «revisar»).
     private func markReviewed() async {
-        guard let episodio = modelo.episodioActivo, reviewFlow.markBlockReason == nil, !reviewing else { return }
+        guard let episodio = modelo.episodioActivo, reviewFlow.blockReason == nil, !reviewing else { return }
         reviewing = true
         defer { reviewing = false }
         do {
@@ -461,21 +435,21 @@ struct PacienteView: View {
             // Los mismos botones de la franja (PAPER §38.5).
             if reviewFlow.showReview {
                 Button {
-                    requestReview()
+                    Task { await startReview() }
                 } label: {
                     Text("🙋 Revisar")
-                    Text(reviewFlow.reviewBlockReason ?? ReviewStatus.reviewHint)
+                    Text(reviewFlow.blockReason ?? ReviewStatus.reviewHint)
                 }
-                .disabled(reviewing || modelo.ocupado || reviewFlow.reviewBlockReason != nil)
+                .disabled(reviewing || modelo.ocupado || reviewFlow.blockReason != nil)
             }
             if reviewFlow.showMark {
                 Button {
                     Task { await markReviewed() }
                 } label: {
                     Text("☑️ Marcar revisado")
-                    Text(reviewFlow.markBlockReason ?? ReviewStatus.markHint)
+                    Text(reviewFlow.blockReason ?? ReviewStatus.markHint)
                 }
-                .disabled(reviewing || modelo.ocupado || reviewFlow.markBlockReason != nil)
+                .disabled(reviewing || modelo.ocupado || reviewFlow.blockReason != nil)
             }
             Button {
                 showDischarge = true

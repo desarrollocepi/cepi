@@ -277,20 +277,19 @@ struct ContratoTests {
         #expect(r.revisados.first?.reviewedAt == "2026-11-19T11:00:00.000Z")
         #expect(ReviewStatus.summary(derivados: r.derivados, revisados: r.revisados)
             == "Dra. B · pendiente, Dr. A ✓ revisado")
-        // Con el JSON real, un especialista sin permiso de tomar casos (PAPER §38.5): u2 tiene la
-        // revisión abierta y marca directo; u1 no tiene nada abierto.
+        // Con el JSON real, un especialista sin permiso de tomar casos (PAPER §38.6): a u2 se lo
+        // derivaron y ve «🙋 Revisar»; u1 no tiene nada abierto y no ve botones.
         func flujo(_ userId: String?) -> ReviewStatus.Flow {
             ReviewStatus.flow(
                 episode: "e1", viewingActive: true, episodeLoaded: true, episodeStatus: "derivada",
-                derivados: r.derivados, responsable: nil, myReview: r.myReview,
-                canClaim: false, canReassign: false, userId: userId
+                derivados: r.derivados, myReview: r.myReview, canClaim: false, userId: userId
             )
         }
-        #expect(flujo("u2").showMark)
-        #expect(flujo("u2").markBlockReason == nil)
-        #expect(!flujo("u2").showReview)
-        #expect(!flujo("u1").showMark)
-        #expect(!flujo(nil).showMark)
+        #expect(flujo("u2").showReview)
+        #expect(flujo("u2").blockReason == nil)
+        #expect(!flujo("u2").showMark)
+        #expect(!flujo("u1").showReview)
+        #expect(!flujo(nil).showReview)
 
         // Servidor anterior a §38: sin `revisados`.
         let viejo = try decodificar(Derivaciones.self, """
@@ -335,17 +334,18 @@ struct ContratoTests {
         #expect(!viejo.canReassign)
         #expect(viejo.myReview == MyReview())
 
-        // `my_review` (PAPER §38.5): en qué paso está quien consulta.
+        // `my_review` (PAPER §38.6): en qué paso está quien consulta.
         let conPaso = try decodificar(Derivaciones.self, """
-        {"ok":true,"entity_id":"e1","derivados":[],"responsable":{"user_id":"u1","name":"Yo"},
-         "my_review":{"claimed_at":"2026-11-19T12:00:00.000Z","reviewed_at":"2026-11-19T11:00:00.000Z"}}
+        {"ok":true,"entity_id":"e1","derivados":[],"responsable":{"user_id":"u3","name":"Dra. C"},
+         "my_review":{"started_at":"2026-11-19T12:00:00.000Z","reviewed_at":"2026-11-19T11:00:00.000Z"}}
         """)
-        #expect(conPaso.myReview.claimedAt == "2026-11-19T12:00:00.000Z")
+        #expect(conPaso.myReview.startedAt == "2026-11-19T12:00:00.000Z")
         #expect(conPaso.myReview.reviewedAt == "2026-11-19T11:00:00.000Z")
+        #expect(ReviewStatus.isReviewing(conPaso.myReview))
         let sinMarca = try decodificar(Derivaciones.self, """
-        {"ok":true,"entity_id":"e1","derivados":[],"my_review":{"claimed_at":null,"reviewed_at":null}}
+        {"ok":true,"entity_id":"e1","derivados":[],"my_review":{"started_at":null,"reviewed_at":null}}
         """)
-        #expect(sinMarca.myReview.claimedAt == nil)
+        #expect(sinMarca.myReview.startedAt == nil)
         #expect(sinMarca.myReview.reviewedAt == nil)
 
         #expect(ClaimStatus.ownerLine(responsable: r.responsable, userId: "u3") == "A cargo: tú")
@@ -364,99 +364,88 @@ struct ContratoTests {
         #expect(tomada.newStatus == "en_triage")
     }
 
-    /// El flujo de revisión en tres pasos (PAPER §38.5), como `flujo` de IntakeChat.vue. Quien
-    /// mira es u1.
-    @Test func flujoDeRevision() {
-        let mio = Responsable(usuario: "u1", nombre: "Yo", email: nil)
-        let otra = Responsable(usuario: "u3", nombre: "Dra. C", email: nil)
+    /// El flujo de revisión (PAPER §38.5, §38.6), como `flujo` de IntakeChat.vue. Quien mira es
+    /// u1. El responsable no entra: revisar no le quita la consulta ni la derivación a nadie.
+    @Test func flujoDeRevision() throws {
         let abierta = [Derivado(usuario: "u1", nombre: "Yo", email: nil)]
+        let deOtro = [Derivado(usuario: "u3", nombre: "Dra. C", email: nil)]
         func flujo(
             episode: String? = "e1", viewingActive: Bool = true, loaded: Bool = true, status: String? = "derivada",
-            derivados: [Derivado] = [], responsable: Responsable? = nil, myReview: MyReview = MyReview(),
-            canClaim: Bool = true, canReassign: Bool = false
+            derivados: [Derivado] = [], myReview: MyReview = MyReview(), canClaim: Bool = true
         ) -> ReviewStatus.Flow {
             ReviewStatus.flow(
                 episode: episode, viewingActive: viewingActive, episodeLoaded: loaded, episodeStatus: status,
-                derivados: derivados, responsable: responsable, myReview: myReview,
-                canClaim: canClaim, canReassign: canReassign, userId: "u1"
+                derivados: derivados, myReview: myReview, canClaim: canClaim, userId: "u1"
             )
         }
 
-        // Paso 0: sin responsable y nunca revisado: solo «🙋 Revisar», habilitado.
+        // Inicio: solo «🙋 Revisar», habilitado y sin confirmación (no hay diálogo en el flujo).
         let inicio = flujo()
         #expect(inicio == ReviewStatus.Flow(
-            reviewedOnce: false, inReview: false, showReview: true, reviewBlockReason: nil,
-            showMark: false, markBlockReason: nil
+            reviewedOnce: false, inReview: false, showReview: true, showMark: false, blockReason: nil
         ))
         #expect(!inicio.showReviewedLabel)
-        // Paso 1: la tomé (es mía, `claimed_at` y sin marca): solo «☑️ Marcar revisado».
-        let tomada = flujo(responsable: mio, myReview: MyReview(claimedAt: "2026-11-19T10:00:00.000Z"))
-        #expect(!tomada.showReview)
-        #expect(tomada.showMark)
-        #expect(tomada.markBlockReason == nil)
-        #expect(!tomada.reviewedOnce)
-        #expect(tomada.inReview)
-        #expect(!tomada.showReviewedLabel)
-        // Paso 2: marqué después de tomarla: etiqueta y vuelve «🙋 Revisar» (sigue siendo mía).
-        let marcada = flujo(responsable: mio, myReview: MyReview(
-            claimedAt: "2026-11-19T10:00:00.000Z", reviewedAt: "2026-11-19T11:00:00.000Z"
+        // Paso 1: empecé (`started_at`, sin marca): solo «☑️ Marcar revisado», sin etiqueta.
+        let empezada = flujo(myReview: MyReview(startedAt: "2026-11-19T10:00:00.000Z"))
+        #expect(empezada.inReview)
+        #expect(!empezada.showReview)
+        #expect(empezada.showMark)
+        #expect(!empezada.showReviewedLabel)
+        // Paso 2: marqué después: vuelve «🙋 Revisar» y, a la derecha, «✓ Revisado».
+        let marcada = flujo(myReview: MyReview(
+            startedAt: "2026-11-19T10:00:00.000Z", reviewedAt: "2026-11-19T11:00:00.000Z"
         ))
-        #expect(marcada.reviewedOnce)
         #expect(!marcada.inReview)
-        #expect(marcada.showReviewedLabel)       // «✓ Revisado»
         #expect(marcada.showReview)
-        #expect(marcada.reviewBlockReason == nil)
         #expect(!marcada.showMark)
-        // Paso 3: la vuelvo a tomar: la etiqueta queda y vuelve «☑️ Marcar revisado».
-        let otraRonda = flujo(responsable: mio, myReview: MyReview(
-            claimedAt: "2026-11-19T12:00:00Z", reviewedAt: "2026-11-19T11:00:00.000Z"
+        #expect(marcada.showReviewedLabel)
+        // Paso 3: otra ronda: «☑️ Marcar revisado» otra vez y la etiqueta se oculta mientras.
+        let otraRonda = flujo(myReview: MyReview(
+            startedAt: "2026-11-19T12:00:00Z", reviewedAt: "2026-11-19T11:00:00.000Z"
         ))
         #expect(otraRonda.reviewedOnce)
-        #expect(otraRonda.inReview)              // otra vez en revisión: sin etiqueta
-        #expect(!otraRonda.showReviewedLabel)
-        #expect(!otraRonda.showReview)
         #expect(otraRonda.showMark)
-        // Derivada a mí sin permiso de tomar, después de haberla marcado: con «☑️ Marcar revisado» a
-        // la vista no se muestra «✓ Revisado».
-        let derivadaOtraVez = flujo(
-            derivados: [Derivado(usuario: "u1", nombre: "Yo", email: nil)],
-            myReview: MyReview(reviewedAt: "2026-11-19T11:00:00.000Z"), canClaim: false
-        )
-        #expect(derivadaOtraVez.showMark)
-        #expect(!derivadaOtraVez.showReviewedLabel)
+        #expect(!otraRonda.showReview)
+        #expect(!otraRonda.showReviewedLabel)
         // Se comparan fechas, no textos: con y sin milisegundos.
-        #expect(ReviewStatus.isReviewing(isMine: true, myReview: MyReview(
-            claimedAt: "2026-11-19T11:00:00.500Z", reviewedAt: "2026-11-19T11:00:00Z"
+        #expect(ReviewStatus.isReviewing(MyReview(
+            startedAt: "2026-11-19T11:00:00.500Z", reviewedAt: "2026-11-19T11:00:00Z"
         )))
-        #expect(!ReviewStatus.isReviewing(isMine: false, myReview: MyReview(claimedAt: "2026-11-19T12:00:00Z")))
+        #expect(!ReviewStatus.isReviewing(MyReview()))
+        #expect(!ReviewStatus.isReviewing(MyReview(reviewedAt: "2026-11-19T11:00:00Z")))
 
-        // La tiene otro: sin reasignar, gris; con reasignar, habilitado y confirma.
-        #expect(flujo(responsable: otra).reviewBlockReason == "La tiene a cargo Dra. C")
-        #expect(flujo(responsable: otra).showReview)
-        #expect(flujo(responsable: otra, canReassign: true).reviewBlockReason == nil)
-        #expect(ReviewStatus.confirmation(responsable: otra, userId: "u1") == "Dra. C la tiene a cargo. ¿La revisas tú?")
-        #expect(ReviewStatus.confirmation(responsable: mio, userId: "u1") == nil)
-        #expect(ReviewStatus.confirmation(responsable: nil, userId: "u1") == nil)
+        // La consulta de otro médico, o derivada a otro: «🙋 Revisar» habilitado igual (ya no
+        // existe «La tiene a cargo X») y, al empezar, la derivación del otro sigue ahí.
+        #expect(flujo(derivados: deOtro).showReview)
+        #expect(flujo(derivados: deOtro).blockReason == nil)
+        #expect(flujo(derivados: deOtro, myReview: MyReview(startedAt: "2026-11-19T10:00:00Z")).showMark)
 
-        // Especialista derivado sin permiso de tomar casos: marca directo, sin «🙋 Revisar».
-        let especialista = flujo(derivados: abierta, responsable: otra, canClaim: false)
-        #expect(!especialista.showReview)
-        #expect(especialista.showMark)
-        #expect(especialista.markBlockReason == nil)
+        // Especialista derivado sin permiso de tomar casos: ve «🙋 Revisar» (antes marcaba directo).
+        let especialista = flujo(derivados: abierta, canClaim: false)
+        #expect(especialista.showReview)
+        #expect(!especialista.showMark)
+        #expect(especialista.blockReason == nil)
         // Sin nada (sin derivación ni permiso): ningún botón.
         let nada = flujo(canClaim: false)
         #expect(!nada.showReview)
         #expect(!nada.showMark)
-        #expect(!nada.reviewedOnce)
+        // Pero si ya empezó a revisar, «Marcar revisado» se ve igual.
+        #expect(flujo(myReview: MyReview(startedAt: "2026-11-19T10:00:00Z"), canClaim: false).showMark)
 
-        // El motivo común bloquea los dos, en orden.
-        #expect(flujo(episode: nil, viewingActive: false).markBlockReason == ReviewStatus.noEpisodeReason)
-        #expect(flujo(viewingActive: false, loaded: false).reviewBlockReason == ReviewStatus.previousEpisodeReason)
-        #expect(flujo(loaded: false, status: nil, responsable: otra).reviewBlockReason == ReviewStatus.loadingReason)
-        #expect(flujo(status: "alta", responsable: mio, myReview: MyReview(claimedAt: "2026-11-19T10:00:00Z"))
-            .markBlockReason == ReviewStatus.dischargedReason)
-        // Sin nombre ni correo, como `nombreResp` de la web.
-        #expect(ReviewStatus.ownerName(Responsable(usuario: "u9", nombre: nil, email: nil)) == "otro médico")
+        // El motivo bloquea los dos, en orden.
+        #expect(flujo(episode: nil, viewingActive: false).blockReason == ReviewStatus.noEpisodeReason)
+        #expect(flujo(viewingActive: false, loaded: false).blockReason == ReviewStatus.previousEpisodeReason)
+        #expect(flujo(loaded: false, status: nil).blockReason == ReviewStatus.loadingReason)
+        #expect(flujo(status: "alta", myReview: MyReview(startedAt: "2026-11-19T10:00:00Z"))
+            .blockReason == ReviewStatus.dischargedReason)
+
+        // POST start_review: cuerpo `{}` y la respuesta.
+        let cuerpo = try JSONEncoder().encode(EmptyBody())
+        #expect(String(decoding: cuerpo, as: UTF8.self) == "{}")
+        let empezo = try decodificar(Uno<ReviewStartResult>.self, """
+        {"ok":true,"data":{"entity_id":"e1","started_at":"2026-11-19T10:00:00.000Z"}}
+        """).data
+        #expect(empezo.startedAt == "2026-11-19T10:00:00.000Z")
     }
 
     @Test func urlCodificaElMas() {

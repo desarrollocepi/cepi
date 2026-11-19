@@ -16,7 +16,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -193,9 +192,7 @@ fun PacienteAbierto(
         }
     }
     var reviewing by remember { mutableStateOf(false) }
-    // A quién se le quita la consulta, mientras se pide confirmación; null = sin diálogo.
-    var reviewConfirmOwner by remember { mutableStateOf<String?>(null) }
-    // El flujo de revisión (PAPER §38.5), con el estado del registro del episodio activo.
+    // El flujo de revisión (PAPER §38.5, §38.6), con el estado del registro del episodio activo.
     val reviewFlow = CaseReview.flow(
         referrals = modelo.referrals,
         userId = entorno.sesion.usuario?.id,
@@ -205,39 +202,30 @@ fun PacienteAbierto(
     )
 
     /**
-     * Paso 1: «🙋 Revisar» toma el paciente. Después se releen la franja y el registro, y la lista
-     * de pacientes («a cargo: tú»); aparece «☑️ Marcar revisado».
+     * Paso 1: «🙋 Revisar» empieza mi revisión, sin confirmación: no le quita la consulta ni la
+     * derivación a nadie. Después se relee la franja y la lista (entra en «Mis pacientes»).
      */
-    fun claimForReview() {
+    fun startReview() {
         val episode = modelo.episodioActivo ?: return
-        if (reviewing || reviewFlow.claimReason != null) return
+        if (reviewing || reviewFlow.startReason != null) return
         reviewing = true
-        val status = activeEpisode?.takeIf { it.id == episode }?.get("estado")
         alcance.launch {
             try {
-                api.claimConsultation(episode, status)
+                api.startReview(episode)
                 modelo.releerDerivaciones()
-                episodeReload++
                 onConsultationAnswered()
-                snackbar.showSnackbar(CaseReview.CLAIMED)
+                snackbar.showSnackbar(CaseReview.STARTED)
             } catch (e: ApiError) {
-                snackbar.showSnackbar("No se pudo tomar el paciente: ${e.mensaje}")
+                snackbar.showSnackbar("No se pudo empezar la revisión: ${e.mensaje}")
             } finally {
                 reviewing = false
             }
         }
     }
 
-    /** Tocar «🙋 Revisar»: si la tiene otro, primero confirma. */
-    fun requestClaim() {
-        if (reviewing || reviewFlow.claimReason != null) return
-        val owner = reviewFlow.confirmOwner
-        if (owner != null) reviewConfirmOwner = owner else claimForReview()
-    }
-
     /**
-     * Paso 2: «☑️ Marcar revisado» apaga mi «revisar» y deja la etiqueta «✓ Revisado». Sigue a mi
-     * cargo. Después se relee la franja y la lista (el paciente sale de «revisar»).
+     * Paso 2: «☑️ Marcar revisado» apaga mi «revisar» y deja la etiqueta «✓ Revisado». Después se
+     * relee la franja y la lista (el paciente sale de «revisar»).
      */
     fun markReviewed() {
         val episode = modelo.episodioActivo ?: return
@@ -330,7 +318,7 @@ fun PacienteAbierto(
                             onDischarge = { discharging = true },
                             reviewFlow = reviewFlow,
                             reviewing = reviewing,
-                            onClaim = { requestClaim() },
+                            onStart = { startReview() },
                             onMarkReviewed = { markReviewed() },
                         )
                     }
@@ -357,7 +345,7 @@ fun PacienteAbierto(
                     myReview = modelo.referrals.myReview,
                     reviewing = reviewing,
                     onOpenReferral = { derivar = true },
-                    onClaim = { requestClaim() },
+                    onStart = { startReview() },
                     onMarkReviewed = { markReviewed() },
                 )
             }
@@ -433,20 +421,6 @@ fun PacienteAbierto(
             alCerrar = { mostrarSecciones = false },
         )
     }
-    reviewConfirmOwner?.let { owner ->
-        AlertDialog(
-            onDismissRequest = { reviewConfirmOwner = null },
-            title = { Text("Revisar el caso") },
-            text = { Text(CaseReview.confirmQuestion(owner)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    reviewConfirmOwner = null
-                    claimForReview()
-                }) { Text("La reviso") }
-            },
-            dismissButton = { TextButton(onClick = { reviewConfirmOwner = null }) { Text("Cancelar") } },
-        )
-    }
     val episodeToAnswer = activeEpisode
     if (answering && episodeToAnswer != null) {
         ConsultationAnswerSheet(
@@ -518,7 +492,7 @@ private fun Acciones(
     /** «🙋 Revisar» y «☑️ Marcar revisado» (PAPER §38.5). */
     reviewFlow: CaseReview.Flow,
     reviewing: Boolean,
-    onClaim: () -> Unit,
+    onStart: () -> Unit,
     onMarkReviewed: () -> Unit,
 ) {
     val episodios = modelo.episodios
@@ -592,14 +566,14 @@ private fun Acciones(
                 onAnswer()
             },
         )
-        // Sin permiso de tomar casos «🙋 Revisar» no se muestra (excepción por permisos).
-        if (reviewFlow.showClaim) {
+        // Sin permiso de tomar casos ni derivación propia «🙋 Revisar» no se muestra (permisos).
+        if (reviewFlow.showStart) {
             DropdownMenuItem(
-                text = { Explicado("🙋 Revisar", if (reviewing) "Guardando…" else reviewFlow.claimReason) },
-                enabled = reviewFlow.claimReason == null && !reviewing,
+                text = { Explicado("🙋 Revisar", if (reviewing) "Guardando…" else reviewFlow.startReason) },
+                enabled = reviewFlow.startReason == null && !reviewing,
                 onClick = {
                     alCerrar()
-                    onClaim()
+                    onStart()
                 },
             )
         }
@@ -657,9 +631,9 @@ private fun ReviewBadge(text: String, background: Color, textColor: Color, descr
 }
 
 /**
- * La franja de la consulta activa (PAPER §38.5): quién la tiene a cargo, los derivados con su
- * estado (pendiente o ✓ revisado) y, a la derecha, la etiqueta «✓ Revisado» (no es un botón) y
- * «🙋 Revisar» o «☑️ Marcar revisado». Un botón gris lleva su motivo debajo de los nombres.
+ * La franja de la consulta activa (PAPER §38.5, §38.6): quién la tiene a cargo, los derivados
+ * con su estado (pendiente o ✓ revisado) y, a la derecha, «🙋 Revisar» o «☑️ Marcar revisado» y
+ * la etiqueta «✓ Revisado» (no es un botón). Un botón gris lleva su motivo debajo de los nombres.
  */
 @Composable
 private fun ReviewStrip(
@@ -670,7 +644,7 @@ private fun ReviewStrip(
     myReview: MyReview,
     reviewing: Boolean,
     onOpenReferral: () -> Unit,
-    onClaim: () -> Unit,
+    onStart: () -> Unit,
     onMarkReviewed: () -> Unit,
 ) {
     val pendingIds = pending.map { it.usuario }.toSet()
@@ -681,7 +655,7 @@ private fun ReviewStrip(
         emptyList()
     } else {
         listOfNotNull(
-            reviewFlow.claimReason?.takeIf { reviewFlow.showClaim },
+            reviewFlow.startReason?.takeIf { reviewFlow.showStart },
             reviewFlow.markReason?.takeIf { reviewFlow.showMark },
         ).distinct()
     }
@@ -713,13 +687,14 @@ private fun ReviewStrip(
                 }
                 reasons.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = color) }
             }
-            // Sin permiso de tomar casos «🙋 Revisar» no se muestra (excepción por permisos).
-            if (reviewFlow.showClaim) {
+            // Sin permiso de tomar casos ni derivación propia «🙋 Revisar» no se muestra (permisos).
+            if (reviewFlow.showStart) {
                 TextButton(
-                    onClick = onClaim,
-                    enabled = reviewFlow.claimReason == null && !reviewing,
+                    onClick = onStart,
+                    enabled = reviewFlow.startReason == null && !reviewing,
                     modifier = Modifier.semantics {
-                        contentDescription = reviewFlow.claimReason ?: "Tomar el paciente para revisarlo"
+                        contentDescription = reviewFlow.startReason
+                            ?: "Empezar a revisar: no le quita la consulta ni la derivación a nadie"
                     },
                 ) {
                     if (reviewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("🙋 Revisar")

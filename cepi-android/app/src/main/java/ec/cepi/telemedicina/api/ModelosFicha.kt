@@ -229,12 +229,12 @@ data class Derivaciones(
 )
 
 /**
- * `my_review` (PAPER §38.5): la última nota `claim` de quien consulta y su última
+ * `my_review` (PAPER §38.6): la última nota `start_review` de quien consulta y su última
  * `complete_review` con scope `mine`, en ISO 8601. Un servidor viejo no la manda.
  */
 @Serializable
 data class MyReview(
-    @SerialName("claimed_at") val claimedAt: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
     @SerialName("reviewed_at") val reviewedAt: String? = null,
 )
 
@@ -256,6 +256,13 @@ data class ClaimResult(
     @SerialName("new_status") val newStatus: String? = null,
 )
 
+/** `POST /api/entities/:id/start_review`: cuándo quedó anotado «En revisión por X.» (PAPER §38.6). */
+@Serializable
+data class StartReviewResult(
+    @SerialName("entity_id") val entityId: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+)
+
 /** `POST /api/entities/:id/complete_review {only_mine: true}`: cuántas cerró y cuántas quedan. */
 @Serializable
 data class ReviewCompletion(
@@ -265,11 +272,11 @@ data class ReviewCompletion(
 )
 
 /**
- * El flujo de revisión en tres pasos (PAPER §38.5), igual que `flujo` de `IntakeChat.vue`:
- *   1. «🙋 Revisar» toma el paciente (claim) y aparece «☑️ Marcar revisado».
- *   2. «☑️ Marcar revisado» (complete_review only_mine) deja la etiqueta «✓ Revisado» y vuelve
- *      «🙋 Revisar» para otra ronda.
- *   3. La etiqueta queda siempre que lo hayas marcado al menos una vez en esta consulta.
+ * El flujo de revisión (PAPER §38.5, §38.6), igual que `flujo` de `IntakeChat.vue`:
+ *   1. «🙋 Revisar» empieza mi revisión (`start_review`) y aparece «☑️ Marcar revisado». No le
+ *      quita la consulta ni la derivación a nadie: varios médicos revisan a la vez.
+ *   2. «☑️ Marcar revisado» (complete_review only_mine) apaga mi «revisar» y vuelve «🙋 Revisar».
+ *   3. A la derecha queda la etiqueta «✓ Revisado» si lo marqué al menos una vez.
  * Sin UI, para poder probarlo.
  */
 object CaseReview {
@@ -277,38 +284,35 @@ object CaseReview {
     const val NOT_ACTIVE = "Es una consulta anterior: solo se revisa la vigente"
     const val LOADING = "Cargando el estado de la consulta…"
     const val DISCHARGED = "El paciente está de alta: si vuelve, abre una consulta nueva"
-    const val CLAIMED = "🙋 Tomaste el paciente para revisarlo. Cuando termines, toca «Marcar revisado»."
+    const val STARTED = "🙋 Empezaste a revisar este paciente. Cuando termines, toca «Marcar revisado»."
     const val MARKED = "✓ Marcado como revisado. Se apagó tu «revisar»; los demás revisores siguen pendientes."
 
-    /**
-     * Qué se ve en la franja y en el menú. Un motivo no nulo deja el botón gris con ese texto.
-     */
     /** La etiqueta de la franja. */
     enum class Badge {
         /** «✓ Revisado»: la marqué al menos una vez y no se ve «Marcar revisado». */
         Reviewed,
     }
 
+    /** Qué se ve en la franja y en el menú. Un motivo no nulo deja el botón gris con ese texto. */
     data class Flow(
         /** Lo marqué al menos una vez (`reviewed_at`). */
         val reviewedOnce: Boolean,
         /** Qué etiqueta va en la franja, o ninguna. */
         val badge: Badge?,
-        /** «🙋 Revisar»: solo con permiso de tomar casos y mientras no estoy revisando. */
-        val showClaim: Boolean,
-        val claimReason: String?,
-        /** «☑️ Marcar revisado»: revisando, o derivado sin permiso de tomar casos. */
+        /** «🙋 Revisar»: quien puede tomar casos o a quien se lo derivaron, mientras no revisa. */
+        val showStart: Boolean,
+        val startReason: String?,
+        /** «☑️ Marcar revisado»: mientras estoy revisando. */
         val showMark: Boolean,
         val markReason: String?,
-        /** La tiene otro: antes de tomarla se confirma con su nombre. */
-        val confirmOwner: String?,
-        /** Estoy revisando: la tomé después de mi última marca. */
+        /** Estoy revisando: empecé después de mi última marca. */
         val inReview: Boolean,
     )
 
     /**
      * `episodeId` = consulta activa del chat; `isActive` = es la que se está mirando; `status` =
-     * `estado` del registro del episodio activo, `null` mientras se carga.
+     * `estado` del registro del episodio activo, `null` mientras se carga. El responsable no
+     * cuenta: revisar no depende de quién tenga la consulta a cargo.
      */
     fun flow(
         referrals: Derivaciones,
@@ -317,12 +321,10 @@ object CaseReview {
         isActive: Boolean,
         status: String?,
     ): Flow {
-        val owner = referrals.responsable
-        val isMine = owner != null && owner.usuario == userId
         val open = userId != null && referrals.derivados.any { it.usuario == userId }
-        val claimed = referrals.myReview.claimedAt
+        val started = referrals.myReview.startedAt
         val reviewed = referrals.myReview.reviewedAt
-        val inReview = isMine && claimed != null && (reviewed == null || isAfter(claimed, reviewed))
+        val inReview = started != null && (reviewed == null || isAfter(started, reviewed))
         val reason = when {
             episodeId == null -> NO_EPISODE
             !isActive -> NOT_ACTIVE
@@ -330,19 +332,15 @@ object CaseReview {
             status == "alta" -> DISCHARGED
             else -> null
         }
-        val othersOwner = owner?.takeIf { !isMine }?.comoSeLlama
-        val claimReason = reason
-            ?: if (othersOwner != null && !referrals.canReassign) "La tiene a cargo $othersOwner" else null
-        val showMark = inReview || (open && !referrals.canClaim)
         return Flow(
             reviewedOnce = reviewed != null,
-            // Con «Marcar revisado» a la vista no se muestra «✓ Revisado» (PAPER §38.5).
-            badge = if (reviewed != null && !showMark) Badge.Reviewed else null,
-            showClaim = referrals.canClaim && !inReview,
-            claimReason = claimReason,
-            showMark = showMark,
+            // Con «Marcar revisado» a la vista no se muestra «✓ Revisado».
+            badge = if (reviewed != null && !inReview) Badge.Reviewed else null,
+            // Revisa quien puede tomar casos o a quien se lo derivaron (excepción por permisos).
+            showStart = (referrals.canClaim || open) && !inReview,
+            startReason = reason,
+            showMark = inReview,
             markReason = reason,
-            confirmOwner = othersOwner,
             inReview = inReview,
         )
     }
@@ -360,9 +358,6 @@ object CaseReview {
         userId != null && owner.usuario == userId -> "A cargo: tú"
         else -> "A cargo: ${owner.comoSeLlama}"
     }
-
-    /** La pregunta antes de quitársela a otro. */
-    fun confirmQuestion(owner: String): String = "$owner la tiene a cargo. ¿La revisas tú?"
 }
 
 @Serializable

@@ -211,7 +211,16 @@ struct CEPIAPI: Sendable {
         return r.data
     }
 
-    /// «Revisar» (PAPER §38.3): quien llama queda a cargo de la consulta. Acción explícita:
+    /// «🙋 Revisar» (PAPER §38.6): anota en el chatter «En revisión por X.». No cambia el
+    /// responsable, ni el estado, ni las revisiones o derivaciones de otros. Sin gate.
+    @discardableResult
+    func startReview(episode id: String) async throws -> ReviewStartResult {
+        let r: Uno<ReviewStartResult> = try await cliente.post("/api/entities/\(id)/start_review", json: EmptyBody())
+        return r.data
+    }
+
+    /// Reclamar (PAPER §38.3): quien llama queda a cargo de la consulta. Ya no lo usa
+    /// «🙋 Revisar» (§38.6); queda para el comando `reclamar`. Acción explícita:
     /// sin gate. Un 409 (la tiene otro y no se puede reasignar) llega como `APIError` con el
     /// motivo del backend.
     @discardableResult
