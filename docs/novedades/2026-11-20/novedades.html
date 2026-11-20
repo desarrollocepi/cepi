@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Novedades CEPI Telemedicina</title>
+<style>
+  :root { --tinta: #2b2118; --suave: #6b5b4b; --marca: #8a6a3a; --borde: #e6dccb; --rojo: #e11d48; }
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--tinta); font: 11pt/1.5 "Segoe UI", "Noto Sans", Arial, sans-serif; }
+  .portada { height: 255mm; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; break-after: page; }
+  .portada img { width: 34mm; height: 34mm; border-radius: 8mm; margin-bottom: 10mm; }
+  .portada h1 { font-size: 28pt; margin: 0 0 4mm; color: var(--marca); font-weight: 700; }
+  .portada p { font-size: 15pt; margin: 0; color: var(--suave); }
+  .portada .nota { margin-top: 16mm; font-size: 10pt; max-width: 120mm; }
+  .indice { break-after: page; }
+  .indice h2 { color: var(--marca); }
+  .indice ol { padding-left: 6mm; }
+  .indice li { margin: 1.5mm 0; }
+  .novedad { break-inside: avoid; page-break-inside: avoid; border-top: 2px solid var(--borde); padding: 6mm 0 7mm; }
+  .novedad h2 { margin: 0 0 2mm; font-size: 15pt; color: var(--marca); }
+  .novedad h2 .n { color: var(--rojo); margin-right: 2mm; }
+  .novedad p { margin: 0 0 2mm; }
+  .donde { color: var(--suave); font-size: 10pt; }
+  .capturas { display: flex; gap: 6mm; justify-content: center; margin-top: 4mm; flex-wrap: wrap; }
+  .capturas figure { margin: 0; text-align: center; break-inside: avoid; }
+  .capturas img { width: 76mm; border: 1px solid var(--borde); border-radius: 3mm; display: block; }
+  .capturas img.icono { width: 40mm; border-radius: 9mm; }
+  .capturas figcaption { font-size: 9pt; color: var(--suave); margin-top: 1.5mm; max-width: 76mm; }
+  @media screen { body { max-width: 820px; margin: 0 auto; padding: 0 16px; } .portada { height: auto; padding: 60px 0; } }
+</style>
+</head>
+<body>
+
+
+<section class="portada">
+  <img src="icono.png" alt="Ícono de CEPI Telemedicina">
+  <h1>CEPI Telemedicina — Novedades</h1>
+  <p>Semana del 12 al 20 de noviembre de 2026</p>
+  <p class="nota">Todo lo de este documento vale en la app de iPhone, en la de Android y en la versión web. Las capturas son de la versión web en tamaño de teléfono, con pacientes de prueba. En rojo, lo nuevo.</p>
+</section>
+
+<section class="indice">
+  <h2>Contenido</h2>
+  <ol>
+    <li>Términos y condiciones de uso</li>
+    <li>«Mis pacientes»: la lista empieza por los suyos</li>
+    <li>La franja de la consulta: quién la tiene a cargo</li>
+    <li>Revisar en tres pasos</li>
+    <li>Cada médico marca su propia revisión</li>
+    <li>Corrección: el aviso «revisar» ya no queda encendido</li>
+    <li>Versiones de las apps</li>
+  </ol>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">1</span>Términos y condiciones de uso</h2>
+  <p>Al iniciar sesión, cada usuario lee y acepta los términos y condiciones de uso. El texto explica cómo se tratan sus datos personales y los de los pacientes, según la Ley Orgánica de Protección de Datos Personales del Ecuador.</p>
+  <p>Hay que marcar «Leí y acepto» y tocar «Acepto». «No acepto» cierra la sesión. Hasta aceptar no se ve ningún paciente. Se pide una sola vez, y otra vez solo si los términos cambian.</p>
+  <p>El texto también está publicado en <b>telemedicina.cepi.ec/terminos.html</b>.</p>
+  <p class="donde">Dónde: al iniciar sesión.</p>
+  <div class="capturas">
+    <figure><img src="01-terminos.png" alt=""><figcaption>(1) Marcar la casilla y tocar «Acepto». (2) «No acepto» cierra la sesión.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">2</span>«Mis pacientes»: la lista empieza por los suyos</h2>
+  <p>La lista de pacientes tiene dos filtros que se combinan:</p>
+  <p><b>Fila 1:</b> «👤 Mis pacientes» o «Todos». Al abrir la app está elegido «Mis pacientes». Ahí aparecen los pacientes que usted tiene o tuvo a cargo alguna vez: los que ingresó, los que le derivaron, los que le asignaron y los que empezó a revisar.</p>
+  <p><b>Fila 2:</b> el estado de la ficha (Respondida, Revisión solicitada…). Cada estado dice cuántos pacientes hay dentro de la fila 1.</p>
+  <p>El buscador por nombre o cédula busca siempre en todos los pacientes, aunque esté elegido «Mis pacientes».</p>
+  <p class="donde">Dónde: lista de pacientes, debajo del buscador.</p>
+  <div class="capturas">
+    <figure><img src="02-mis-pacientes.png" alt=""><figcaption>(1) «Mis pacientes» o «Todos». (2) Filtro por estado.</figcaption></figure>
+    <figure><img src="03-todos.png" alt=""><figcaption>(1) «Todos»: los pacientes de toda la organización.</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">3</span>La franja de la consulta: quién la tiene a cargo</h2>
+  <p>Debajo del nombre del paciente hay una franja que siempre está a la vista mientras la consulta está abierta. Dice quién tiene a cargo la consulta («A cargo: …» o «Sin responsable») y a quién se derivó. A la derecha están los botones de revisión.</p>
+  <p>Al tocar la parte de «A cargo» se abre la ventana de «Derivar».</p>
+  <p class="donde">Dónde: paciente → Chat, debajo del nombre.</p>
+  <div class="capturas">
+    <figure><img src="04-revisar.png" alt=""><figcaption>(1) Quién tiene a cargo la consulta. (2) Botón «🙋 Revisar».</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">4</span>Revisar en tres pasos</h2>
+  <p><b>1. «🙋 Revisar».</b> Indica que usted empezó a revisar al paciente. No le quita la consulta ni la derivación a nadie: el responsable sigue siendo el mismo y los otros médicos siguen con su revisión pendiente. Varios médicos pueden revisar el mismo paciente a la vez.</p>
+  <p><b>2. «☑️ Marcar revisado».</b> Aparece en lugar de «Revisar». Tóquelo cuando termine. Se apaga su aviso «revisar» y queda escrito en el historial del caso.</p>
+  <p><b>3. «✓ Revisado».</b> Es una etiqueta, no un botón: indica que usted ya lo revisó al menos una vez. Vuelve a aparecer «🙋 Revisar» por si hace falta otra ronda.</p>
+  <p class="donde">Dónde: la franja de la consulta y el menú ☰ del paciente.</p>
+  <div class="capturas">
+    <figure><img src="05-marcar.png" alt=""><figcaption>(1) El responsable no cambia. (2) «Marcar revisado» mientras usted revisa.</figcaption></figure>
+    <figure><img src="06-revisado.png" alt=""><figcaption>(1) «Revisar» para otra ronda. (2) Etiqueta «✓ Revisado».</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">5</span>Cada médico marca su propia revisión</h2>
+  <p>Cuando un caso se deriva a varios médicos, cada uno tiene su propio estado. En la franja se ve a quién se derivó: los que ya marcaron «Revisado» llevan ✓ y en verde; los que faltan aparecen en naranja.</p>
+  <p>Que un médico marque «Revisado» no cierra el caso para los demás. «Responder interconsulta» sí lo cierra para todos.</p>
+  <p class="donde">Dónde: paciente → Chat, franja «Derivado a».</p>
+  <div class="capturas">
+    <figure><img src="07-por-medico.png" alt=""><figcaption>(1) Dra. Derma Dos todavía no revisa; Dr. Derma Uno ya revisó. (2) Su propia etiqueta «✓ Revisado».</figcaption></figure>
+  </div>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">6</span>Corrección: el aviso «revisar» ya no queda encendido</h2>
+  <p>Antes, si un caso derivado no se cerraba en 24 horas, la campana 🔔 y el aviso «revisar» quedaban encendidos para siempre, aunque el médico ya hubiera respondido. Además, el caso dejaba de figurar como «Derivado a».</p>
+  <p>Ahora el aviso se apaga cuando usted marca «Revisado» o cuando alguien responde la interconsulta, sin importar cuánto tiempo pasó.</p>
+</section>
+
+<section class="novedad">
+  <h2><span class="n">7</span>Versiones de las apps</h2>
+  <p><b>Android:</b> versión 2.7.9, publicada para los testers.</p>
+  <p><b>iPhone y iPad:</b> versión 1.6 (28), enviada a Apple. Llega a TestFlight y al App Store cuando Apple la apruebe.</p>
+  <p><b>Web:</b> ya tiene todo lo de este documento en telemedicina.cepi.ec.</p>
+</section>
+
+</body>
+</html>
